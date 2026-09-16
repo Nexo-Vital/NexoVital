@@ -1,0 +1,396 @@
+@import "tailwindcss";
+
+/*
+  Class-based dark mode. `dark:` utilities now react to the `.dark` class that
+  ThemeProvider toggles on <html>, instead of the OS media query alone (the OS
+  preference is still honored by the `system` theme in theme-store).
+*/
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+  ==========================================================================
+  Nexo Vital — design tokens.
+  Single source of color truth: the raw `--nv-*` palettes in :root (light,
+  default) and .dark are the ONLY places in the codebase where hex values are
+  allowed. shadcn/ui semantic vars and the Nexo Vital domain tokens both
+  reference the raw palette, and Tailwind utilities map to those vars through
+  @theme inline. Because .dark redefines the same `--nv-*` names, every
+  semantic token flips with the class.
+
+  Identity: a cooler, higher-contrast blue-steel scale (not neutral default
+  gray) with a condensed technical typeface, so the console reads as purpose
+  built rather than a default component-library dark theme.
+  ==========================================================================
+*/
+:root {
+  /* Raw palette — LIGHT (cool paper, deliberately not pure white everywhere). */
+  --nv-bg: #e9eef4;
+  --nv-surface: #ffffff;
+  --nv-surface-2: #dde5ee;
+  --nv-border: #c2ceda;
+  --nv-text: #0e141b;
+  --nv-text-muted: #56646f;
+  --nv-event: #0a5dc2; /* blue: new incoming event */
+  --nv-assign: #b4490a; /* orange: confirmed assignment */
+  --nv-critical: #c02734;
+  --nv-warning: #8a5a00;
+  --nv-ok: #0f6b3a;
+  --nv-idle: #5d6b78; /* gray: not declared / maintenance */
+  --nv-on-accent: #ffffff;
+
+  /* shadcn/ui semantic variables -> ops-room palette (no duplicated hex) */
+  --background: var(--nv-bg);
+  --foreground: var(--nv-text);
+  --card: var(--nv-surface);
+  --card-foreground: var(--nv-text);
+  --popover: var(--nv-surface-2);
+  --popover-foreground: var(--nv-text);
+  --primary: var(--nv-event);
+  --primary-foreground: var(--nv-on-accent);
+  --secondary: var(--nv-surface-2);
+  --secondary-foreground: var(--nv-text);
+  --muted: var(--nv-surface-2);
+  --muted-foreground: var(--nv-text-muted);
+  --accent: var(--nv-surface-2);
+  --accent-foreground: var(--nv-text);
+  --destructive: var(--nv-critical);
+  --destructive-foreground: var(--nv-on-accent);
+  --border: var(--nv-border);
+  --input: var(--nv-border);
+  --ring: var(--nv-event);
+  /* Denser chrome than the 0.5rem library default. */
+  --radius: 0.375rem;
+}
+
+/*
+  Raw palette — DARK. Same `--nv-*` names as :root so the shadcn semantics
+  defined above (which reference `--nv-*`) flip automatically. Declared after
+  :root so it wins the equal-specificity cascade.
+*/
+.dark {
+  --nv-bg: #060a10;
+  --nv-surface: #0c131b;
+  --nv-surface-2: #131c26;
+  --nv-border: #1f2b38;
+  --nv-text: #e9eff5;
+  --nv-text-muted: #7e8fa0;
+  --nv-event: #3d9bff; /* blue: new incoming event */
+  --nv-assign: #ff8a2b; /* orange: confirmed assignment */
+  --nv-critical: #ff4d4d;
+  --nv-warning: #f5b32b;
+  --nv-ok: #2fbf71;
+  --nv-idle: #5e7183; /* gray: not declared / maintenance */
+  --nv-on-accent: #ffffff;
+}
+
+/*
+  Map tokens to Tailwind utilities. `inline` keeps the var() reference so the
+  semantic vars stay overridable at runtime (shadcn convention). Utilities are
+  created for both the shadcn names and the Nexo Vital domain names.
+*/
+@theme inline {
+  /* shadcn/ui semantic colors */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Nexo Vital ops-room semantic tokens */
+  --color-event: var(--nv-event);
+  --color-assign: var(--nv-assign);
+  --color-critical: var(--nv-critical);
+  --color-warning: var(--nv-warning);
+  --color-ok: var(--nv-ok);
+  --color-idle: var(--nv-idle);
+  --color-surface: var(--nv-surface);
+  --color-surface-2: var(--nv-surface-2);
+  --color-text: var(--nv-text);
+  --color-text-muted: var(--nv-text-muted);
+
+  /* Typography — IBM Plex family: technical, not the default UI stack. */
+  --font-sans:
+    "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+  --font-display:
+    "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-mono:
+    "IBM Plex Mono", ui-monospace, "SFMono-Regular", "Cascadia Code", Consolas, "Liberation Mono",
+    Menlo, monospace;
+
+  /* Radius scale */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--background);
+    /* Faint signal wash so the shell does not read as flat default dark. */
+    background-image: radial-gradient(
+      1200px 600px at 78% -12%,
+      color-mix(in srgb, var(--nv-event) 6%, transparent),
+      transparent 70%
+    );
+    background-attachment: fixed;
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Headings use the condensed technical face. */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--nv-event) 35%, transparent);
+  }
+}
+
+@layer components {
+  /*
+    Leaflet ships unlayered CSS, and unlayered rules outrank @layer rules in
+    the cascade. !important is required here to re-skin its light defaults
+    (biome's noImportantStyles is disabled for this file).
+  */
+  .leaflet-container {
+    background: var(--background) !important;
+    font-family: var(--font-sans);
+  }
+
+  .leaflet-control-attribution {
+    background: color-mix(in srgb, var(--popover) 85%, transparent) !important;
+    color: var(--muted-foreground) !important;
+  }
+
+  .leaflet-control-attribution a {
+    color: var(--primary) !important;
+  }
+
+  /* Marker dots are pure CSS so map layers never need inline hex values. */
+  .nv-marker {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    transition: transform 0.25s ease-out;
+  }
+
+  .nv-marker__dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 9999px;
+    border: 2px solid var(--nv-bg);
+    box-shadow: 0 0 0 1px var(--nv-border);
+  }
+
+  .nv-marker__label {
+    position: absolute;
+    top: 20px;
+    padding: 0 3px;
+    border: 1px solid var(--nv-border);
+    border-radius: 3px;
+    background: var(--nv-surface);
+    color: var(--nv-text);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+
+  .nv-marker--available .nv-marker__dot {
+    background: var(--nv-ok);
+  }
+
+  .nv-marker--assigned .nv-marker__dot,
+  .nv-marker--high .nv-marker__dot {
+    background: var(--nv-assign);
+  }
+
+  .nv-marker--en_route .nv-marker__dot {
+    background: var(--nv-event);
+  }
+
+  .nv-marker--maintenance .nv-marker__dot {
+    background: var(--nv-idle);
+  }
+
+  .nv-marker--low .nv-marker__dot {
+    background: var(--nv-ok);
+  }
+
+  .nv-marker--medium .nv-marker__dot {
+    background: var(--nv-warning);
+  }
+
+  .nv-marker--critical .nv-marker__dot {
+    background: var(--nv-critical);
+  }
+
+  .nv-marker--selected .nv-marker__dot {
+    outline: 2px solid var(--nv-text);
+    outline-offset: 2px;
+  }
+
+  /* Aid centers use a square dot so they read differently from units/events. */
+  .nv-marker--center .nv-marker__dot {
+    background: var(--nv-event);
+    border-radius: 3px;
+  }
+
+  /*
+    "You are here" marker for the driver console: a pulsing ring around a solid
+    dot plus an optional heading arrow. Distinct from every fleet marker.
+  */
+  .nv-marker--self .nv-marker__dot {
+    background: var(--nv-event);
+    border-color: var(--nv-surface);
+  }
+
+  .nv-marker__ring {
+    position: absolute;
+    width: 30px;
+    height: 30px;
+    border: 2px solid var(--nv-event);
+    border-radius: 9999px;
+    animation: nv-self-pulse 1.6s ease-out infinite;
+  }
+
+  .nv-marker__heading {
+    position: absolute;
+    inset: 0;
+    transform-origin: 50% 50%;
+    pointer-events: none;
+  }
+
+  .nv-marker__heading-arrow {
+    position: absolute;
+    top: -7px;
+    left: 50%;
+    width: 0;
+    height: 0;
+    border-right: 5px solid transparent;
+    border-bottom: 9px solid var(--nv-event);
+    border-left: 5px solid transparent;
+    transform: translateX(-50%);
+  }
+
+  /* Simulated positions are labelled (SIM) and warned in the warning token. */
+  .nv-marker--sim .nv-marker__dot {
+    background: var(--nv-warning);
+  }
+
+  .nv-marker--sim .nv-marker__ring {
+    border-color: var(--nv-warning);
+  }
+
+  .nv-marker--sim .nv-marker__heading-arrow {
+    border-bottom-color: var(--nv-warning);
+  }
+
+  .nv-marker--sim .nv-marker__label {
+    border-style: dashed;
+    color: var(--nv-warning);
+  }
+
+  .nv-pulse {
+    animation: nv-pulse 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes nv-self-pulse {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.6);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.7);
+  }
+}
+
+@keyframes nv-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Align numbers/KPIs on a fixed grid for scannability. */
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* Uppercase technical micro-label used by panels, map controls and headers. */
+@utility nv-label {
+  font-family: var(--font-display);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+/* Signal glow for status LEDs, so live states read as powered, not painted. */
+@utility nv-glow {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, currentColor 30%, transparent),
+    0 0 8px color-mix(in srgb, currentColor 40%, transparent);
+}
+
+/* Respect the user's motion preference across the whole app. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

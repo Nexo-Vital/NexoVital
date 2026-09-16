@@ -1,0 +1,35 @@
+# Node
+node_modules/
+
+# Build artifacts
+dist/
+
+# Test coverage
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Wrangler / Cloudflare local state
+.wrangler/
+.dev.vars
+
+# IDEs
+.idea/
+.vscode/
+
+# Local tooling state
+.atl/
+.engram/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db

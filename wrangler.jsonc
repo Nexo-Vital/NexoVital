@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Deployed Worker name — must be preserved so the existing URL keeps working.
+  "name": "tiny-mode-fc1e",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-08-01",
+  "assets": {
+    // Built SPA output. The single-page-application fallback is REQUIRED because
+    // the app routes with react-router-dom (deep links must serve index.html).
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "REALTIME", "class_name": "RealtimeRoom" }]
+  },
+  "migrations": [
+    // new_sqlite_classes is required for Durable Objects on the Workers FREE plan.
+    { "tag": "v1", "new_sqlite_classes": ["RealtimeRoom"] }
+  ]
+}
