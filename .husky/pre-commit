@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+# Restored from arws-inception/.husky/pre-commit when this repo was split out of
+# the monorepo. The original cd'd into <repo-root>/frontend because the frontend
+# was a subdirectory there; here the repo root IS the project root, so no cd.
+npx lint-staged --allow-empty && npm run typecheck
