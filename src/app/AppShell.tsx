@@ -1,11 +1,10 @@
-import { LogOut, Moon, Radio, Sun, User } from 'lucide-react';
+import { LogOut, Radio, User } from 'lucide-react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Toaster } from '@/components/ui/toast';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useChannelStatus } from '@/features/observabilidad/use-channel-status';
-import { type ThemePreference, useThemeStore } from '@/features/tema/theme-store';
+import { ThemeToggle } from '@/features/tema/ThemeToggle';
 import { useSessionStore } from '@/features/usuarios/session';
 import { useClock } from '@/hooks/use-clock';
 import { formatClock } from '@/lib/format';
@@ -42,9 +41,6 @@ const CHANNEL_META: Record<ChannelState, ChannelMeta> = {
   },
 };
 
-/** Cycle order for the theme toggle button. */
-const THEME_ORDER: ThemePreference[] = ['light', 'dark', 'system'];
-
 /** Short role labels so the chip never overflows on a phone. */
 const ROLE_SHORT: Record<RolUsuario, string> = {
   ADMIN_PLATAFORMA: 'PLATFORM',
@@ -72,37 +68,6 @@ function ChannelBadge({ state, latencyMs }: { state: ChannelState; latencyMs: nu
         <span className="hidden text-muted-foreground sm:inline">{latencyMs} ms</span>
       )}
     </Badge>
-  );
-}
-
-/** Cycles light -> dark -> system; the icon reflects the resolved theme. */
-function ThemeToggle() {
-  const theme = useThemeStore((state) => state.theme);
-  const resolvedTheme = useThemeStore((state) => state.resolvedTheme);
-  const setTheme = useThemeStore((state) => state.setTheme);
-
-  const nextTheme = THEME_ORDER[(THEME_ORDER.indexOf(theme) + 1) % THEME_ORDER.length];
-  const isDark = resolvedTheme === 'dark';
-  const Icon = isDark ? Moon : Sun;
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label={`Theme: ${theme}. Switch to ${nextTheme}.`}
-          aria-pressed={isDark}
-          onClick={() => setTheme(nextTheme)}
-        >
-          <Icon className="size-4" />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>
-        {theme} theme — switch to {nextTheme}
-      </TooltipContent>
-    </Tooltip>
   );
 }
 
