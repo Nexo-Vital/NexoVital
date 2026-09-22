@@ -202,7 +202,7 @@
     color: var(--primary) !important;
   }
 
-  /* Marker dots are pure CSS so map layers never need inline hex values. */
+  /* Marker shapes are pure CSS so map layers never need inline hex values. */
   .nv-marker {
     position: relative;
     display: flex;
@@ -214,12 +214,29 @@
     transition: transform 0.25s ease-out;
   }
 
-  .nv-marker__dot {
-    width: 14px;
-    height: 14px;
-    border-radius: 9999px;
-    border: 2px solid var(--nv-bg);
-    box-shadow: 0 0 0 1px var(--nv-border);
+  /*
+    Shared frame for every SVG marker shape — the top-down vehicle, the
+    emergency alert pin and the aid-center building. One size and one shadow
+    keep the three silhouettes visually consistent. Declared BEFORE every state
+    modifier, so specificity only ever descends down the sheet.
+  */
+  .nv-marker__shape {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.35));
+  }
+
+  /* Only the vehicle rotates, so it eases into its new heading. */
+  .nv-marker__vehicle {
+    transition: transform 0.25s ease-out;
+  }
+
+  .nv-marker__glyph {
+    width: 100%;
+    height: 100%;
+    color: var(--nv-marker-color);
   }
 
   .nv-marker__label {
@@ -237,94 +254,80 @@
     white-space: nowrap;
   }
 
-  .nv-marker--available .nv-marker__dot {
-    background: var(--nv-ok);
+  /*
+    One colour per state, declared once and read by every marker shape: vehicles,
+    the emergency pin and the aid-center building. Splitting it per shape would
+    let them drift apart.
+  */
+  .nv-marker--available {
+    --nv-marker-color: var(--nv-ok);
   }
 
-  .nv-marker--assigned .nv-marker__dot,
-  .nv-marker--high .nv-marker__dot {
-    background: var(--nv-assign);
+  .nv-marker--assigned,
+  .nv-marker--high {
+    --nv-marker-color: var(--nv-assign);
   }
 
-  .nv-marker--en_route .nv-marker__dot {
-    background: var(--nv-event);
+  .nv-marker--en_route {
+    --nv-marker-color: var(--nv-event);
   }
 
-  .nv-marker--maintenance .nv-marker__dot {
-    background: var(--nv-idle);
+  .nv-marker--maintenance {
+    --nv-marker-color: var(--nv-idle);
   }
 
-  .nv-marker--low .nv-marker__dot {
-    background: var(--nv-ok);
+  .nv-marker--low {
+    --nv-marker-color: var(--nv-ok);
   }
 
-  .nv-marker--medium .nv-marker__dot {
-    background: var(--nv-warning);
+  .nv-marker--medium {
+    --nv-marker-color: var(--nv-warning);
   }
 
-  .nv-marker--critical .nv-marker__dot {
-    background: var(--nv-critical);
+  .nv-marker--critical {
+    --nv-marker-color: var(--nv-critical);
   }
 
-  .nv-marker--selected .nv-marker__dot {
+  /*
+    Aid centers take their colour from the WORST item in their inventory, which
+    markers.ts writes into `--nv-marker-color` as an inline `var(--nv-*)` token.
+    This class value is the neutral fallback, used if no level was supplied.
+  */
+  .nv-marker--center {
+    --nv-marker-color: var(--nv-idle);
+  }
+
+  .nv-marker--self {
+    --nv-marker-color: var(--nv-event);
+  }
+
+  /* Selection outlines the glyph of whichever shape the marker uses. */
+  .nv-marker--selected .nv-marker__glyph {
     outline: 2px solid var(--nv-text);
     outline-offset: 2px;
   }
 
-  /* Aid centers use a square dot so they read differently from units/events. */
-  .nv-marker--center .nv-marker__dot {
-    background: var(--nv-event);
-    border-radius: 3px;
-  }
-
   /*
-    "You are here" marker for the driver console: a pulsing ring around a solid
-    dot plus an optional heading arrow. Distinct from every fleet marker.
+    "You are here" marker for the driver console: the same vehicle glyph inside a
+    pulsing ring, so the driver's own unit reads differently from the rest of the
+    fleet.
   */
-  .nv-marker--self .nv-marker__dot {
-    background: var(--nv-event);
-    border-color: var(--nv-surface);
-  }
-
   .nv-marker__ring {
     position: absolute;
     width: 30px;
     height: 30px;
-    border: 2px solid var(--nv-event);
+    border: 2px solid var(--nv-marker-color);
     border-radius: 9999px;
     animation: nv-self-pulse 1.6s ease-out infinite;
   }
 
-  .nv-marker__heading {
-    position: absolute;
-    inset: 0;
-    transform-origin: 50% 50%;
-    pointer-events: none;
-  }
-
-  .nv-marker__heading-arrow {
-    position: absolute;
-    top: -7px;
-    left: 50%;
-    width: 0;
-    height: 0;
-    border-right: 5px solid transparent;
-    border-bottom: 9px solid var(--nv-event);
-    border-left: 5px solid transparent;
-    transform: translateX(-50%);
-  }
-
-  /* Simulated positions are labelled (SIM) and warned in the warning token. */
-  .nv-marker--sim .nv-marker__dot {
-    background: var(--nv-warning);
-  }
-
-  .nv-marker--sim .nv-marker__ring {
-    border-color: var(--nv-warning);
-  }
-
-  .nv-marker--sim .nv-marker__heading-arrow {
-    border-bottom-color: var(--nv-warning);
+  /*
+    Simulated positions are labelled (SIM) and warned in the warning token. This
+    rule must stay LAST among the state colours: it has the same specificity as
+    them and overrides the variable for whichever shape the marker uses.
+  */
+  .nv-marker--sim {
+    --nv-marker-color: var(--nv-warning);
   }
 
   .nv-marker--sim .nv-marker__label {
