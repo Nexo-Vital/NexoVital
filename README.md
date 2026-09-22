@@ -69,11 +69,58 @@ Cada módulo repite la misma estructura:
 - JDK 21
 - Maven 3.9+
 
+## Configuración: secreto JWT
+
+La aplicación **no arranca sin `NEXOVITAL_JWT_SECRET`**. No existe un valor por defecto a
+propósito: un secreto comiteado en el repositorio permitiría forjar tokens a cualquiera con
+acceso al código. La clave debe medir **al menos 32 bytes** (HS256); si falta o es más corta,
+el arranque falla con un mensaje que explica cómo generarla.
+
+```powershell
+# PowerShell
+$env:NEXOVITAL_JWT_SECRET = (openssl rand -base64 32)
+```
+
+```bash
+# bash
+export NEXOVITAL_JWT_SECRET=$(openssl rand -base64 32)
+```
+
 ## Ejecución
 
 ```bash
 mvn spring-boot:run
 ```
+
+Perfil por defecto: H2 en memoria con `spring.jpa.hibernate.ddl-auto=create-drop`. La decisión
+de esquema por perfil (`create-drop` local, `update` docker, `validate` prod) y lo que producción
+necesita están documentados en `src/main/resources/application.properties`.
+
+## Usuarios de demostración
+
+`DataSeeder` siembra 10 usuarios que cubren los 5 roles. Solo se activa con los perfiles
+`default`, `docker` o `test`, y además exige `nexovital.seed.enabled=true`: **nunca corre en
+producción**. Es idempotente, así que reiniciar no duplica cuentas. Las contraseñas se persisten
+únicamente como hash BCrypt y nunca se escriben en el log.
+
+| Rol | Email | Contraseña |
+|---|---|---|
+| `ADMIN_CENTRO_AYUDA` | `rangel@nexovital.co` | `rangel123` |
+| `ADMIN_PLATAFORMA` | `admin@nexovital.co` | `admin123` |
+| `ADMIN_CENTRO_AYUDA` | `centro@nexovital.co` | `centro123` |
+| `ADMIN_ACOPIO` | `acopio@nexovital.co` | `acopio123` |
+| `CIUDADANO` | `ciudadano@nexovital.co` | `ciudadano123` |
+| `CONDUCTOR` | `conductor1@nexovital.co` … `conductor5@nexovital.co` | `conductor123` |
+
+## API de sesiones
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| `POST` | `/api/v1/sesiones` | Crea una sesión. `200` con `{token, usuario}`; `401` `CREDENCIALES_INVALIDAS`; `423` `CUENTA_BLOQUEADA` + cabecera `Retry-After` (segundos restantes) |
+| `GET` | `/api/v1/sesiones/actual` | Usuario de la sesión vigente, resuelto desde el Bearer token. `401` sin token válido |
+
+Tras **3 intentos fallidos seguidos** la cuenta queda bloqueada **5 minutos**. Durante el bloqueo
+la contraseña no se evalúa y el contador no se incrementa, de modo que la ventana siempre expira.
 
 ## Pruebas
 

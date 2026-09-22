@@ -171,7 +171,7 @@ UPDATE usuarios
 | `domain/port/in/` | `AuthenticationUseCase` | NUEVO |
 | `domain/exception/` | `CredencialesInvalidasException`, `UsuarioNoEncontradoException`, `CuentaBloqueadaException` | NUEVO |
 | `application/usecase/` | `AuthenticationUseCaseImpl` (orquesta: bloqueo → credenciales → contador → token) | NUEVO |
-| `infrastructure/adapter/in/` | `AuthController` (`POST /api/v1/auth/login`, `GET /api/v1/auth/me`) + DTOs | NUEVO |
+| `infrastructure/adapter/in/` | `SesionController` (`POST /api/v1/sesiones`, `GET /api/v1/sesiones/actual`) + DTOs | NUEVO |
 | `infrastructure/adapter/out/` | `UsuarioJpaRepository`, `UsuarioRepositoryAdapter`, `EstadoIntentosAdapter`, `PasswordEncoderAdapter`, `JwtTokenAdapter` | NUEVO |
 | `infrastructure/` (transversal) | `SecurityConfig`, `JwtAuthFilter`, `DataSeeder`, bean `Clock` | NUEVO |
 
@@ -237,10 +237,14 @@ El `pom.xml` **no incluye** ningún motor de migraciones (ni Flyway ni Liquibase
 
 ## 6. Delta del contrato OpenAPI
 
-El contrato vive en el repositorio de documentación (`contract/openapi.yaml`). Sobre la operación `POST /auth/login`:
+El contrato vive en el repositorio de documentación (`contract/openapi.yaml`). Las operaciones de esta
+historia se publican con **sustantivos en plural y sin verbos en la URL**: `POST /sesiones` (crear una
+sesión) y `GET /sesiones/actual` (la sesión del llamante), en lugar de `POST /auth/login` y
+`GET /auth/me`, que ponían un verbo y un pronombre en la ruta.
 
 | Cambio | Detalle |
 |---|---|
+| **Reemplazar operaciones** | `POST /auth/login` → `POST /sesiones` · `GET /auth/me` → `GET /sesiones/actual`. El cuerpo de respuesta y los códigos (200 / 401 / 423) no cambian |
 | Añadir respuesta | `'423'` → `$ref: '#/components/responses/Locked'` (**NUEVO**) |
 | Añadir componente | `responses/Locked`: cabecera `Retry-After` (integer, segundos) + contenido `#/components/schemas/Error` |
 | Actualizar descripción | El componente `Error` lista códigos de ejemplo; añadir `CUENTA_BLOQUEADA` |
@@ -260,7 +264,7 @@ El catálogo de usuarios precargados **no se expone** por el contrato: no hay en
 | T4 | 2 fallos, 1 éxito, luego 3 fallos | El éxito reinicia; el bloqueo ocurre exactamente en el tercer fallo posterior |
 | T5 | 3 intentos con email inexistente | Siempre 401 `CREDENCIALES_INVALIDAS`, nunca 423, y no se crea estado |
 | T6 | Intentos fallidos concurrentes sobre la misma cuenta | El contador no pierde incrementos y el bloqueo no se dispara antes del tercero |
-| T7 | Login de los 5 roles precargados | 200 en cada uno y `GET /api/v1/auth/me` devuelve el rol correcto |
+| T7 | Login de los 5 roles precargados | 200 en cada uno y `GET /api/v1/sesiones/actual` devuelve el rol correcto |
 | T8 | Reinicio de la aplicación | El seeder no duplica usuarios (idempotencia) |
 
 ---
