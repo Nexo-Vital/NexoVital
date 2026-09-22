@@ -15,11 +15,13 @@ import {
 } from './mapConfig';
 import { ambulanceIcon, centerIcon, emergencyIcon, selfIcon } from './markers';
 
-/** The driver's own unit, rendered apart from the fleet markers. */
+/** The viewer's own unit, rendered apart from the fleet markers. */
 export interface SelfMarker {
   position: Ubicacion;
   heading: number | null;
   simulated: boolean;
+  /** Marker label; defaults to the driver console's SIM/YOU. */
+  label?: string;
 }
 
 interface MapCanvasProps {
@@ -236,7 +238,7 @@ export function MapCanvas({
       {self && (
         <Marker
           position={[self.position.lat, self.position.lng]}
-          icon={selfIcon(self.heading, self.simulated)}
+          icon={selfIcon(self.heading, self.simulated, self.label)}
           draggable={self.simulated}
           zIndexOffset={1000}
           eventHandlers={

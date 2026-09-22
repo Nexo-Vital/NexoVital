@@ -146,9 +146,11 @@ describe('RequireAuth', () => {
     expect(useSessionStore.getState().role).toBe('ADMIN_CENTRO_AYUDA');
   });
 
-  it('blocks the server role when it has no destination, same as at login', async () => {
+  it('blocks a server role outside the contract, same as at login', async () => {
     signInAs('CONDUCTOR', 'jwt.downgraded');
-    fetchMock.mockResolvedValue(mockResponse(200, usuario('CIUDADANO')));
+    // Every contract role now has a screen, so the blocked case is a role the
+    // contract does not know (e.g. a future backend role).
+    fetchMock.mockResolvedValue(mockResponse(200, usuario('INSPECTOR' as RolUsuario)));
 
     renderGuarded();
 

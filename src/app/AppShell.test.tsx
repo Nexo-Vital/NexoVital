@@ -51,8 +51,9 @@ describe('AppShell', () => {
     expect(screen.queryByTestId('login-screen')).not.toBeInTheDocument();
   });
 
-  it('never renders the shell for a role without a screen', () => {
-    signInAs('CIUDADANO');
+  it('never renders the shell for a role outside the contract', () => {
+    // Every contract role now has a screen; the guarded case is an unknown role.
+    signInAs('INSPECTOR' as RolUsuario);
     renderShell();
 
     expect(screen.getByTestId('login-screen')).toBeInTheDocument();

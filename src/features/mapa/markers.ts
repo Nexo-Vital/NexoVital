@@ -125,12 +125,18 @@ export function ambulanceIcon(ambulance: Ambulancia, selected: boolean): L.DivIc
   );
 }
 
-/** The driver's own "You are here" marker: pulsing ring + the vehicle glyph. */
-export function selfIcon(heading: number | null, simulated: boolean): L.DivIcon {
+/**
+ * "You are here" marker: pulsing ring + the vehicle glyph.
+ *
+ * The label defaults to the driver console's SIM/YOU so its screen is unchanged;
+ * the citizen map passes its own label ("Tú") through the same marker.
+ */
+export function selfIcon(heading: number | null, simulated: boolean, label?: string): L.DivIcon {
   const simulatedClass = simulated ? ' nv-marker--sim' : '';
+  const text = label ?? (simulated ? 'SIM' : 'YOU');
   return L.divIcon({
     className: '',
-    html: `<div class="nv-marker nv-marker--self${simulatedClass}"><span class="nv-marker__ring"></span><span class="nv-marker__shape nv-marker__vehicle"${headingAttribute(heading)}>${VEHICLE_GLYPH}</span><span class="nv-marker__label">${simulated ? 'SIM' : 'YOU'}</span></div>`,
+    html: `<div class="nv-marker nv-marker--self${simulatedClass}"><span class="nv-marker__ring"></span><span class="nv-marker__shape nv-marker__vehicle"${headingAttribute(heading)}>${VEHICLE_GLYPH}</span><span class="nv-marker__label">${escapeHtml(text)}</span></div>`,
     iconSize: [30, 30],
     iconAnchor: [15, 15],
   });
