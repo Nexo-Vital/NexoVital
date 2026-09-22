@@ -1,6 +1,19 @@
+import { findDemoAccount } from '../mocks/demo-users';
 import type { Usuario } from '../types/domain';
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '/api/v1';
+
+/**
+ * Demo mode is an explicit BUILD decision, never a runtime fallback: it is on
+ * only when the build-time flag `VITE_DEMO_MODE` is exactly the string '1'.
+ *
+ * It is read inside the session functions (not as a module-level constant) so
+ * tests can flip it per case with `vi.stubEnv`. The flag is absent by default,
+ * so local dev and every existing test keep hitting the real backend.
+ */
+function isDemoMode(): boolean {
+  return import.meta.env.VITE_DEMO_MODE === '1';
+}
 
 export const TOKEN_KEY = 'nexovital.token';
 export const SESSION_KEY = 'nexovital.session';
@@ -70,7 +83,41 @@ export function logout(): void {
   clearSession();
 }
 
+/**
+ * Resolves the login against the hardcoded catalog with zero network traffic.
+ *
+ * A match returns the same `LoginResponse` shape as the real endpoint and
+ * persists the token + session through the shared helpers, so the stored shape
+ * is identical in both paths. A mismatch throws the same 401 `ApiError` the real
+ * path ends up throwing against the seeded backend: the controller answers
+ * `CREDENCIALES_INVALIDAS` with its own message, and the real path overrides its
+ * fallback message with that body, so `LoginPage` renders its existing error UI.
+ */
+function demoLogin(email: string, password: string): LoginResponse {
+  const account = findDemoAccount(email, password);
+  if (!account) {
+    throw new ApiError(401, 'Credenciales inválidas.', 'CREDENCIALES_INVALIDAS');
+  }
+
+  const usuario: Usuario = {
+    id: account.id,
+    nombre: account.nombre,
+    email: account.email,
+    rol: account.rol,
+  };
+  // Synthetic token: nothing validates it, but the real flow persists a token,
+  // so demo mode persists one too to keep the stored session shape identical.
+  const token = `demo.${account.id}`;
+  setToken(token);
+  setSession(usuario);
+  return { token, usuario };
+}
+
 export async function login(email: string, password: string): Promise<LoginResponse> {
+  if (isDemoMode()) {
+    return demoLogin(email, password);
+  }
+
   let response: Response;
   try {
     response = await fetch(`${API_BASE}/sesiones`, {
@@ -109,7 +156,24 @@ export async function login(email: string, password: string): Promise<LoginRespo
   throw new ApiError(response.status, mensaje, codigo);
 }
 
+/**
+ * Reads the persisted session back with zero network traffic. With no stored
+ * session it throws the same 401 `ApiError` the real endpoint produces, so
+ * `guards.tsx` redirects to /login exactly as it does today.
+ */
+function demoGetMe(): Usuario {
+  const usuario = getSession();
+  if (!usuario) {
+    throw new ApiError(401, 'Sesión expirada o no autenticado');
+  }
+  return usuario;
+}
+
 export async function getMe(token: string): Promise<Usuario> {
+  if (isDemoMode()) {
+    return demoGetMe();
+  }
+
   const response = await fetch(`${API_BASE}/sesiones/actual`, {
     headers: { Authorization: `Bearer ${token}` },
   });

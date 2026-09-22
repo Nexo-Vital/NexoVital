@@ -23,10 +23,24 @@ const CIUDADANO = {
   rol: 'CIUDADANO',
 };
 
-/** Platform admin row: it is not inside a collapsed role group. */
-const DEMO_PROFILE = DEMO_USERS[0];
-/** A second, ungrouped profile used to prove the concurrency guard. */
-const OTHER_PROFILE = DEMO_USERS.find((profile) => profile.rol === 'ADMIN_ACOPIO');
+/** Seeded profile of a role, or a loud failure when the seed changed shape. */
+function seededProfile(rol: 'CIUDADANO' | 'CONDUCTOR') {
+  const profile = DEMO_USERS.find((candidate) => candidate.rol === rol);
+  if (!profile) {
+    throw new Error(`seed data changed: expected a seeded ${rol} profile`);
+  }
+  return profile;
+}
+
+/** Profiles the login panel offers: the MVP personas, citizen and driver. */
+const MVP_PROFILES = DEMO_USERS.filter(
+  (profile) => profile.rol === 'CIUDADANO' || profile.rol === 'CONDUCTOR',
+);
+
+/** Citizen row: a single MVP role, so it is not inside a collapsed role group. */
+const DEMO_PROFILE = seededProfile('CIUDADANO');
+/** Driver row: it lives inside the "Conductores de ambulancia" group. */
+const OTHER_PROFILE = seededProfile('CONDUCTOR');
 
 /** Characters typed by the autofill: both credentials, one keystroke per delay. */
 const TYPED_CHARACTERS = DEMO_PROFILE.email.length + DEMO_PROFILE.password.length;
@@ -212,15 +226,14 @@ describe('LoginPage', () => {
     });
   });
 
-  it('lists one selectable row per seeded profile with its description', async () => {
+  it('offers only the MVP profiles, each with its description', async () => {
     const user = userEvent.setup();
     renderLogin();
 
     // Grouped roles stay collapsed until asked, so the panel does not become a wall of rows.
     await user.click(screen.getByRole('button', { name: /Conductores de ambulancia/ }));
-    await user.click(screen.getByRole('button', { name: /Administradores de centro de ayuda/ }));
 
-    for (const profile of DEMO_USERS) {
+    for (const profile of MVP_PROFILES) {
       const row = profileRow(profile.email);
       expect(row).toBeEnabled();
       expect(within(row).getByText(profile.email)).toBeInTheDocument();
@@ -228,12 +241,17 @@ describe('LoginPage', () => {
     }
 
     expect(screen.getAllByText('Recibe y responde solicitudes de ambulancia')).toHaveLength(5);
-    expect(screen.getAllByText('Opera la sala de operaciones CRUE')).toHaveLength(2);
-    expect(screen.getByText('Administra la plataforma y los usuarios')).toBeInTheDocument();
-    expect(
-      screen.getByText('Gestiona el inventario y las donaciones del centro de acopio'),
-    ).toBeInTheDocument();
     expect(screen.getByText('Solicita una ambulancia y reporta emergencias')).toBeInTheDocument();
+
+    // The seeded administrators are not offered: this panel is what the demo shows.
+    expect(
+      screen.queryByRole('button', { name: /Administradores de centro de ayuda/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Opera la sala de operaciones CRUE')).not.toBeInTheDocument();
+    expect(screen.queryByText('Administra la plataforma y los usuarios')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('Gestiona el inventario y las donaciones del centro de acopio'),
+    ).not.toBeInTheDocument();
   });
 
   it('types the selected profile credentials and posts them to the login endpoint once', async () => {
@@ -244,13 +262,13 @@ describe('LoginPage', () => {
     fireEvent.click(profileRow(DEMO_PROFILE.email));
 
     // First keystroke lands synchronously, the rest are driven by the timer queue.
-    expect(screen.getByLabelText('Correo electrónico')).toHaveValue('a');
+    expect(screen.getByLabelText('Correo electrónico')).toHaveValue(DEMO_PROFILE.email.slice(0, 1));
 
     const progressMs = 40;
     await act(async () => {
       await vi.advanceTimersByTimeAsync(progressMs);
     });
-    expect(screen.getByLabelText('Correo electrónico')).toHaveValue('adm');
+    expect(screen.getByLabelText('Correo electrónico')).toHaveValue(DEMO_PROFILE.email.slice(0, 3));
 
     // The full credential is on screen before the run submits it.
     await act(async () => {
@@ -282,11 +300,11 @@ describe('LoginPage', () => {
 
   it('ignores a second profile click while the typewriter is running', async () => {
     vi.useFakeTimers();
-    if (!OTHER_PROFILE) {
-      throw new Error('seed data changed: expected an ungrouped ADMIN_ACOPIO profile');
-    }
     fetchMock.mockResolvedValue(mockResponse(200, { token: 'jwt.real', usuario: ADMIN }));
     renderLogin();
+
+    // The driver role is grouped, so its rows exist only after expanding it.
+    fireEvent.click(screen.getByRole('button', { name: /Conductores de ambulancia/ }));
 
     fireEvent.click(profileRow(DEMO_PROFILE.email));
     // Rows lock while the run is in flight, and the ref guard covers the same tick.

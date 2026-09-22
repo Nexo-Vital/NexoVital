@@ -23,8 +23,18 @@ function groupByRole(profiles: DemoUser[]): ProfileGroup[] {
   return [...groups].map(([rol, items]) => ({ rol, profiles: items }));
 }
 
+/**
+ * Roles the MVP offers on the login panel: citizen and ambulance driver.
+ *
+ * The seeded administrator accounts still exist in the database and still sign
+ * in if their credentials are typed, but they are not offered here: this panel
+ * is what the demo shows, and everything it shows is expected to work end to
+ * end. Hiding them is a presentation rule, not a permission change.
+ */
+const MVP_ROLES: ReadonlySet<DemoUser['rol']> = new Set(['CIUDADANO', 'CONDUCTOR']);
+
 /** Static data: computed once at module load instead of on every render. */
-const PROFILE_GROUPS = groupByRole(DEMO_USERS);
+const PROFILE_GROUPS = groupByRole(DEMO_USERS.filter((profile) => MVP_ROLES.has(profile.rol)));
 
 const ROW_CLASS =
   'flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50';
