@@ -21,16 +21,22 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
- * Seguridad stateless con autoridad {@code ROLE_<ROL>}.
+ * Stateless security with the {@code ROLE_<ROL>} authority.
  *
- * <p>El único endpoint público es {@code POST /api/v1/sesiones}: es el que
- * emite el token. Todo lo demás exige Bearer token válido.
+ * <p>The only public endpoint is {@code POST /api/v1/sesiones}: it issues the
+ * token. Every protected operation is declared here explicitly; anything not
+ * declared is denied (fail-closed), never left open to every authenticated
+ * role.
+ *
+ * <p>{@link JwtAuthFilter} publishes the {@code ROLE_<ROL>} authority into the
+ * security context from the presented token, so a per-role declaration only
+ * has to name that authority; nothing new must be built to grant it.
  */
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
 
-    /** Origen del frontend de desarrollo (Vite). */
+    /** Development frontend origin (Vite). */
     private static final List<String> ORIGENES_PERMITIDOS =
             List.of("http://localhost:5173", "http://127.0.0.1:5173");
 
@@ -50,11 +56,17 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, "/api/v1/sesiones").permitAll()
-                        // Spring Boot reenvía a /error los fallos no manejados y ese
-                        // dispatch pasa por esta cadena: sin permiso aquí, un 400 de
-                        // validación se convertiría en 401.
+                        // Spring Boot forwards unhandled failures to /error and that
+                        // dispatch passes through this chain: without permission here, a
+                        // validation 400 would turn into a 401.
                         .requestMatchers("/error").permitAll()
-                        .anyRequest().authenticated())
+                        // The caller's own session: every authenticated role may read it.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/sesiones/actual").authenticated()
+                        // Fail-closed standard: an operation that is not declared here is
+                        // denied, never silently open to every authenticated role. A new
+                        // operation must add its own declaration (matcher or
+                        // @PreAuthorize) before it can be reached.
+                        .anyRequest().denyAll())
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((request, response, authException) ->
                                 escribirError(response, HttpServletResponse.SC_UNAUTHORIZED,
