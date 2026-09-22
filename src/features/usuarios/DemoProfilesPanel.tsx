@@ -64,7 +64,7 @@ interface DemoProfilesPanelProps {
   busy?: boolean;
   /** Extra control rendered next to the collapse button (the theme toggle). */
   headerAction?: ReactNode;
-  /** Selecting a profile only fills the form; the caller still posts /auth/login. */
+  /** Selecting a profile only fills the form; the caller still posts /api/v1/sesiones. */
   onSelect: (profile: DemoUser) => void;
 }
 

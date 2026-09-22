@@ -127,7 +127,7 @@ describe('LoginPage', () => {
 
     expect(await screen.findByTestId('home')).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/v1/auth/login',
+      '/api/v1/sesiones',
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ email: ADMIN.email, password: 'rangel123' }),
@@ -239,7 +239,7 @@ describe('LoginPage', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/v1/auth/login',
+      '/api/v1/sesiones',
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({
@@ -278,7 +278,7 @@ describe('LoginPage', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/v1/auth/login',
+      '/api/v1/sesiones',
       expect.objectContaining({
         body: JSON.stringify({ email: DEMO_PROFILE.email, password: DEMO_PROFILE.password }),
       }),

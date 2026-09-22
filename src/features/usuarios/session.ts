@@ -12,7 +12,7 @@ import type { RolUsuario, Usuario } from '@/types/domain';
 
 /**
  * Seeded accounts advertised on the login screen. This is only a shortcut that
- * fills the form: the credentials still travel through POST /auth/login, so the
+ * fills the form: the credentials still travel through POST /api/v1/sesiones, so the
  * server remains the single source of truth for authentication.
  */
 export interface DemoUser {

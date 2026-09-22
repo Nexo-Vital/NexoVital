@@ -53,7 +53,7 @@ async function typeText(text: string, setValue: (value: string) => void): Promis
 }
 
 /**
- * Real sign-in. The credentials travel to POST /auth/login and, on success, the
+ * Real sign-in. The credentials travel to POST /api/v1/sesiones and, on success, the
  * token and the session are persisted before redirecting to the role home
  * (RoleHome decides the landing screen from the stored role). The demo profiles
  * panel shares this exact path: it only fills the form and submits it, so no

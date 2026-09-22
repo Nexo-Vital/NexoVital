@@ -73,7 +73,7 @@ export function logout(): void {
 export async function login(email: string, password: string): Promise<LoginResponse> {
   let response: Response;
   try {
-    response = await fetch(`${API_BASE}/auth/login`, {
+    response = await fetch(`${API_BASE}/sesiones`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -110,7 +110,7 @@ export async function login(email: string, password: string): Promise<LoginRespo
 }
 
 export async function getMe(token: string): Promise<Usuario> {
-  const response = await fetch(`${API_BASE}/auth/me`, {
+  const response = await fetch(`${API_BASE}/sesiones/actual`, {
     headers: { Authorization: `Bearer ${token}` },
   });
 
