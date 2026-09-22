@@ -9,6 +9,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "deploy": "npm run build && wrangler deploy",
+    "deploy:demo": "set VITE_DEMO_MODE=1&& npm run build && wrangler deploy",
     "test": "vitest run",
     "test:run": "vitest run",
     "test:watch": "vitest",
