@@ -38,6 +38,36 @@
   --nv-idle: #5d6b78; /* gray: not declared / maintenance */
   --nv-on-accent: #ffffff;
 
+  /*
+    v2 citizen map — fixed product palette taken from the mockup.
+
+    ADDITIVE and deliberately theme-independent: the citizen screen is painted
+    with the mockup's own colors on top of the app shell, so none of these is
+    redefined in `.dark`. No existing `--nv-*` value changes here, which is what
+    keeps the login screen and the CRUE room looking exactly as they did.
+
+    The traffic-light swatches on that screen still use the semantic `--nv-ok /
+    --nv-warning / --nv-critical / --nv-idle` tokens, because the legend has to
+    match the colors the shared map markers actually draw.
+  */
+  --nv-mint: #f6fcf3;
+  --nv-sky: #cae2ff;
+  --nv-lime: #b7f599;
+  --nv-teal: #5dbaa8;
+  --nv-navy: #255181;
+  --nv-navy-600: #3d6f9e;
+  --nv-navy-400: #4a6e91;
+  --nv-line: #d7e5f7;
+  --nv-amber: #f5c26b;
+  --nv-red: #d9534f;
+  --nv-red-600: #b3403c;
+  --nv-r-sm: 8px;
+  --nv-r-md: 12px;
+  --nv-r-lg: 16px;
+  --nv-r-pill: 999px;
+  --nv-sh-card: 0 2px 8px rgb(37 81 129 / 0.08);
+  --nv-sh-float: 0 8px 24px -4px rgb(37 81 129 / 0.16);
+
   /* shadcn/ui semantic variables -> ops-room palette (no duplicated hex) */
   --background: var(--nv-bg);
   --foreground: var(--nv-text);
@@ -121,6 +151,30 @@
   --color-surface-2: var(--nv-surface-2);
   --color-text: var(--nv-text);
   --color-text-muted: var(--nv-text-muted);
+
+  /*
+    v2 citizen map palette (see :root). Exposed as utilities so the new screen
+    can use `bg-nv-mint`, `text-nv-navy`, `rounded-nv-lg`, `shadow-nv-card`,
+    etc. without inline styles. `inline` keeps the var() reference, so the
+    values stay the single source declared above.
+  */
+  --color-nv-mint: var(--nv-mint);
+  --color-nv-sky: var(--nv-sky);
+  --color-nv-lime: var(--nv-lime);
+  --color-nv-teal: var(--nv-teal);
+  --color-nv-navy: var(--nv-navy);
+  --color-nv-navy-600: var(--nv-navy-600);
+  --color-nv-navy-400: var(--nv-navy-400);
+  --color-nv-line: var(--nv-line);
+  --color-nv-amber: var(--nv-amber);
+  --color-nv-red: var(--nv-red);
+  --color-nv-red-600: var(--nv-red-600);
+  --radius-nv-sm: var(--nv-r-sm);
+  --radius-nv-md: var(--nv-r-md);
+  --radius-nv-lg: var(--nv-r-lg);
+  --radius-nv-pill: var(--nv-r-pill);
+  --shadow-nv-card: var(--nv-sh-card);
+  --shadow-nv-float: var(--nv-sh-float);
 
   /* Typography — IBM Plex family: technical, not the default UI stack. */
   --font-sans:

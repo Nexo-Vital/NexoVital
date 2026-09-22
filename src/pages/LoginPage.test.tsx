@@ -15,7 +15,7 @@ const ADMIN = {
   rol: 'ADMIN_CENTRO_AYUDA',
 };
 
-/** Seeded role that has no screen in this build. */
+/** Citizen account, whose role now lands on the citizen map. */
 const CIUDADANO = {
   id: 'usr-ciudadano',
   nombre: 'Ciudadano Uno',
@@ -165,7 +165,7 @@ describe('LoginPage', () => {
     });
   });
 
-  it('authenticates a role without a screen but does not let it in or keep the session', async () => {
+  it('lets a citizen in and keeps the session, now that the role has a screen', async () => {
     fetchMock.mockResolvedValue(mockResponse(200, { token: 'jwt.ciudadano', usuario: CIUDADANO }));
     const user = userEvent.setup();
     renderLogin();
@@ -174,14 +174,19 @@ describe('LoginPage', () => {
     await user.type(screen.getByLabelText('Contraseña'), 'ciudadano123');
     await user.click(screen.getByRole('button', { name: 'Ingresar' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'El perfil Ciudadano todavía no tiene una pantalla en esta versión.',
-    );
+    // The citizen lands on their screen instead of being logged out with the
+    // old "no screen in this version" message.
+    expect(await screen.findByTestId('home')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(screen.queryByTestId('home')).not.toBeInTheDocument();
-    expect(useSessionStore.getState()).toMatchObject({ user: null, role: null, token: null });
-    expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
-    expect(localStorage.getItem(SESSION_KEY)).toBeNull();
+    expect(useSessionStore.getState()).toMatchObject({
+      token: 'jwt.ciudadano',
+      role: 'CIUDADANO',
+    });
+    expect(localStorage.getItem(TOKEN_KEY)).toBe('jwt.ciudadano');
+    expect(JSON.parse(localStorage.getItem(SESSION_KEY) ?? 'null')).toMatchObject({
+      rol: 'CIUDADANO',
+    });
   });
 
   it('shows the backend message on 401 and stays on the login screen', async () => {

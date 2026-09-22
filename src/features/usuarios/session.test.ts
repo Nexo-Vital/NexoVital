@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SESSION_KEY, TOKEN_KEY } from '@/services/apiClient';
 
-const CIUDADANO = {
-  id: 'usr-ciudadano',
-  nombre: 'Ciudadano Uno',
-  email: 'ciudadano@nexovital.co',
-  rol: 'CIUDADANO',
+/**
+ * Role the contract does not know. Every contract role now has a screen, so a
+ * stale session with an unknown role is what hydration has to drop.
+ */
+const UNKNOWN_ROLE = {
+  id: 'usr-unknown',
+  nombre: 'Unknown Role',
+  email: 'unknown@nexovital.co',
+  rol: 'INSPECTOR',
 };
 
 const ADMIN = {
@@ -32,7 +36,7 @@ describe('session hydration', () => {
 
   it('drops a stored session whose role has no screen and clears storage', async () => {
     localStorage.setItem(TOKEN_KEY, 'jwt.stale');
-    localStorage.setItem(SESSION_KEY, JSON.stringify(CIUDADANO));
+    localStorage.setItem(SESSION_KEY, JSON.stringify(UNKNOWN_ROLE));
 
     const { useSessionStore } = await import('./session');
 

@@ -11,6 +11,9 @@ vi.mock('@/pages/SalaOperacionesPage', () => ({
 vi.mock('@/pages/DriverConsolePage', () => ({
   default: () => <div data-testid="driver-console" />,
 }));
+vi.mock('@/pages/CitizenMapPage', () => ({
+  default: () => <div data-testid="citizen-map" />,
+}));
 
 function renderHome() {
   return render(
@@ -57,11 +60,11 @@ describe('RoleHome', () => {
     expect(screen.queryByTestId('operations-room')).not.toBeInTheDocument();
   });
 
-  it('never falls through a role without a screen to the operations room', () => {
+  it('routes CIUDADANO to the citizen map, never to another role screen', () => {
     signInAs('CIUDADANO');
     renderHome();
 
-    expect(screen.getByTestId('login-screen')).toBeInTheDocument();
+    expect(screen.getByTestId('citizen-map')).toBeInTheDocument();
     expect(screen.queryByTestId('operations-room')).not.toBeInTheDocument();
     expect(screen.queryByTestId('driver-console')).not.toBeInTheDocument();
   });

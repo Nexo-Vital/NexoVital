@@ -27,10 +27,10 @@ describe('role destinations', () => {
     expect(operations.sort()).toEqual(['ADMIN_ACOPIO', 'ADMIN_CENTRO_AYUDA', 'ADMIN_PLATAFORMA']);
   });
 
-  it('treats a role with no screen as having no destination', () => {
-    expect(ROLE_HOME.CIUDADANO).toBeNull();
-    expect(resolveRoleHome('CIUDADANO')).toBeNull();
-    expect(hasRoleHome('CIUDADANO')).toBe(false);
+  it('maps the citizen to the citizen map', () => {
+    expect(ROLE_HOME.CIUDADANO).toBe('CITIZEN_MAP');
+    expect(resolveRoleHome('CIUDADANO')).toBe('CITIZEN_MAP');
+    expect(hasRoleHome('CIUDADANO')).toBe(true);
   });
 
   it('treats a missing or unknown role as having no destination', () => {

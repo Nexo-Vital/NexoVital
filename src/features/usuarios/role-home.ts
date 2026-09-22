@@ -7,16 +7,17 @@ import type { RolUsuario } from '@/types/domain';
  * declare its destination, so adding a role without a screen is a compile-time
  * error rather than a silent fall-through to the CRUE operations room. A `null`
  * value means "this role has no screen in this version": it is blocked at login
- * and on hydration (see LoginPage, guards and session.ts).
+ * and on hydration (see LoginPage, guards and session.ts). Today every contract
+ * role has a screen; the `null` branch still guards an unknown runtime role.
  */
-export type RoleHomeKind = 'OPERATIONS' | 'DRIVER_CONSOLE';
+export type RoleHomeKind = 'OPERATIONS' | 'DRIVER_CONSOLE' | 'CITIZEN_MAP';
 
 export const ROLE_HOME: Record<RolUsuario, RoleHomeKind | null> = {
   ADMIN_PLATAFORMA: 'OPERATIONS',
   ADMIN_CENTRO_AYUDA: 'OPERATIONS',
   ADMIN_ACOPIO: 'OPERATIONS',
   CONDUCTOR: 'DRIVER_CONSOLE',
-  CIUDADANO: null,
+  CIUDADANO: 'CITIZEN_MAP',
 };
 
 /**
