@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ThemeToggle, type ThemeToggleLabels } from '@/features/tema/ThemeToggle';
 import { DemoProfilesPanel } from '@/features/usuarios/DemoProfilesPanel';
+import { hasRoleHome, roleWithoutHomeMessage } from '@/features/usuarios/role-home';
 import { type DemoUser, useSessionStore } from '@/features/usuarios/session';
 import { ApiError } from '@/services/apiClient';
 
@@ -55,13 +56,15 @@ async function typeText(text: string, setValue: (value: string) => void): Promis
 /**
  * Real sign-in. The credentials travel to POST /api/v1/sesiones and, on success, the
  * token and the session are persisted before redirecting to the role home
- * (RoleHome decides the landing screen from the stored role). The demo profiles
- * panel shares this exact path: it only fills the form and submits it, so no
- * session is ever granted without the backend.
+ * (RoleHome decides the landing screen from the stored role). A role with no
+ * screen in this build is not let in: the session is cleared and the reason is
+ * shown on the form. The demo profiles panel shares this exact path: it only
+ * fills the form and submits it, so no session is ever granted without the backend.
  */
 export default function LoginPage() {
   const navigate = useNavigate();
   const login = useSessionStore((state) => state.login);
+  const logout = useSessionStore((state) => state.logout);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -96,7 +99,15 @@ export default function LoginPage() {
     setSubmitting(true);
     setError(null);
     try {
-      await login(emailValue.trim(), passwordValue);
+      const usuario = await login(emailValue.trim(), passwordValue);
+      if (!hasRoleHome(usuario.rol)) {
+        // The account authenticated, but this build has no screen for this
+        // role: drop the session instead of entering a screen that is not its
+        // own, and explain why on the form.
+        logout();
+        setError(roleWithoutHomeMessage(usuario.rol));
+        return;
+      }
       navigate('/', { replace: true });
     } catch (cause) {
       if (cause instanceof ApiError) {

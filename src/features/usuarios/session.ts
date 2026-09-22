@@ -9,6 +9,7 @@ import {
   setToken,
 } from '@/services/apiClient';
 import type { RolUsuario, Usuario } from '@/types/domain';
+import { hasRoleHome } from './role-home';
 
 /**
  * Seeded accounts advertised on the login screen. This is only a shortcut that
@@ -111,6 +112,13 @@ interface SessionState {
   role: RolUsuario | null;
   token: string | null;
   login: (email: string, password: string) => Promise<Usuario>;
+  /**
+   * Replaces the session with the server-authoritative user returned by
+   * GET /api/v1/sesiones/actual. The server wins over any stale localStorage
+   * copy, including the role, so a revoked or re-assigned role is honoured
+   * without a manual sign-out.
+   */
+  applyServerSession: (token: string, usuario: Usuario) => void;
   logout: () => void;
 }
 
@@ -119,6 +127,13 @@ function readStoredSession(): Pick<SessionState, 'user' | 'role' | 'token'> {
   const token = getToken();
   const user = getSession();
   if (!token || !user) {
+    return { user: null, role: null, token: null };
+  }
+  // Defence in depth: a stale session whose role has no screen must not survive
+  // a reload. Drop it so the route guard treats the user as signed out.
+  if (!hasRoleHome(user.rol)) {
+    clearToken();
+    clearSession();
     return { user: null, role: null, token: null };
   }
   return { user, role: user.rol, token };
@@ -132,6 +147,11 @@ export const useSessionStore = create<SessionState>((set) => ({
     setSession(usuario);
     set({ user: usuario, role: usuario.rol, token });
     return usuario;
+  },
+  applyServerSession: (token, usuario) => {
+    setToken(token);
+    setSession(usuario);
+    set({ user: usuario, role: usuario.rol, token });
   },
   logout: () => {
     clearToken();

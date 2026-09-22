@@ -1,10 +1,11 @@
 import { LogOut, Radio, User } from 'lucide-react';
-import { Outlet, useNavigate } from 'react-router-dom';
+import { Navigate, Outlet, useNavigate } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Toaster } from '@/components/ui/toast';
 import { useChannelStatus } from '@/features/observabilidad/use-channel-status';
 import { ThemeToggle } from '@/features/tema/ThemeToggle';
+import { hasRoleHome } from '@/features/usuarios/role-home';
 import { useSessionStore } from '@/features/usuarios/session';
 import { useClock } from '@/hooks/use-clock';
 import { formatClock } from '@/lib/format';
@@ -75,10 +76,16 @@ function ChannelBadge({ state, latencyMs }: { state: ChannelState; latencyMs: nu
 export function AppShell() {
   const navigate = useNavigate();
   const user = useSessionStore((state) => state.user);
+  const role = useSessionStore((state) => state.role);
   const logout = useSessionStore((state) => state.logout);
   const { state, latencyMs } = useChannelStatus();
   const now = useClock();
   useRealtimeConnection();
+
+  // Defence in depth: never render the shell for a role without a screen.
+  if (!hasRoleHome(role)) {
+    return <Navigate to="/login" replace />;
+  }
 
   const handleLogout = () => {
     logout();
