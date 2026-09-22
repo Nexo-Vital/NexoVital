@@ -29,6 +29,8 @@ pnpm-debug.log*
 .env
 .env.*
 !.env.example
+# Committed on purpose: the production build flag, not a secret.
+!.env.production
 
 # OS
 .DS_Store
