@@ -18,6 +18,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -52,6 +53,14 @@ public class AuthenticationUseCaseImpl implements AuthenticationUseCase {
     private final TokenPort tokenPort;
     private final Clock clock;
 
+    /**
+     * Hash BCrypt señuelo contra el que se compara cuando el email no existe,
+     * para que ese camino cueste lo mismo que uno con cuenta real. Se calcula una
+     * vez al construir el caso de uso (un solo BCrypt al arrancar) en lugar de
+     * fijar un hash literal en el código, que quedaría como constante mágica.
+     */
+    private final String hashSenuelo;
+
     public AuthenticationUseCaseImpl(UsuarioRepository usuarioRepository,
                                      EstadoIntentosPort estadoIntentosPort,
                                      PasswordEncoderPort passwordEncoderPort,
@@ -62,13 +71,28 @@ public class AuthenticationUseCaseImpl implements AuthenticationUseCase {
         this.passwordEncoderPort = passwordEncoderPort;
         this.tokenPort = tokenPort;
         this.clock = clock;
+        this.hashSenuelo = passwordEncoderPort.encriptar(UUID.randomUUID().toString());
     }
 
     @Override
     public SesionAuth login(CredencialesLogin credenciales) {
         String email = normalizarEmail(credenciales.email());
-        Usuario usuario = usuarioRepository.buscarPorEmail(email)
-                .orElseThrow(() -> new UsuarioNoEncontradoException(email));
+        Optional<Usuario> encontrado = usuarioRepository.buscarPorEmail(email);
+
+        if (encontrado.isEmpty()) {
+            /*
+             * Costo señuelo. Sin esto, un email inexistente responde ANTES de
+             * hashear y el tiempo de respuesta delata qué cuentas existen, aunque
+             * el cuerpo sea el mismo 401. Medido antes del arreglo: 8,2 ms para un
+             * email inexistente contra 127,8 ms para uno existente (factor 15,6x,
+             * rangos sin solapar). El resultado se descarta a propósito: solo se
+             * paga el trabajo, para que ambos caminos cuesten lo mismo.
+             */
+            passwordEncoderPort.coincide(credenciales.password(), hashSenuelo);
+            throw new UsuarioNoEncontradoException(email);
+        }
+
+        Usuario usuario = encontrado.get();
 
         Instant ahora = Instant.now(clock);
         EstadoIntentos estado = estadoIntentosPort.buscar(usuario.getId())

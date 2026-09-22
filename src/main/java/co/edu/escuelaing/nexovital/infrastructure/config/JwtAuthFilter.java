@@ -1,5 +1,7 @@
 package co.edu.escuelaing.nexovital.infrastructure.config;
 
+import co.edu.escuelaing.nexovital.usuarios.domain.exception.CredencialesInvalidasException;
+import co.edu.escuelaing.nexovital.usuarios.domain.exception.UsuarioNoEncontradoException;
 import co.edu.escuelaing.nexovital.usuarios.domain.port.in.AuthenticationUseCase;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -46,7 +48,14 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                         null,
                         List.of(new SimpleGrantedAuthority("ROLE_" + usuario.getRol().name())));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
-            } catch (RuntimeException e) {
+            } catch (CredencialesInvalidasException | UsuarioNoEncontradoException e) {
+                // Token inválido, o válido pero de un usuario que ya no existe: se
+                // sigue sin autenticar y Spring Security responde 401.
+                //
+                // A propósito NO se atrapa cualquier excepción: un fallo de
+                // infraestructura (la base caída, un bug) debe propagarse y salir
+                // como 500, no disfrazarse de 401. Un 401 falso esconde la falla y
+                // le miente a quien está debuggeando.
                 SecurityContextHolder.clearContext();
             }
         }
