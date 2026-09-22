@@ -43,6 +43,7 @@ interface SalaOperacionesDockProps {
   selectedEmergency: Emergencia | null;
   selectedRequest: SolicitudAmbulancia | null;
   centrosAyuda: CentroAyuda[];
+  selectedCentro?: CentroAyuda | null;
   detailLoading: boolean;
   solicitudes: SolicitudAmbulancia[];
   selectedRequestId: string | null;
@@ -66,6 +67,7 @@ export function SalaOperacionesDock({
   selectedEmergency,
   selectedRequest,
   centrosAyuda,
+  selectedCentro = null,
   detailLoading,
   solicitudes,
   selectedRequestId,
@@ -133,6 +135,7 @@ export function SalaOperacionesDock({
                 selectedEmergency={selectedEmergency}
                 selectedRequest={selectedRequest}
                 centrosAyuda={centrosAyuda}
+                selectedCentro={selectedCentro}
                 loading={detailLoading}
               />
             )}

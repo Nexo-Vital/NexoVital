@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+# Restored from arws-inception/.husky/commit-msg when this repo was split out of
+# the monorepo. Only the conventional format (type(scope): subject) is enforced,
+# never the language: the repo commits in Spanish -- see commitlint.config.mjs.
+msg="$1"
+case "$msg" in
+  /*|[A-Za-z]:*) ;;
+  *) msg="$(git rev-parse --show-toplevel)/$msg" ;;
+esac
+npx commitlint --edit "$msg"

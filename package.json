@@ -15,7 +15,7 @@
     "lint": "biome check .",
     "format": "biome format --write .",
     "typecheck": "tsc --noEmit",
-    "prepare": "cd .. && husky"
+    "prepare": "husky"
   },
   "dependencies": {
     "@maplibre/maplibre-gl-leaflet": "^0.1.4",

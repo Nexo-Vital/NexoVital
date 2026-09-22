@@ -8,12 +8,27 @@ export const SESSION_KEY = 'nexovital.session';
 export class ApiError extends Error {
   status: number;
   codigo?: string;
+  /** Remaining seconds from a 423 `Retry-After` header, when present. */
+  retryAfter?: number;
 
-  constructor(status: number, mensaje: string, codigo?: string) {
+  constructor(status: number, mensaje: string, codigo?: string, retryAfter?: number) {
     super(mensaje);
     this.status = status;
     this.codigo = codigo;
+    this.retryAfter = retryAfter;
   }
+}
+
+/** Parses `Retry-After` as a seconds count; returns null when unparsable. */
+function parseRetryAfter(header: string | null): number | null {
+  if (!header) {
+    return null;
+  }
+  const seconds = Number(header.trim());
+  if (Number.isFinite(seconds) && seconds > 0) {
+    return Math.ceil(seconds);
+  }
+  return null;
 }
 
 export interface LoginResponse {
@@ -58,7 +73,7 @@ export function logout(): void {
 export async function login(email: string, password: string): Promise<LoginResponse> {
   let response: Response;
   try {
-    response = await fetch(`${API_BASE}/auth/login`, {
+    response = await fetch(`${API_BASE}/sesiones`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -67,28 +82,35 @@ export async function login(email: string, password: string): Promise<LoginRespo
     throw new ApiError(0, 'No se pudo conectar al servidor');
   }
 
-  if (response.status === 401) {
-    throw new ApiError(401, 'Credenciales inválidas');
+  if (response.ok) {
+    return (await response.json()) as LoginResponse;
   }
 
-  if (!response.ok) {
-    let codigo: string | undefined;
-    let mensaje = `Error HTTP ${response.status}`;
-    try {
-      const body = (await response.json()) as { codigo?: string; mensaje?: string };
-      codigo = body.codigo;
-      mensaje = body.mensaje ?? mensaje;
-    } catch {
-      // body vacío o no JSON: usar mensaje genérico
-    }
-    throw new ApiError(response.status, mensaje, codigo);
+  let codigo: string | undefined;
+  let mensaje =
+    response.status === 401 ? 'Credenciales inválidas' : `Error HTTP ${response.status}`;
+  try {
+    const body = (await response.json()) as { codigo?: string; mensaje?: string };
+    codigo = body.codigo;
+    mensaje = body.mensaje ?? mensaje;
+  } catch {
+    // body vacío o no JSON: usar el mensaje por defecto del status
   }
 
-  return (await response.json()) as LoginResponse;
+  if (response.status === 423) {
+    throw new ApiError(
+      423,
+      mensaje,
+      codigo,
+      parseRetryAfter(response.headers.get('Retry-After')) ?? undefined,
+    );
+  }
+
+  throw new ApiError(response.status, mensaje, codigo);
 }
 
 export async function getMe(token: string): Promise<Usuario> {
-  const response = await fetch(`${API_BASE}/auth/me`, {
+  const response = await fetch(`${API_BASE}/sesiones/actual`, {
     headers: { Authorization: `Bearer ${token}` },
   });
 

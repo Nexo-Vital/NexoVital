@@ -25,6 +25,8 @@ interface PanelDetalleProps {
   selectedEmergency: Emergencia | null;
   selectedRequest: SolicitudAmbulancia | null;
   centrosAyuda: CentroAyuda[];
+  /** Aid center picked on the map; focuses the supplies tab on its resources. */
+  selectedCentro?: CentroAyuda | null;
   loading?: boolean;
 }
 
@@ -71,6 +73,7 @@ export function PanelDetalle({
   selectedEmergency,
   selectedRequest,
   centrosAyuda,
+  selectedCentro = null,
   loading = false,
 }: PanelDetalleProps) {
   const [tab, setTab] = useState<DetailTab>('request');
@@ -83,8 +86,10 @@ export function PanelDetalle({
       setTab('emergency');
     } else if (selectedRequest) {
       setTab('request');
+    } else if (selectedCentro) {
+      setTab('supplies');
     }
-  }, [selectedAmbulance, selectedEmergency, selectedRequest]);
+  }, [selectedAmbulance, selectedEmergency, selectedRequest, selectedCentro]);
 
   return (
     <aside
@@ -144,7 +149,14 @@ export function PanelDetalle({
 
               <TabsContent value="supplies">
                 <DetailSection>
-                  {centrosAyuda.length === 0 ? (
+                  {selectedCentro ? (
+                    <>
+                      <p className="text-[10px] text-muted-foreground uppercase">
+                        Selected aid center
+                      </p>
+                      <AidCenterDetail center={selectedCentro} />
+                    </>
+                  ) : centrosAyuda.length === 0 ? (
                     <EmptyDetail>No aid centers available.</EmptyDetail>
                   ) : (
                     centrosAyuda.map((center) => (

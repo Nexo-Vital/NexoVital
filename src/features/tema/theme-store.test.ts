@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resolveTheme, THEME_STORAGE_KEY, useThemeStore } from './theme-store';
+import { DEFAULT_THEME, resolveTheme, THEME_STORAGE_KEY, useThemeStore } from './theme-store';
 
 interface MatchMediaController {
   setPrefersDark: (value: boolean) => void;
@@ -36,6 +36,9 @@ describe('theme store', () => {
   beforeEach(() => {
     window.localStorage.clear();
     document.documentElement.classList.remove('dark');
+    for (const meta of document.head.querySelectorAll('meta[name="theme-color"]')) {
+      meta.remove();
+    }
   });
 
   afterEach(() => {
@@ -78,5 +81,26 @@ describe('theme store', () => {
     expect(resolveTheme('system', false)).toBe('light');
     expect(resolveTheme('light', true)).toBe('light');
     expect(resolveTheme('dark', false)).toBe('dark');
+  });
+
+  it('defaults a first visit to light even when the OS prefers dark', () => {
+    expect(DEFAULT_THEME).toBe('light');
+    expect(resolveTheme(DEFAULT_THEME, true)).toBe('light');
+  });
+
+  it('keeps the browser chrome on the background token of the applied theme', () => {
+    mockMatchMedia(false);
+    const meta = document.createElement('meta');
+    meta.setAttribute('name', 'theme-color');
+    meta.setAttribute('content', '#e9eef4');
+    document.head.append(meta);
+    // jsdom does not resolve custom properties from stylesheets, so the token is
+    // stubbed: the contract under test is "we read --nv-bg and mirror it", not
+    // the palette value itself.
+    vi.stubGlobal('getComputedStyle', () => ({ getPropertyValue: () => '#0c131b' }));
+
+    useThemeStore.getState().setTheme('dark');
+
+    expect(meta.getAttribute('content')).toBe('#0c131b');
   });
 });

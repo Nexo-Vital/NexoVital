@@ -27,6 +27,7 @@ interface MapCanvasProps {
   emergencias: Emergencia[];
   centros?: CentroAyuda[];
   selectedAmbulanceId?: string | null;
+  selectedCentroId?: string | null;
   /** Latest selection to glide to, or null to stay put. */
   focus?: Ubicacion | null;
   /** Initial map center; defaults to the city center. */
@@ -41,6 +42,11 @@ interface MapCanvasProps {
   onCenterChange?: (ubicacion: Ubicacion) => void;
   onSelectAmbulance: (id: string) => void;
   onSelectEmergency: (id: string) => void;
+  /**
+   * Fired when an aid-center marker is clicked, so the host can inspect its
+   * resources. Optional: the driver console renders centres for context only.
+   */
+  onSelectCentro?: (id: string) => void;
 }
 
 function MapClickHandler({ onMapClick }: { onMapClick?: (ubicacion: Ubicacion) => void }) {
@@ -164,6 +170,7 @@ export function MapCanvas({
   emergencias,
   centros = [],
   selectedAmbulanceId = null,
+  selectedCentroId = null,
   focus = null,
   center = BOGOTA_CENTER,
   self = null,
@@ -172,6 +179,7 @@ export function MapCanvas({
   onCenterChange,
   onSelectAmbulance,
   onSelectEmergency,
+  onSelectCentro,
 }: MapCanvasProps) {
   const baseLayer = useLayersStore((state) => state.baseLayer);
   const overlays = useLayersStore((state) => state.overlays);
@@ -220,7 +228,8 @@ export function MapCanvas({
           <Marker
             key={center.id}
             position={[center.ubicacion.lat, center.ubicacion.lng]}
-            icon={centerIcon(center)}
+            icon={centerIcon(center, center.id === selectedCentroId)}
+            eventHandlers={onSelectCentro ? { click: () => onSelectCentro(center.id) } : undefined}
           />
         ))}
 

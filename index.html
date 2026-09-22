@@ -3,7 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#060a10" />
+    <!-- Light is the default theme; the inline script below repaints this on dark. -->
+    <meta name="theme-color" content="#e9eef4" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -18,8 +19,17 @@
         try {
           const preference = localStorage.getItem('nexovital.theme');
           const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-          const dark = preference === 'dark' || (preference !== 'light' && prefersDark);
+          // Light is the default, so an absent preference must NOT follow the OS:
+          // only an explicit 'dark', or an explicit 'system' on a dark OS, goes dark.
+          const dark = preference === 'dark' || (preference === 'system' && prefersDark);
           document.documentElement.classList.toggle('dark', dark);
+          // Mirror the `--nv-bg` token onto the browser chrome before first paint.
+          // Literals on purpose: the stylesheet is not applied this early, so the
+          // token cannot be read back here. Keep them in sync with globals.css.
+          const chrome = document.querySelector('meta[name="theme-color"]');
+          if (chrome) {
+            chrome.setAttribute('content', dark ? '#060a10' : '#e9eef4');
+          }
         } catch {
           // localStorage can be unavailable; ThemeProvider applies the class anyway.
         }

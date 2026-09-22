@@ -100,6 +100,7 @@ export default function SalaOperacionesPage({
   const [selectedAmbulanceId, setSelectedAmbulanceId] = useState<string | null>(null);
   const [selectedEmergencyId, setSelectedEmergencyId] = useState<string | null>(null);
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+  const [selectedCentroId, setSelectedCentroId] = useState<string | null>(null);
 
   const selectedAmbulance = useMemo(
     () => fleetUnits.find((item) => item.id === selectedAmbulanceId) ?? null,
@@ -112,6 +113,10 @@ export default function SalaOperacionesPage({
   const selectedRequest = useMemo(
     () => solicitudItems.find((item) => item.id === selectedRequestId) ?? null,
     [solicitudItems, selectedRequestId],
+  );
+  const selectedCentro = useMemo(
+    () => centrosAyuda.find((item) => item.id === selectedCentroId) ?? null,
+    [centrosAyuda, selectedCentroId],
   );
 
   const focus: Ubicacion | null = useMemo(() => {
@@ -133,18 +138,28 @@ export default function SalaOperacionesPage({
     setSelectedAmbulanceId(id);
     setSelectedEmergencyId(null);
     setSelectedRequestId(null);
+    setSelectedCentroId(null);
   };
 
   const selectEmergency = (id: string) => {
     setSelectedEmergencyId(id);
     setSelectedAmbulanceId(null);
     setSelectedRequestId(null);
+    setSelectedCentroId(null);
   };
 
   const selectRequest = (id: string) => {
     setSelectedRequestId(id);
     setSelectedAmbulanceId(null);
     setSelectedEmergencyId(null);
+    setSelectedCentroId(null);
+  };
+
+  const selectCentro = (id: string) => {
+    setSelectedCentroId(id);
+    setSelectedAmbulanceId(null);
+    setSelectedEmergencyId(null);
+    setSelectedRequestId(null);
   };
 
   // --- Mutations: update the store, then mirror them on the realtime topic. ---
@@ -242,10 +257,12 @@ export default function SalaOperacionesPage({
           emergencias={emergencyItems}
           centros={centrosAyuda}
           selectedAmbulanceId={selectedAmbulanceId}
+          selectedCentroId={selectedCentroId}
           focus={focus}
           onCenterChange={setMapCenter}
           onSelectAmbulance={selectAmbulance}
           onSelectEmergency={selectEmergency}
+          onSelectCentro={selectCentro}
         />
         <MapLayersControl className="hidden lg:block" />
         <MapLegend />
@@ -266,6 +283,7 @@ export default function SalaOperacionesPage({
           selectedEmergency={selectedEmergency}
           selectedRequest={selectedRequest}
           centrosAyuda={centrosAyuda}
+          selectedCentro={selectedCentro}
           loading={detailLoading}
         />
       </div>
@@ -292,6 +310,7 @@ export default function SalaOperacionesPage({
         selectedEmergency={selectedEmergency}
         selectedRequest={selectedRequest}
         centrosAyuda={centrosAyuda}
+        selectedCentro={selectedCentro}
         detailLoading={detailLoading}
         solicitudes={solicitudItems}
         selectedRequestId={selectedRequestId}
