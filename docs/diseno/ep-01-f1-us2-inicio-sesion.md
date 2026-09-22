@@ -135,13 +135,20 @@ Regla única, evaluada **en cada intento de login**:
 
 ```sql
 UPDATE usuarios
-   SET intentos_fallidos = intentos_fallidos + 1,
+   SET intentos_fallidos = CASE WHEN intentos_fallidos + 1 >= 3
+                                THEN 3 ELSE intentos_fallidos + 1 END,
        bloqueado_hasta   = CASE WHEN intentos_fallidos + 1 >= 3 THEN :limite ELSE bloqueado_hasta END
  WHERE id = :usuarioId;
 ```
 
+> **Corregido en la tarea 239.** La primera versión de este SQL incrementaba **sin tope**
+> (`intentos_fallidos = intentos_fallidos + 1`), así que el invariante de abajo era **más fuerte que el
+> SQL que lo implementaba**. Bajo concurrencia real, 5 intentos simultáneos dejaron el contador en **5**
+> (medido, caso T6 de la suite): el pre-chequeo de bloqueo vive en Java y varios hilos lo pasan a la vez.
+> El `CASE` que acota el incremento cierra esa brecha; el pre-chequeo en Java no puede hacerlo atómico.
+
 - **Por qué:** dos intentos concurrentes sobre la misma cuenta con el patrón leer-y-luego-escribir perderían incrementos, y la cuenta se bloquearía con menos de 3 fallos registrados. El `README.md:63` lo exige explícitamente: *"los invariantes se garantizan por construcción, con operaciones atómicas en base de datos"*. El idioma ya validado en la referencia es `@Modifying` con `clearAutomatically`/`flushAutomatically` (**REFERENCIA**, `ItemInventarioJpaRepository.java:25`).
-- El diseño fija el invariante verificable: **el contador nunca pierde incrementos y `bloqueado_hasta` nunca se fija antes del tercer fallo.** La tarea 239 lo prueba (caso T6).
+- El diseño fija el invariante verificable: **el contador nunca pierde incrementos, `bloqueado_hasta` nunca se fija antes del tercer fallo, y `intentos_fallidos` nunca supera 3.** La tarea 239 lo prueba (caso T6).
 
 ### D7 — Contrato HTTP del bloqueo
 

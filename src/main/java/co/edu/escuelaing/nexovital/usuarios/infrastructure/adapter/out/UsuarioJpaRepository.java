@@ -16,27 +16,35 @@ public interface UsuarioJpaRepository extends JpaRepository<UsuarioJpaEntity, UU
     boolean existsByEmail(String email);
 
     /**
-     * Incrementa el contador de fallos y dispara el bloqueo en <b>una sola</b>
-     * sentencia (diseño D6). En SQL, las expresiones del {@code SET} leen el
-     * valor previo de la fila: {@code u.intentosFallidos + 1} es el valor que
-     * tendrá el contador tras este fallo.
+     * Increments the failure counter and triggers the lockout in <b>a single</b>
+     * statement (design D6). In SQL the {@code SET} expressions read the row's
+     * previous value, so {@code u.intentosFallidos + 1} is what the counter will
+     * hold after this failure.
      *
-     * <p>Atomicidad: dos intentos concurrentes sobre la misma cuenta no pueden
-     * perder incrementos, y {@code bloqueadoHasta} no se fija antes del fallo
-     * número {@code maxIntentos}. No hay lectura-modificación-escritura en Java.
+     * <p>Atomicity, three requirements: two concurrent attempts on the same
+     * account must not lose increments; {@code bloqueadoHasta} must not be set
+     * before failure number {@code maxIntentos}; and the counter must never
+     * exceed {@code maxIntentos}.
      *
-     * {@code clearAutomatically} descarta el contexto de persistencia tras el
-     * UPDATE y {@code flushAutomatically} vuelca los cambios pendientes antes,
-     * para que la lectura posterior del adaptador vea el valor real.
+     * <p>The counter is clamped here on purpose. The Java-side pre-check cannot
+     * make saturation atomic, so under real concurrency several in-flight requests
+     * pass that check and all increment. Measured before the clamp: 5 parallel
+     * failures left the counter at 5, violating invariants 1 and 2 of the model
+     * (suite case T6). There is no read-modify-write in Java.
      *
-     * @param usuarioId   cuenta afectada
-     * @param limite      instante hasta el cual bloquear si se alcanza el máximo
-     * @param maxIntentos fallos consecutivos que disparan el bloqueo
-     * @return filas afectadas (1 = actualizada, 0 = la cuenta no existe)
+     * {@code clearAutomatically} discards the persistence context after the UPDATE
+     * and {@code flushAutomatically} flushes pending changes before it, so the
+     * adapter's subsequent read observes the real value.
+     *
+     * @param usuarioId   affected account
+     * @param limite      instant to block until, when the maximum is reached
+     * @param maxIntentos consecutive failures that trigger the lockout
+     * @return affected rows (1 = updated, 0 = the account does not exist)
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE UsuarioJpaEntity u "
-            + "SET u.intentosFallidos = u.intentosFallidos + 1, "
+            + "SET u.intentosFallidos = CASE WHEN u.intentosFallidos + 1 >= :maxIntentos "
+            + "                              THEN :maxIntentos ELSE u.intentosFallidos + 1 END, "
             + "    u.bloqueadoHasta = CASE WHEN u.intentosFallidos + 1 >= :maxIntentos "
             + "                            THEN :limite ELSE u.bloqueadoHasta END "
             + "WHERE u.id = :usuarioId")
