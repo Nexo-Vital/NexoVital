@@ -354,4 +354,21 @@ describe('LoginPage', () => {
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('dark');
     expect(document.documentElement.classList.contains('dark')).toBe(true);
   });
+
+  it('shows the brand mark above the sign-in form, in the variant of the active theme', () => {
+    useThemeStore.setState({ theme: 'light', resolvedTheme: 'light' });
+    renderLogin();
+
+    const light = document.querySelector('img[src="/logo.png"]');
+    expect(light).not.toBeNull();
+    expect(light).toHaveAttribute('alt', '');
+
+    cleanup();
+    useThemeStore.setState({ theme: 'dark', resolvedTheme: 'dark' });
+    renderLogin();
+
+    expect(document.querySelector('img[src="/logo-dark.png"]')).not.toBeNull();
+    // Only the active variant is requested: both files weigh hundreds of KB.
+    expect(document.querySelector('img[src="/logo.png"]')).toBeNull();
+  });
 });

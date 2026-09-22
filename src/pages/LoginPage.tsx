@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ThemeToggle, type ThemeToggleLabels } from '@/features/tema/ThemeToggle';
+import { useThemeStore } from '@/features/tema/theme-store';
 import { DemoProfilesPanel } from '@/features/usuarios/DemoProfilesPanel';
 import { hasRoleHome, roleWithoutHomeMessage } from '@/features/usuarios/role-home';
 import { type DemoUser, useSessionStore } from '@/features/usuarios/session';
@@ -23,6 +24,22 @@ const THEME_LABELS: ThemeToggleLabels = {
   aria: (theme, nextTheme) => `Tema: ${theme}. Cambiar a ${nextTheme}.`,
   tooltip: (theme, nextTheme) => `Tema ${theme} — cambiar a ${nextTheme}`,
 };
+
+/**
+ * Brand mark per theme. These are two different artworks, not variants of one.
+ * Measured from the alpha bounding box: the light file's ink fills 98% of its
+ * canvas height while the dark one fills only 84%, and by ink mass the dark would
+ * need ~1.14x the box height just to break even. That measurement alone still
+ * reads smaller on screen — a dark artwork on a dark surface loses its faint
+ * edges — so the dark box deliberately overshoots the measured factor (1.25x) and
+ * both sit above the minimum. Each entry declares its own intrinsic size to keep
+ * the aspect-ratio hint honest, and only the variant of the active theme is ever
+ * requested, which matters: the two files weigh 1.3 MB and 795 KB.
+ */
+const LOGO = {
+  light: { src: '/logo.png', width: 1316, height: 1195, className: 'h-48 sm:h-64' },
+  dark: { src: '/logo-dark.png', width: 1254, height: 1254, className: 'h-60 sm:h-80' },
+} as const;
 
 /**
  * True when the OS asks to reduce motion. Read at click time (instead of
@@ -65,6 +82,8 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const login = useSessionStore((state) => state.login);
   const logout = useSessionStore((state) => state.logout);
+  const resolvedTheme = useThemeStore((state) => state.resolvedTheme);
+  const logo = LOGO[resolvedTheme];
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -154,8 +173,13 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-dvh flex-col bg-background">
-      <div className="flex justify-end p-3">
+    <div className="relative flex min-h-dvh flex-col bg-background">
+      {/*
+        The demo panel floats above the page instead of sitting in the flow, so
+        opening or collapsing it never shifts the sign-in form. It is opaque and
+        limited to 62dvh, which keeps it scrollable rather than covering the form.
+      */}
+      <div className="absolute inset-x-0 top-0 z-20 flex justify-end p-3">
         <DemoProfilesPanel
           disabled={disabled}
           busy={filling}
@@ -164,65 +188,79 @@ export default function LoginPage() {
         />
       </div>
 
-      <div className="grid flex-1 place-items-center p-6 pt-0">
-        <Card className="w-full max-w-sm">
-          <CardHeader>
-            <CardTitle className="text-lg">Nexo Vital</CardTitle>
-            <CardDescription>Acceso a la sala de operaciones CRUE</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            <form className="flex flex-col gap-3" onSubmit={handleSubmit} noValidate>
-              <div className="flex flex-col gap-1">
-                <label htmlFor="login-email" className="nv-label text-muted-foreground">
-                  Correo electrónico
-                </label>
-                <input
-                  id="login-email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  disabled={disabled}
-                  aria-invalid={error !== null}
-                  className={FIELD_CLASS}
-                />
-              </div>
+      <div className="grid flex-1 place-items-center p-6">
+        <div className="flex w-full max-w-sm flex-col items-center">
+          {/*
+            The brand mark belongs to the page background, not to the sign-in
+            card: it sits above the card, on the page's own layer. Decorative on
+            purpose, since the heading right below names the screen.
+          */}
+          <img
+            src={logo.src}
+            alt=""
+            width={logo.width}
+            height={logo.height}
+            className={`mb-6 max-h-[36vh] w-auto ${logo.className}`}
+          />
+          <Card className="w-full">
+            <CardHeader>
+              <CardTitle className="text-lg">Iniciar sesión</CardTitle>
+              <CardDescription>Acceso a la sala de operaciones CRUE</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              <form className="flex flex-col gap-3" onSubmit={handleSubmit} noValidate>
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="login-email" className="nv-label text-muted-foreground">
+                    Correo electrónico
+                  </label>
+                  <input
+                    id="login-email"
+                    name="email"
+                    type="email"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    disabled={disabled}
+                    aria-invalid={error !== null}
+                    className={FIELD_CLASS}
+                  />
+                </div>
 
-              <div className="flex flex-col gap-1">
-                <label htmlFor="login-password" className="nv-label text-muted-foreground">
-                  Contraseña
-                </label>
-                <input
-                  id="login-password"
-                  name="password"
-                  type="password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  disabled={disabled}
-                  aria-invalid={error !== null}
-                  className={FIELD_CLASS}
-                />
-              </div>
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="login-password" className="nv-label text-muted-foreground">
+                    Contraseña
+                  </label>
+                  <input
+                    id="login-password"
+                    name="password"
+                    type="password"
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    disabled={disabled}
+                    aria-invalid={error !== null}
+                    className={FIELD_CLASS}
+                  />
+                </div>
 
-              {error && (
-                <p
-                  role="alert"
-                  className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-destructive text-xs"
-                >
-                  {locked
-                    ? `Cuenta bloqueada temporalmente. Intente nuevamente en ${lockRemaining} s.`
-                    : error}
-                </p>
-              )}
+                {error && (
+                  <p
+                    role="alert"
+                    className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-destructive text-xs"
+                  >
+                    {locked
+                      ? `Cuenta bloqueada temporalmente. Intente nuevamente en ${lockRemaining} s.`
+                      : error}
+                  </p>
+                )}
 
-              <Button type="submit" disabled={disabled} className="w-full">
-                {submitting ? 'Ingresando…' : 'Ingresar'}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+                <Button type="submit" disabled={disabled} className="w-full">
+                  {submitting ? 'Ingresando…' : 'Ingresar'}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );
