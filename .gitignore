@@ -1,0 +1,26 @@
+# Build output
+target/
+*.class
+
+# Logs
+*.log
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local environment — never commit real secrets
+.env
+.env.local
+
+# H2 local database files
+*.mv.db
+*.trace.db
