@@ -2,6 +2,7 @@
 import { cn } from '@/lib/utils';
 import type { CentroAyuda } from '@/types/domain';
 import {
+  CENTER_LEVEL_STYLE,
   CITIZEN_LEVEL_META,
   CITIZEN_UNIT_META,
   centerLevel,
@@ -83,13 +84,19 @@ function NearbyAmbulanceRow({ item }: { item: NearbyAmbulance }) {
 function AidCenterRow({ centro }: { centro: CentroAyuda }) {
   const level = centerLevel(centro);
   const meta = level ? CITIZEN_LEVEL_META[level] : null;
+  // The level colours come from `CENTER_LEVEL_STYLE`, the same table the pin and
+  // the legend swatch read, so the rail chip cannot pick a different red.
+  const swatchStyle = level
+    ? { background: CENTER_LEVEL_STYLE[level].bg, color: CENTER_LEVEL_STYLE[level].fg }
+    : undefined;
   return (
     <li className="flex items-center gap-2.5 rounded-nv-md border border-nv-line p-2.5">
       <span
         className={cn(
           'flex size-9 shrink-0 items-center justify-center rounded-nv-md',
-          meta ? meta.chipClass : 'bg-idle/15 text-idle ring-1 ring-idle/40',
+          !swatchStyle && 'bg-idle/15 text-idle ring-1 ring-idle/40',
         )}
+        style={swatchStyle}
       >
         <Warehouse className="size-4" aria-hidden />
       </span>
@@ -100,8 +107,9 @@ function AidCenterRow({ centro }: { centro: CentroAyuda }) {
       <span
         className={cn(
           'shrink-0 rounded-nv-pill px-2.5 py-1 font-semibold text-xs',
-          meta ? meta.chipClass : 'bg-idle/15 text-idle ring-1 ring-idle/40',
+          !swatchStyle && 'bg-idle/15 text-idle ring-1 ring-idle/40',
         )}
+        style={swatchStyle}
       >
         {meta ? meta.label : 'Sin declarar'}
       </span>

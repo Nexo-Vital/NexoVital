@@ -22,12 +22,14 @@ export function stockRatioPercent(available: number, required: number): number {
   return Math.min(999, Math.round((available / required) * 100));
 }
 
-/** Countdown as mm:ss until an ISO timestamp; never negative. */
+/**
+ * Countdown as `m:ss` (minutes unpadded) until an ISO timestamp; never
+ * negative. The unpadded minute is the mockup's `.count` chip format.
+ */
 export function formatCountdown(targetIso: string, now: Date): string {
   const diffMs = Math.max(0, new Date(targetIso).getTime() - now.getTime());
   const totalSeconds = Math.floor(diffMs / 1000);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return `${pad(minutes)}:${pad(seconds)}`;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }

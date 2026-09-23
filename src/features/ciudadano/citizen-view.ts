@@ -30,34 +30,59 @@ export type CitizenCenterLevel = 'stable' | 'alert' | 'critical';
 
 export const CITIZEN_LEVEL_ORDER: CitizenCenterLevel[] = ['stable', 'alert', 'critical'];
 
+/**
+ * Colour source shared by the map pins and the citizen legend.
+ *
+ * The pin HTML and the legend swatch both read these values, so a lime
+ * "Estable" pin and a lime "Estable" swatch cannot drift apart. Values are
+ * `var(--nv-*)` references to the fixed product palette (never hex), which is
+ * exactly what the shared marker's CSS variables consume.
+ */
+export interface CenterLevelStyle {
+  /** Square background: the pin fill and the legend swatch. */
+  bg: string;
+  /** Glyph colour on that background. */
+  fg: string;
+  /** Badge glyph colour, when it must differ from `fg` (critical). */
+  badgeFg: string;
+}
+
+export const CENTER_LEVEL_STYLE: Record<CitizenCenterLevel, CenterLevelStyle> = {
+  stable: { bg: 'var(--nv-lime)', fg: 'var(--nv-navy)', badgeFg: 'var(--nv-navy)' },
+  alert: { bg: 'var(--nv-amber)', fg: 'var(--nv-navy)', badgeFg: 'var(--nv-navy)' },
+  critical: { bg: 'var(--nv-red)', fg: 'var(--nv-on-accent)', badgeFg: 'var(--nv-red-600)' },
+};
+
+/** Neutral style for a centre that declared nothing; shared with its pin badge. */
+export const NOT_DECLARED_CENTER_STYLE: CenterLevelStyle = {
+  bg: 'var(--nv-idle)',
+  fg: 'var(--nv-navy)',
+  badgeFg: 'var(--nv-navy)',
+};
+
 export interface CitizenLevelMeta {
   label: string;
   /** Summary chip text, e.g. "2 críticos" (pluralized in Spanish). */
   summary: (count: number) => string;
-  /** Solid swatch class, using the same tokens as the shared map markers. */
-  swatchClass: string;
-  /** Tinted chip class, matching the app's badge conventions. */
-  chipClass: string;
 }
 
+/**
+ * Label/summary only: the chip colours are read straight off `CENTER_LEVEL_STYLE`
+ * at render time, so the summary chip and the legend swatch can never disagree
+ * (a `bg-nv-red-600` chip once did, next to a `--nv-red` pin).
+ */
 export const CITIZEN_LEVEL_META: Record<CitizenCenterLevel, CitizenLevelMeta> = {
   stable: {
     label: 'Estable',
     summary: (count) => (count === 1 ? `${count} centro estable` : `${count} centros estables`),
-    swatchClass: 'bg-ok',
-    chipClass: 'bg-ok/15 text-ok ring-1 ring-ok/40',
   },
   alert: {
     label: 'En alerta',
     summary: (count) => `${count} en alerta`,
-    swatchClass: 'bg-warning',
-    chipClass: 'bg-warning/15 text-warning ring-1 ring-warning/40',
   },
   critical: {
     label: 'Crítico',
     summary: (count) => (count === 1 ? `${count} crítico` : `${count} críticos`),
-    swatchClass: 'bg-critical',
-    chipClass: 'bg-critical/15 text-critical ring-1 ring-critical/40',
   },
 };
 
@@ -161,7 +186,12 @@ export const CITIZEN_UNIT_META: Record<CitizenUnitStatus, CitizenUnitMeta> = {
   maintenance: {
     label: 'En mantenimiento',
     chipClass: 'bg-nv-sky text-nv-navy',
-    markerClass: 'bg-nv-sky text-nv-navy',
+    /*
+      The marker maps MAINTENANCE onto the busy variant (the mockup draws only
+      free/busy), so the legend swatch reuses that same navy circle instead of
+      claiming a colour the map never draws.
+    */
+    markerClass: 'bg-nv-navy text-white',
   },
 };
 

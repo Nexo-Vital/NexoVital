@@ -1,20 +1,30 @@
-import { CircleAlert, CircleCheck, Clock } from 'lucide-react';
+import { CircleCheck, Clock, OctagonAlert, TriangleAlert } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Ambulancia } from '@/types/domain';
 import {
+  CENTER_LEVEL_STYLE,
   CITIZEN_LEVEL_META,
   CITIZEN_LEVEL_ORDER,
   CITIZEN_UNIT_META,
   CITIZEN_UNIT_ORDER,
   type CitizenCenterCounts,
+  type CitizenCenterLevel,
   type CitizenUnitStatus,
   countUnitsByStatus,
+  NOT_DECLARED_CENTER_STYLE,
 } from './citizen-view';
+
+const LEVEL_ICON: Record<CitizenCenterLevel, typeof CircleCheck> = {
+  stable: CircleCheck,
+  alert: TriangleAlert,
+  critical: OctagonAlert,
+};
 
 const UNIT_ICON: Record<CitizenUnitStatus, typeof CircleCheck> = {
   free: CircleCheck,
   busy: Clock,
-  maintenance: CircleAlert,
+  // MAINTENANCE maps onto the busy variant on the map, so the swatch matches it.
+  maintenance: Clock,
 };
 
 interface CitizenMapLegendProps {
@@ -24,8 +34,9 @@ interface CitizenMapLegendProps {
 
 /**
  * Live legend for the citizen map. Unlike the CRUE legend (static groups), every
- * row carries the current count, and the center colors reuse the same semantic
- * tokens the shared markers draw with, so the legend cannot drift from the map.
+ * row carries the current count. The centre swatches read `CENTER_LEVEL_STYLE` —
+ * the same table the map pins use — and the unit swatches reuse the pin tokens,
+ * so the legend cannot drift from the map.
  */
 export function CitizenMapLegend({ counts, units }: CitizenMapLegendProps) {
   const unitCounts = countUnitsByStatus(units);
@@ -39,18 +50,29 @@ export function CitizenMapLegend({ counts, units }: CitizenMapLegendProps) {
         Centros de acopio
       </h4>
       <ul className="flex list-none flex-col gap-1.5 p-0">
-        {CITIZEN_LEVEL_ORDER.map((level) => (
-          <li key={level} className="flex items-center gap-2.5 font-medium text-[13px]">
-            <span
-              className={cn('size-3 shrink-0 rounded-full', CITIZEN_LEVEL_META[level].swatchClass)}
-              aria-hidden
-            />
-            {CITIZEN_LEVEL_META[level].label}
-            <b className="tabular ml-auto font-bold">{counts[level]}</b>
-          </li>
-        ))}
+        {CITIZEN_LEVEL_ORDER.map((level) => {
+          const style = CENTER_LEVEL_STYLE[level];
+          const Icon = LEVEL_ICON[level];
+          return (
+            <li key={level} className="flex items-center gap-2.5 font-medium text-[13px]">
+              <span
+                className="flex size-[18px] shrink-0 items-center justify-center rounded-[6px]"
+                style={{ background: style.bg, color: style.fg }}
+                aria-hidden
+              >
+                <Icon className="size-3" aria-hidden />
+              </span>
+              {CITIZEN_LEVEL_META[level].label}
+              <b className="tabular ml-auto font-bold">{counts[level]}</b>
+            </li>
+          );
+        })}
         <li className="flex items-center gap-2.5 font-medium text-[13px]">
-          <span className="size-3 shrink-0 rounded-full bg-idle" aria-hidden />
+          <span
+            className="size-[18px] shrink-0 rounded-[6px]"
+            style={{ background: NOT_DECLARED_CENTER_STYLE.bg }}
+            aria-hidden
+          />
           Sin declarar
           <b className="tabular ml-auto font-bold">{counts.notDeclared}</b>
         </li>
@@ -73,7 +95,7 @@ export function CitizenMapLegend({ counts, units }: CitizenMapLegendProps) {
                   meta.markerClass,
                 )}
               >
-                <Icon className="size-3" aria-hidden />
+                <Icon className="size-[11px]" aria-hidden />
               </span>
               {meta.label}
               <b className="tabular ml-auto font-bold">{unitCounts[status]}</b>

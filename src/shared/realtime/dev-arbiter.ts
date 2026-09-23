@@ -2,6 +2,7 @@ import {
   DESTINATIONS,
   type RealtimeEnvelope,
   type RequestAlreadyTakenPayload,
+  type RequestCancelledPayload,
   type RequestRejectedPayload,
   type RequestTakenPayload,
   type SolicitudMode,
@@ -20,13 +21,29 @@ import {
  *     `request.already-taken { winner }`.
  *   - `solicitud.direct` targets exactly one unit. Only that unit can accept;
  *     an accept from anyone else is rejected with `request.rejected`.
+ *   - A broadcast is only visible to the units in `notificadas` (an L3
+ *     client-side filter). The arbiter enforces the same invariant server-side:
+ *     an accept from a unit that was NOT notified is rejected with
+ *     `request.rejected { reason: 'not-notified' }`, so a client that publishes
+ *     an accept directly — or a stale build without the filter — cannot win a
+ *     request that was never offered to it.
  *   - A `solicitud.reject` from the direct target re-opens the request so it
  *     can be re-sent. Broadcast behaviour is unchanged: rejects pass through.
+ *   - `solicitud.cancel` withdraws the request: the pending metadata and any
+ *     winner are dropped, and `request.cancelled` is fanned out so every client
+ *     stops offering a mission nobody asked for.
  */
 export interface ArbiterRequest {
   mode: SolicitudMode;
   targetAmbulanceId?: string;
   open: boolean;
+  /**
+   * Units this request was delivered to. Direct mode always targets one unit;
+   * broadcast mode copies the payload's `notificadas`. It is `undefined` when a
+   * legacy broadcast frame carries no list, in which case enforcement is
+   * skipped rather than rejecting every unit.
+   */
+  notificadas?: string[];
 }
 
 /** requestId -> request metadata. Persistent for the life of the relay. */
@@ -55,9 +72,17 @@ export function resolveArbiterMessages(
         mode: 'direct',
         targetAmbulanceId: payload.targetAmbulanceId,
         open: true,
+        notificadas: [payload.targetAmbulanceId],
       });
     } else {
-      requests.set(payload.requestId, { mode: 'broadcast', open: true });
+      requests.set(payload.requestId, {
+        mode: 'broadcast',
+        open: true,
+        // A broadcast frames its recipients in `notificadas`; keep the snapshot
+        // the arbiter will enforce so a later accept is checked against the
+        // exact set that was notified for THIS round.
+        notificadas: Array.isArray(payload.notificadas) ? [...payload.notificadas] : undefined,
+      });
     }
     return [raw];
   }
@@ -75,6 +100,23 @@ export function resolveArbiterMessages(
     return [raw];
   }
 
+  if (payload.type === 'solicitud.cancel') {
+    const { requestId } = payload;
+    if (typeof requestId !== 'string') {
+      return [raw];
+    }
+    // Withdraw the request: drop any winner and the pending metadata, then tell
+    // every client to remove it. A later broadcast of the same id re-opens it.
+    winners.delete(requestId);
+    requests.delete(requestId);
+    return [
+      serialize(DESTINATIONS.solicitudes, {
+        type: 'request.cancelled',
+        requestId,
+      } satisfies RequestCancelledPayload),
+    ];
+  }
+
   if (payload.type === 'solicitud.accept') {
     const { requestId, ambulanceId } = payload;
     if (typeof requestId !== 'string' || typeof ambulanceId !== 'string') {
@@ -90,6 +132,26 @@ export function resolveArbiterMessages(
           requestId,
           rejected: ambulanceId,
           reason: 'not-targeted',
+        } satisfies RequestRejectedPayload),
+      ];
+    }
+
+    if (
+      request?.mode === 'broadcast' &&
+      Array.isArray(request.notificadas) &&
+      !request.notificadas.includes(ambulanceId)
+    ) {
+      // L3 parity: the broadcast's inbox filter lives in the client, so without
+      // this check a client that publishes the accept directly (or a stale
+      // build) could win a request it was never notified about. The arbiter
+      // owns the invariant on both transports (Vite dev relay and the Worker
+      // `RealtimeRoom`, which share this function).
+      return [
+        serialize(DESTINATIONS.solicitudes, {
+          type: 'request.rejected',
+          requestId,
+          rejected: ambulanceId,
+          reason: 'not-notified',
         } satisfies RequestRejectedPayload),
       ];
     }

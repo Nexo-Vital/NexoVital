@@ -1,9 +1,10 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { useSessionStore } from '@/features/usuarios/session';
 import type { RolUsuario } from '@/types/domain';
-import { RoleHome } from './AppRouter';
+import { AppRouter, RoleHome } from './AppRouter';
 
 vi.mock('@/pages/SalaOperacionesPage', () => ({
   default: () => <div data-testid="operations-room" />,
@@ -14,6 +15,20 @@ vi.mock('@/pages/DriverConsolePage', () => ({
 vi.mock('@/pages/CitizenMapPage', () => ({
   default: () => <div data-testid="citizen-map" />,
 }));
+
+// AppShell (the compact chrome for non-citizen roles) owns the realtime
+// connection and the channel badge; both are irrelevant to shell selection.
+vi.mock('@/shared/realtime/use-realtime-connection', () => ({
+  useRealtimeConnection: () => undefined,
+}));
+vi.mock('@/features/observabilidad/use-channel-status', () => ({
+  useChannelStatus: () => ({ state: 'CONNECTED', latencyMs: null }),
+}));
+// Token revalidation is not under test: RequireAuth just passes through.
+vi.mock('@/features/usuarios/guards', async () => {
+  const { Outlet } = await import('react-router-dom');
+  return { RequireAuth: () => <Outlet /> };
+});
 
 function renderHome() {
   return render(
@@ -67,5 +82,53 @@ describe('RoleHome', () => {
     expect(screen.getByTestId('citizen-map')).toBeInTheDocument();
     expect(screen.queryByTestId('operations-room')).not.toBeInTheDocument();
     expect(screen.queryByTestId('driver-console')).not.toBeInTheDocument();
+  });
+});
+
+describe('AppRouter shell selection', () => {
+  beforeEach(() => useSessionStore.setState({ user: null, role: null, token: null }));
+  afterEach(() => {
+    cleanup();
+    useSessionStore.setState({ user: null, role: null, token: null });
+  });
+
+  function renderApp() {
+    return render(
+      <TooltipProvider>
+        <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <AppRouter />
+        </MemoryRouter>
+      </TooltipProvider>,
+    );
+  }
+
+  it('gives the citizen the v2 frame', () => {
+    signInAs('CIUDADANO');
+    renderApp();
+
+    expect(screen.getAllByText('NexoVital').length).toBeGreaterThan(0);
+    expect(screen.queryByText('CRUE Operations')).not.toBeInTheDocument();
+  });
+
+  it('keeps the compact shell for the CRUE roles', () => {
+    signInAs('ADMIN_CENTRO_AYUDA');
+    renderApp();
+
+    expect(screen.getByText('CRUE Operations')).toBeInTheDocument();
+    expect(screen.queryByText('NexoVital')).not.toBeInTheDocument();
+  });
+
+  it('gives the driver the v2 frame with the unit suffix in the topbar', () => {
+    signInAs('CONDUCTOR');
+    renderApp();
+
+    expect(screen.getAllByText('NexoVital').length).toBeGreaterThan(0);
+    expect(screen.queryByText('CRUE Operations')).not.toBeInTheDocument();
+    expect(screen.getByText('Conductor de ambulancia · AMB-01')).toBeInTheDocument();
+
+    const bar = screen.getByRole('complementary', { name: 'Barra lateral' });
+    expect(within(bar).getByText('Mapa')).toHaveAttribute('aria-current', 'page');
+    expect(within(bar).getByText('Solicitudes')).not.toHaveAttribute('aria-current');
+    expect(within(bar).getByText('Mi unidad')).not.toHaveAttribute('aria-current');
   });
 });

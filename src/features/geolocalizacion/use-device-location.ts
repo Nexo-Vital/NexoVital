@@ -9,7 +9,7 @@ export interface DeviceLocationState {
   position: Ubicacion | null;
   heading: number | null;
   status: GeolocationStatus;
-  /** True when `position` comes from the "Simulate my position" control. */
+  /** True when `position` comes from the "Simular posición" control. */
   simulated: boolean;
   /** Move the simulated marker (used by tap-to-move and drag). */
   setSimulatedPosition: (position: Ubicacion) => void;
@@ -20,9 +20,9 @@ export interface DeviceLocationState {
 /** Bogotá center: where the simulated marker starts. */
 export const SIMULATED_START: Ubicacion = { lat: 4.653, lng: -74.06 };
 
-/** Plain-language explanation shown when the browser has no geolocation. */
+/** Spanish explanation shown when the browser has no geolocation. */
 export const INSECURE_CONTEXT_MESSAGE =
-  'Location needs HTTPS. Run `npm run dev:https` and accept the certificate on the phone.';
+  'La ubicación necesita HTTPS. Ejecuta `npm run dev:https` y acepta el certificado en el teléfono.';
 
 /**
  * Insecure origins do not expose `navigator.geolocation` at all, so a missing

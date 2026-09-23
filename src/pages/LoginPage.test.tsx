@@ -114,7 +114,7 @@ function renderLogin() {
 }
 
 async function fillCredentials(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(screen.getByLabelText('Correo electrónico'), ADMIN.email);
+  await user.type(screen.getByLabelText('Usuario o correo'), ADMIN.email);
   await user.type(screen.getByLabelText('Contraseña'), 'rangel123');
 }
 
@@ -145,7 +145,7 @@ describe('LoginPage', () => {
     renderLogin();
 
     await fillCredentials(user);
-    await user.click(screen.getByRole('button', { name: 'Ingresar' }));
+    await user.click(screen.getByRole('button', { name: 'Iniciar sesión' }));
 
     expect(await screen.findByTestId('home')).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
@@ -170,9 +170,9 @@ describe('LoginPage', () => {
     const user = userEvent.setup();
     renderLogin();
 
-    await user.type(screen.getByLabelText('Correo electrónico'), CIUDADANO.email);
+    await user.type(screen.getByLabelText('Usuario o correo'), CIUDADANO.email);
     await user.type(screen.getByLabelText('Contraseña'), 'ciudadano123');
-    await user.click(screen.getByRole('button', { name: 'Ingresar' }));
+    await user.click(screen.getByRole('button', { name: 'Iniciar sesión' }));
 
     // The citizen lands on their screen instead of being logged out with the
     // old "no screen in this version" message.
@@ -197,7 +197,7 @@ describe('LoginPage', () => {
     renderLogin();
 
     await fillCredentials(user);
-    await user.click(screen.getByRole('button', { name: 'Ingresar' }));
+    await user.click(screen.getByRole('button', { name: 'Iniciar sesión' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Credenciales inválidas');
     expect(screen.queryByTestId('home')).not.toBeInTheDocument();
@@ -216,15 +216,15 @@ describe('LoginPage', () => {
     renderLogin();
 
     await fillCredentials(user);
-    await user.click(screen.getByRole('button', { name: 'Ingresar' }));
+    await user.click(screen.getByRole('button', { name: 'Iniciar sesión' }));
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent(/bloqueada/i);
     expect(alert).toHaveTextContent('3');
 
-    expect(screen.getByLabelText('Correo electrónico')).toBeDisabled();
+    expect(screen.getByLabelText('Usuario o correo')).toBeDisabled();
     expect(screen.getByLabelText('Contraseña')).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Ingresar' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Iniciar sesión' })).toBeDisabled();
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('2'), {
       timeout: 3000,
@@ -267,19 +267,19 @@ describe('LoginPage', () => {
     fireEvent.click(profileRow(DEMO_PROFILE.email));
 
     // First keystroke lands synchronously, the rest are driven by the timer queue.
-    expect(screen.getByLabelText('Correo electrónico')).toHaveValue(DEMO_PROFILE.email.slice(0, 1));
+    expect(screen.getByLabelText('Usuario o correo')).toHaveValue(DEMO_PROFILE.email.slice(0, 1));
 
     const progressMs = 40;
     await act(async () => {
       await vi.advanceTimersByTimeAsync(progressMs);
     });
-    expect(screen.getByLabelText('Correo electrónico')).toHaveValue(DEMO_PROFILE.email.slice(0, 3));
+    expect(screen.getByLabelText('Usuario o correo')).toHaveValue(DEMO_PROFILE.email.slice(0, 3));
 
     // The full credential is on screen before the run submits it.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(TYPING_MS - progressMs);
     });
-    expect(screen.getByLabelText('Correo electrónico')).toHaveValue(DEMO_PROFILE.email);
+    expect(screen.getByLabelText('Usuario o correo')).toHaveValue(DEMO_PROFILE.email);
     expect(screen.getByLabelText('Contraseña')).toHaveValue(DEMO_PROFILE.password);
     expect(fetchMock).not.toHaveBeenCalled();
 
@@ -320,7 +320,7 @@ describe('LoginPage', () => {
       await vi.advanceTimersByTimeAsync(TYPING_MS);
     });
     // The second click never started a run, so the first profile is still the one typed.
-    expect(screen.getByLabelText('Correo electrónico')).toHaveValue(DEMO_PROFILE.email);
+    expect(screen.getByLabelText('Usuario o correo')).toHaveValue(DEMO_PROFILE.email);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(AUTOFILL_BUDGET_MS);
@@ -342,7 +342,7 @@ describe('LoginPage', () => {
 
     fireEvent.click(profileRow(DEMO_PROFILE.email));
 
-    expect(screen.getByLabelText('Correo electrónico')).toHaveValue(DEMO_PROFILE.email);
+    expect(screen.getByLabelText('Usuario o correo')).toHaveValue(DEMO_PROFILE.email);
     expect(screen.getByLabelText('Contraseña')).toHaveValue(DEMO_PROFILE.password);
     expect(await screen.findByTestId('home')).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -358,7 +358,7 @@ describe('LoginPage', () => {
     fireEvent.click(profileRow(DEMO_PROFILE.email));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Credenciales inválidas');
-    expect(screen.getByLabelText('Correo electrónico')).toHaveValue(DEMO_PROFILE.email);
+    expect(screen.getByLabelText('Usuario o correo')).toHaveValue(DEMO_PROFILE.email);
     expect(screen.getByLabelText('Contraseña')).toHaveValue(DEMO_PROFILE.password);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
@@ -378,20 +378,60 @@ describe('LoginPage', () => {
     expect(document.documentElement.classList.contains('dark')).toBe(true);
   });
 
-  it('shows the brand mark above the sign-in form, in the variant of the active theme', () => {
+  it('toggles the password visibility with a Spanish-labeled eye button', async () => {
+    const user = userEvent.setup();
+    renderLogin();
+
+    const password = screen.getByLabelText('Contraseña');
+    expect(password).toHaveAttribute('type', 'password');
+
+    // Hidden by default: the control offers to reveal the password.
+    await user.click(screen.getByRole('button', { name: 'Mostrar contraseña' }));
+    expect(password).toHaveAttribute('type', 'text');
+
+    // Now visible: the same control offers to hide it again.
+    await user.click(screen.getByRole('button', { name: 'Ocultar contraseña' }));
+    expect(password).toHaveAttribute('type', 'password');
+  });
+
+  it('renders the citizen title and the three perks in the brand panel', () => {
+    renderLogin();
+
+    expect(
+      screen.getByRole('heading', { name: 'Coordinación logística para emergencias' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Ambulancias cercanas, disponibles u ocupadas')).toBeInTheDocument();
+    expect(screen.getByText('Centros de acopio con su semáforo de insumos')).toBeInTheDocument();
+    expect(screen.getByText('Donaciones que se ven reflejadas al instante')).toBeInTheDocument();
+  });
+
+  it('shows the MVP registration notice on the sign-in card', () => {
+    renderLogin();
+
+    expect(
+      screen.getByText(
+        'En el MVP no hay registro: las cuentas de ciudadano y de conductor vienen precargadas.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps the inline brand mark fixed across themes instead of a themed raster logo', () => {
     useThemeStore.setState({ theme: 'light', resolvedTheme: 'light' });
     renderLogin();
 
-    const light = document.querySelector('img[src="/logo.png"]');
-    expect(light).not.toBeNull();
-    expect(light).toHaveAttribute('alt', '');
+    expect(screen.getByText('NexoVital')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Coordinación logística para emergencias' }),
+    ).toBeInTheDocument();
 
     cleanup();
     useThemeStore.setState({ theme: 'dark', resolvedTheme: 'dark' });
     renderLogin();
 
-    expect(document.querySelector('img[src="/logo-dark.png"]')).not.toBeNull();
-    // Only the active variant is requested: both files weigh hundreds of KB.
+    // The surface is fixed: the brand mark is inline and no raster logo is
+    // requested in either theme (the old files weighed hundreds of KB each).
+    expect(screen.getByText('NexoVital')).toBeInTheDocument();
     expect(document.querySelector('img[src="/logo.png"]')).toBeNull();
+    expect(document.querySelector('img[src="/logo-dark.png"]')).toBeNull();
   });
 });

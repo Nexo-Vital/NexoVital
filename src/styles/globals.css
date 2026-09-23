@@ -46,9 +46,10 @@
     redefined in `.dark`. No existing `--nv-*` value changes here, which is what
     keeps the login screen and the CRUE room looking exactly as they did.
 
-    The traffic-light swatches on that screen still use the semantic `--nv-ok /
-    --nv-warning / --nv-critical / --nv-idle` tokens, because the legend has to
-    match the colors the shared map markers actually draw.
+    The map pins and the traffic-light swatches read THIS fixed palette, not the
+    semantic tokens: `CENTER_LEVEL_STYLE` / `NOT_DECLARED_CENTER_STYLE` in
+    citizen-view.ts point at `--nv-lime / --nv-amber / --nv-red / --nv-idle`, so
+    the pin and its legend swatch always resolve to the same color.
   */
   --nv-mint: #f6fcf3;
   --nv-sky: #cae2ff;
@@ -61,6 +62,7 @@
   --nv-amber: #f5c26b;
   --nv-red: #d9534f;
   --nv-red-600: #b3403c;
+  --nv-red-soft: #fbeaea;
   --nv-r-sm: 8px;
   --nv-r-md: 12px;
   --nv-r-lg: 16px;
@@ -169,6 +171,7 @@
   --color-nv-amber: var(--nv-amber);
   --color-nv-red: var(--nv-red);
   --color-nv-red-600: var(--nv-red-600);
+  --color-nv-red-soft: var(--nv-red-soft);
   --radius-nv-sm: var(--nv-r-sm);
   --radius-nv-md: var(--nv-r-md);
   --radius-nv-lg: var(--nv-r-lg);
@@ -265,26 +268,20 @@
     justify-content: center;
     width: 30px;
     height: 30px;
-    transition: transform 0.25s ease-out;
   }
 
   /*
-    Shared frame for every SVG marker shape — the top-down vehicle, the
-    emergency alert pin and the aid-center building. One size and one shadow
-    keep the three silhouettes visually consistent. Declared BEFORE every state
-    modifier, so specificity only ever descends down the sheet.
+    Shared frame for every SVG marker shape. The emergency pin keeps this base
+    26px drop-shadow silhouette; the centre, unit and self shapes override size,
+    radius and shadow below, so each silhouette reads at its own scale.
   */
   .nv-marker__shape {
+    position: relative;
     display: grid;
     place-items: center;
     width: 26px;
     height: 26px;
     filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.35));
-  }
-
-  /* Only the vehicle rotates, so it eases into its new heading. */
-  .nv-marker__vehicle {
-    transition: transform 0.25s ease-out;
   }
 
   .nv-marker__glyph {
@@ -293,43 +290,142 @@
     color: var(--nv-marker-color);
   }
 
+  /*
+    White pill under the marker; the "you are here" label flips to navy. Colours
+    are fixed (on-accent/navy), not the theme-flipping surface tokens, so the
+    shared markers look the same in either theme, as the mockup does.
+  */
   .nv-marker__label {
     position: absolute;
-    top: 20px;
-    padding: 0 3px;
-    border: 1px solid var(--nv-border);
-    border-radius: 3px;
-    background: var(--nv-surface);
-    color: var(--nv-text);
-    font-family: var(--font-mono);
-    font-size: 10px;
+    top: calc(100% + 4px);
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 3px 9px;
+    border-radius: 9999px;
+    background: var(--nv-on-accent);
+    color: var(--nv-navy);
+    box-shadow: var(--nv-sh-card);
+    font-size: 11.5px;
     font-weight: 600;
     line-height: 1.2;
     white-space: nowrap;
   }
 
+  .nv-marker--self .nv-marker__label {
+    background: var(--nv-navy);
+    color: var(--nv-on-accent);
+  }
+
+  /* The badge is the shape's second, always-on channel: colour + icon. */
+  .nv-marker__badge {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: 2px solid var(--nv-on-accent);
+    border-radius: 50%;
+    background: var(--nv-on-accent);
+    box-shadow: 0 1px 4px color-mix(in srgb, var(--nv-navy) 25%, transparent);
+  }
+
+  /* ---- aid-centre pin: 48px rounded square, badge top-right ---- */
+  .nv-marker--center {
+    width: 48px;
+    height: 48px;
+  }
+
+  .nv-marker--center .nv-marker__shape {
+    width: 48px;
+    height: 48px;
+    border: 3px solid var(--nv-on-accent);
+    border-radius: 14px;
+    background: var(--nv-marker-bg);
+    color: var(--nv-marker-color);
+    box-shadow: var(--nv-sh-float);
+    filter: none;
+  }
+
+  .nv-marker--center .nv-marker__glyph {
+    width: 22px;
+    height: 22px;
+  }
+
+  .nv-marker--center .nv-marker__badge {
+    top: -9px;
+    right: -9px;
+    --nv-marker-color: var(--nv-marker-badge-color);
+  }
+
+  /* ---- ambulance pin: 40px circle, badge bottom-right ---- */
+  .nv-marker--unit {
+    width: 40px;
+    height: 40px;
+  }
+
+  .nv-marker--unit .nv-marker__shape {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--nv-on-accent);
+    border-radius: 50%;
+    background: var(--nv-navy);
+    --nv-marker-color: var(--nv-on-accent);
+    box-shadow: var(--nv-sh-float);
+    filter: none;
+  }
+
+  .nv-marker--unit .nv-marker__glyph {
+    width: 18px;
+    height: 18px;
+  }
+
+  .nv-marker--unit .nv-marker__badge {
+    bottom: -7px;
+    right: -7px;
+  }
+
+  /* Free = white/teal/check; every other state = navy/white/clock. */
+  .nv-marker--available .nv-marker__shape {
+    border-color: var(--nv-teal);
+    background: var(--nv-on-accent);
+    --nv-marker-color: var(--nv-navy);
+  }
+
+  .nv-marker--available .nv-marker__badge {
+    background: var(--nv-lime);
+    --nv-marker-color: var(--nv-navy);
+  }
+
+  .nv-marker--assigned .nv-marker__badge,
+  .nv-marker--en_route .nv-marker__badge,
+  .nv-marker--maintenance .nv-marker__badge {
+    background: var(--nv-sky);
+    --nv-marker-color: var(--nv-navy);
+  }
+
+  /* ---- "you are here": 24px dot with a STATIC ring (no animation) ---- */
+  .nv-marker--self {
+    width: 24px;
+    height: 24px;
+  }
+
+  .nv-marker--self .nv-marker__shape {
+    width: 24px;
+    height: 24px;
+    border: 4px solid var(--nv-on-accent);
+    border-radius: 50%;
+    background: var(--nv-navy-600);
+    box-shadow:
+      0 0 0 12px color-mix(in srgb, var(--nv-navy-600) 20%, transparent),
+      var(--nv-sh-float);
+    filter: none;
+  }
+
   /*
-    One colour per state, declared once and read by every marker shape: vehicles,
-    the emergency pin and the aid-center building. Splitting it per shape would
-    let them drift apart.
+    Emergency pins keep their semantic level colours: the v2 redesign does not
+    cover events, so these tokens stay theme-aware on purpose.
   */
-  .nv-marker--available {
-    --nv-marker-color: var(--nv-ok);
-  }
-
-  .nv-marker--assigned,
-  .nv-marker--high {
-    --nv-marker-color: var(--nv-assign);
-  }
-
-  .nv-marker--en_route {
-    --nv-marker-color: var(--nv-event);
-  }
-
-  .nv-marker--maintenance {
-    --nv-marker-color: var(--nv-idle);
-  }
-
   .nv-marker--low {
     --nv-marker-color: var(--nv-ok);
   }
@@ -338,21 +434,12 @@
     --nv-marker-color: var(--nv-warning);
   }
 
+  .nv-marker--high {
+    --nv-marker-color: var(--nv-assign);
+  }
+
   .nv-marker--critical {
     --nv-marker-color: var(--nv-critical);
-  }
-
-  /*
-    Aid centers take their colour from the WORST item in their inventory, which
-    markers.ts writes into `--nv-marker-color` as an inline `var(--nv-*)` token.
-    This class value is the neutral fallback, used if no level was supplied.
-  */
-  .nv-marker--center {
-    --nv-marker-color: var(--nv-idle);
-  }
-
-  .nv-marker--self {
-    --nv-marker-color: var(--nv-event);
   }
 
   /* Selection outlines the glyph of whichever shape the marker uses. */
@@ -361,48 +448,106 @@
     outline-offset: 2px;
   }
 
-  /*
-    "You are here" marker for the driver console: the same vehicle glyph inside a
-    pulsing ring, so the driver's own unit reads differently from the rest of the
-    fleet.
-  */
-  .nv-marker__ring {
-    position: absolute;
-    width: 30px;
-    height: 30px;
-    border: 2px solid var(--nv-marker-color);
-    border-radius: 9999px;
-    animation: nv-self-pulse 1.6s ease-out infinite;
+  /* Requester pin glyph; declared before the badge glyph rules so the cascade
+     keeps ascending in specificity. */
+  .nv-marker--request .nv-marker__glyph {
+    width: 20px;
+    height: 20px;
   }
 
   /*
-    Simulated positions are labelled (SIM) and warned in the warning token. This
-    rule must stay LAST among the state colours: it has the same specificity as
-    them and overrides the variable for whichever shape the marker uses.
+    Badge glyph sizes are declared last, after every lower-specificity glyph
+    rule, so the cascade never descends in specificity.
   */
-  .nv-marker--sim {
-    --nv-marker-color: var(--nv-warning);
+  .nv-marker--center .nv-marker__badge .nv-marker__glyph {
+    width: 13px;
+    height: 13px;
   }
 
+  .nv-marker--unit .nv-marker__badge .nv-marker__glyph {
+    width: 11px;
+    height: 11px;
+  }
+
+  /*
+    Simulated positions are labelled (SIM). This rule must stay LAST among the
+    label variants: it has the self label's specificity, so order decides.
+  */
   .nv-marker--sim .nv-marker__label {
-    border-style: dashed;
-    color: var(--nv-warning);
+    border: 1px dashed var(--nv-amber);
+    color: var(--nv-amber);
+  }
+
+  /* ---- "notified" unit ring: static teal halo, no animation ---- */
+  .nv-marker--notified .nv-marker__shape::before {
+    content: "";
+    position: absolute;
+    inset: -9px;
+    border: 2px solid var(--nv-teal);
+    border-radius: 50%;
+    opacity: 0.7;
+    pointer-events: none;
+  }
+
+  /*
+    ---- pending requester pin (`pinReq`) ----
+    44px red circle with a person glyph plus two STATIC red rings. The rings are
+    decoration, not a geographic radius, and never animate.
+  */
+  .nv-marker--request {
+    width: 92px;
+    height: 92px;
+  }
+
+  .nv-marker--request .nv-marker__shape {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 44px;
+    height: 44px;
+    border: 3px solid var(--nv-on-accent);
+    border-radius: 50%;
+    background: var(--nv-red-600);
+    --nv-marker-color: var(--nv-on-accent);
+    box-shadow: var(--nv-sh-float);
+    filter: none;
+  }
+
+  .nv-marker__request-ring {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    border: 2px solid var(--nv-red);
+    border-radius: 50%;
+    pointer-events: none;
+  }
+
+  .nv-marker__request-ring--outer {
+    width: 92px;
+    height: 92px;
+    opacity: 0.45;
+  }
+
+  .nv-marker__request-ring--inner {
+    width: 64px;
+    height: 64px;
+    opacity: 0.75;
+  }
+
+  /* Dashed requester -> driver connector; decorative, not a route. */
+  .nv-connector-casing {
+    stroke: var(--nv-on-accent);
+    stroke-opacity: 0.7;
+  }
+
+  .nv-connector-line {
+    stroke: var(--nv-navy-400);
   }
 
   .nv-pulse {
     animation: nv-pulse 1.4s ease-in-out infinite;
-  }
-}
-
-@keyframes nv-self-pulse {
-  0% {
-    opacity: 0.9;
-    transform: scale(0.6);
-  }
-
-  100% {
-    opacity: 0;
-    transform: scale(1.7);
   }
 }
 

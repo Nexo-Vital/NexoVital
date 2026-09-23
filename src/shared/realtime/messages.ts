@@ -93,17 +93,23 @@ export interface EmergencyUpsertPayload {
  * Direct mode is a different CAD pattern: a request is addressed to ONE unit,
  * so there is no race. The arbiter still enforces "only the target can accept"
  * so a stale client cannot steal a request that was never offered to it.
+ *
+ * The requester may also WITHDRAW an open request: `solicitud.cancel` drops the
+ * pending request server-side and fans out `request.cancelled`, so every driver
+ * inbox stops offering a mission nobody is asking for anymore.
  */
 export type SolicitudMode = 'broadcast' | 'direct';
 
 export type SolicitudType =
   | 'solicitud.broadcast'
   | 'solicitud.direct'
+  | 'solicitud.cancel'
   | 'solicitud.accept'
   | 'solicitud.reject'
   | 'request.taken'
   | 'request.already-taken'
-  | 'request.rejected';
+  | 'request.rejected'
+  | 'request.cancelled';
 
 export interface SolicitudBroadcastPayload {
   type: 'solicitud.broadcast';
@@ -149,6 +155,18 @@ export interface SolicitudAcceptPayload {
   ambulanceId: string;
 }
 
+/** The requester withdraws an open request (client -> relay). */
+export interface SolicitudCancelPayload {
+  type: 'solicitud.cancel';
+  requestId: string;
+}
+
+/** The relay acknowledged the withdrawal; every client drops the request. */
+export interface RequestCancelledPayload {
+  type: 'request.cancelled';
+  requestId: string;
+}
+
 export interface SolicitudRejectPayload {
   type: 'solicitud.reject';
   requestId: string;
@@ -174,14 +192,21 @@ export interface RequestRejectedPayload {
   type: 'request.rejected';
   requestId: string;
   rejected: string;
-  reason: 'not-targeted' | 'rejected';
+  /**
+   * `not-targeted`: a direct request accepted by a unit other than its target.
+   * `not-notified`: a broadcast accepted by a unit that was never notified.
+   * `rejected`: the addressed unit declined the request.
+   */
+  reason: 'not-targeted' | 'not-notified' | 'rejected';
 }
 
 export type SolicitudPayload =
   | SolicitudBroadcastPayload
   | SolicitudDirectPayload
   | SolicitudAcceptPayload
+  | SolicitudCancelPayload
   | SolicitudRejectPayload
   | RequestTakenPayload
   | RequestAlreadyTakenPayload
-  | RequestRejectedPayload;
+  | RequestRejectedPayload
+  | RequestCancelledPayload;

@@ -83,15 +83,14 @@ export default function CitizenMapPage({
   const self: SelfMarker = useMemo(
     () => ({
       position: selfPosition,
-      heading: location.heading,
       simulated: location.simulated,
       label: 'Tú',
     }),
-    [selfPosition, location.heading, location.simulated],
+    [selfPosition, location.simulated],
   );
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col gap-3 overflow-y-auto bg-nv-mint p-3 text-nv-navy lg:grid lg:grid-cols-[minmax(0,1fr)_344px] lg:grid-rows-[auto_minmax(0,1fr)] lg:gap-5 lg:overflow-hidden lg:p-5">
+    <div className="flex h-full min-h-0 w-full flex-col gap-3 overflow-y-auto bg-nv-mint text-nv-navy lg:grid lg:grid-cols-[minmax(0,1fr)_344px] lg:grid-rows-[auto_minmax(0,1fr)] lg:gap-5 lg:overflow-hidden">
       <header className="flex flex-wrap items-end justify-between gap-3 lg:col-span-2">
         <div>
           <h1 className="font-semibold text-2xl tracking-tight">Mapa de operación</h1>

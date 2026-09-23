@@ -3,7 +3,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import type {} from '@maplibre/maplibre-gl-leaflet';
 import L from 'leaflet';
 import { useEffect, useMemo } from 'react';
-import { MapContainer, Marker, useMap, useMapEvents, ZoomControl } from 'react-leaflet';
+import { MapContainer, Marker, Polyline, useMap, useMapEvents, ZoomControl } from 'react-leaflet';
 import { filterByLevel, useLayersStore } from '@/features/mapa/layers-store';
 import type { Ambulancia, CentroAyuda, Emergencia, Ubicacion } from '@/types/domain';
 import {
@@ -13,15 +13,30 @@ import {
   MAP_ZOOM,
   MAPLIBRE_WORKER_URL,
 } from './mapConfig';
-import { ambulanceIcon, centerIcon, emergencyIcon, selfIcon } from './markers';
+import { ambulanceIcon, centerIcon, emergencyIcon, requestIcon, selfIcon } from './markers';
 
 /** The viewer's own unit, rendered apart from the fleet markers. */
 export interface SelfMarker {
   position: Ubicacion;
-  heading: number | null;
   simulated: boolean;
   /** Marker label; defaults to the driver console's SIM/YOU. */
   label?: string;
+}
+
+/** The driver console's pending requester pin (mockup `pinReq`). */
+export interface RequestMarker {
+  position: Ubicacion;
+  label: string;
+}
+
+/**
+ * A straight line between two points. It is a VISUAL CONNECTOR between the
+ * requester and the driver, not a calculated route: there is no routing engine
+ * in this build, so it must never be read as a path a vehicle would follow.
+ */
+export interface RequestConnector {
+  from: Ubicacion;
+  to: Ubicacion;
 }
 
 interface MapCanvasProps {
@@ -36,6 +51,12 @@ interface MapCanvasProps {
   center?: Ubicacion;
   /** Driver console: "You are here" marker, draggable while simulated. */
   self?: SelfMarker | null;
+  /** Driver console: pending requester pin with its two static rings. */
+  request?: RequestMarker | null;
+  /** Driver console: decorative dashed connector, NOT a calculated route. */
+  requestConnector?: RequestConnector | null;
+  /** Fleet unit ids currently part of an open request (`notificadas`). */
+  notifiedAmbulanceIds?: readonly string[];
   /** Map click in lat/lng (used by tap-to-move while simulating). */
   onMapClick?: (ubicacion: Ubicacion) => void;
   /** Fired when a dragged self marker is released. */
@@ -176,6 +197,9 @@ export function MapCanvas({
   focus = null,
   center = BOGOTA_CENTER,
   self = null,
+  request = null,
+  requestConnector = null,
+  notifiedAmbulanceIds = [],
   onMapClick,
   onSelfDragEnd,
   onCenterChange,
@@ -220,7 +244,11 @@ export function MapCanvas({
           <Marker
             key={ambulance.id}
             position={[ambulance.ubicacion.lat, ambulance.ubicacion.lng]}
-            icon={ambulanceIcon(ambulance, ambulance.id === selectedAmbulanceId)}
+            icon={ambulanceIcon(
+              ambulance,
+              ambulance.id === selectedAmbulanceId,
+              notifiedAmbulanceIds.includes(ambulance.id),
+            )}
             eventHandlers={{ click: () => onSelectAmbulance(ambulance.id) }}
           />
         ))}
@@ -235,10 +263,49 @@ export function MapCanvas({
           />
         ))}
 
+      {/*
+        Decorative connector between the requester and the driver. It is a
+        straight dashed line, NOT a calculated route: this build has no routing
+        engine, so it is drawn only to point the driver at the scene.
+      */}
+      {requestConnector && (
+        <>
+          <Polyline
+            positions={[
+              [requestConnector.from.lat, requestConnector.from.lng],
+              [requestConnector.to.lat, requestConnector.to.lng],
+            ]}
+            className="nv-connector-casing"
+            weight={11}
+            interactive={false}
+          />
+          <Polyline
+            positions={[
+              [requestConnector.from.lat, requestConnector.from.lng],
+              [requestConnector.to.lat, requestConnector.to.lng],
+            ]}
+            className="nv-connector-line"
+            weight={6}
+            dashArray="1 12"
+            lineCap="round"
+            interactive={false}
+          />
+        </>
+      )}
+
+      {request && (
+        <Marker
+          position={[request.position.lat, request.position.lng]}
+          icon={requestIcon(request.label)}
+          zIndexOffset={500}
+          interactive={false}
+        />
+      )}
+
       {self && (
         <Marker
           position={[self.position.lat, self.position.lng]}
-          icon={selfIcon(self.heading, self.simulated, self.label)}
+          icon={selfIcon(self.simulated, self.label)}
           draggable={self.simulated}
           zIndexOffset={1000}
           eventHandlers={

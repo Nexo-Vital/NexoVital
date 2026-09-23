@@ -1,8 +1,10 @@
 import { fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CENTER_LEVEL_STYLE } from '@/features/ciudadano/citizen-view';
 import { ALL_LEVELS, DEFAULT_OVERLAYS, useLayersStore } from '@/features/mapa/layers-store';
 import { MapCanvas } from '@/features/mapa/MapCanvas';
 import { MOCK_AMBULANCIAS, MOCK_CENTROS_AYUDA, MOCK_EMERGENCIAS } from '@/mocks/fixtures';
+import { GLOBALS_CSS, paletteDeclaration } from '@/test/mockup-palette';
 
 function resetLayers() {
   useLayersStore.setState({
@@ -39,6 +41,32 @@ function renderMapWithCenters(onSelectCentro: (id: string) => void) {
       onSelectAmbulance={() => undefined}
       onSelectEmergency={() => undefined}
       onSelectCentro={onSelectCentro}
+    />,
+  );
+}
+
+function renderMapWithSelf() {
+  return render(
+    <MapCanvas
+      ambulancias={MOCK_AMBULANCIAS}
+      emergencias={MOCK_EMERGENCIAS}
+      self={{ position: { lat: 4.65, lng: -74.06 }, simulated: false, label: 'Tú' }}
+      onSelectAmbulance={() => undefined}
+      onSelectEmergency={() => undefined}
+    />,
+  );
+}
+
+function renderMapWithRequest() {
+  return render(
+    <MapCanvas
+      ambulancias={MOCK_AMBULANCIAS}
+      emergencias={MOCK_EMERGENCIAS}
+      request={{ position: { lat: 4.63, lng: -74.07 }, label: 'Suba · 1,2 km' }}
+      requestConnector={{ from: { lat: 4.65, lng: -74.06 }, to: { lat: 4.63, lng: -74.07 } }}
+      notifiedAmbulanceIds={['AMB-02']}
+      onSelectAmbulance={() => undefined}
+      onSelectEmergency={() => undefined}
     />,
   );
 }
@@ -95,13 +123,75 @@ describe('MapCanvas smoke', () => {
     expect(container.querySelector('.nv-marker__dot')).toBeNull();
   });
 
-  it('colours an aid center by the worst item in its inventory', () => {
+  it('draws a level badge on aid-center markers', () => {
+    const { container } = renderMapWithCenters(() => undefined);
+
+    const badge = markerByLabel(container, 'CA-NORTE').querySelector('.nv-marker__badge');
+    expect(badge).not.toBeNull();
+    expect(badge?.querySelector('.nv-marker__glyph')).not.toBeNull();
+  });
+
+  it('draws free and busy unit variants without a heading rotation', () => {
+    const { container } = renderMap();
+
+    const free = markerByLabel(container, 'AMB-01'); // AVAILABLE
+    const busy = markerByLabel(container, 'AMB-02'); // EN_ROUTE
+
+    expect(free.classList.contains('nv-marker--available')).toBe(true);
+    expect(free.querySelector('.nv-marker__badge')).not.toBeNull();
+    expect(busy.classList.contains('nv-marker--en_route')).toBe(true);
+    expect(busy.querySelector('.nv-marker__badge')).not.toBeNull();
+    // The mockup never rotates units, so no shape carries a bearing transform.
+    expect(container.querySelector('.nv-marker__shape[style*="rotate"]')).toBeNull();
+  });
+
+  it('renders the self marker as a static dot, without the pulsing ring', () => {
+    const { container } = renderMapWithSelf();
+
+    const self = container.querySelector('.nv-marker--self');
+    expect(self).not.toBeNull();
+    expect(self?.querySelector('.nv-marker__shape')).not.toBeNull();
+    // The old animated ring node is gone: the ring is a static box-shadow now.
+    expect(container.querySelector('.nv-marker__ring')).toBeNull();
+  });
+
+  it('draws the requester pin with two static rings, the connector and the notified ring', () => {
+    const { container } = renderMapWithRequest();
+
+    const request = container.querySelector('.nv-marker--request');
+    expect(request).not.toBeNull();
+    expect(request?.querySelectorAll('.nv-marker__request-ring')).toHaveLength(2);
+    expect(request?.querySelector('.nv-marker__label')?.textContent).toBe('Suba · 1,2 km');
+
+    // The connector is a dashed visual line, not a calculated route.
+    expect(container.querySelectorAll('.nv-connector-line').length).toBeGreaterThan(0);
+
+    // Only the notified unit carries the static teal ring.
+    expect(markerByLabel(container, 'AMB-02').classList.contains('nv-marker--notified')).toBe(true);
+    expect(markerByLabel(container, 'AMB-01').classList.contains('nv-marker--notified')).toBe(
+      false,
+    );
+  });
+
+  it('colours an aid center from the palette shared with the legend', () => {
     const { container } = renderMapWithCenters(() => undefined);
 
     // CA-NORTE: 60% AMBER, 20% RED, 90% GREEN, NOT_DECLARED -> worst is RED.
-    expect(markerByLabel(container, 'CA-NORTE').style.getPropertyValue('--nv-marker-color')).toBe(
-      'var(--nv-critical)',
-    );
+    const pin = markerByLabel(container, 'CA-NORTE');
+    // Anchored to the real mockup tokens and values, never to CENTER_LEVEL_STYLE
+    // comparing against itself: a lime -> blue change must break this test.
+    expect(pin.style.getPropertyValue('--nv-marker-bg')).toBe('var(--nv-red)');
+    expect(pin.style.getPropertyValue('--nv-marker-color')).toBe('var(--nv-on-accent)');
+
+    expect(CENTER_LEVEL_STYLE.stable.bg).toBe('var(--nv-lime)');
+    expect(CENTER_LEVEL_STYLE.stable.fg).toBe('var(--nv-navy)');
+    expect(CENTER_LEVEL_STYLE.alert.bg).toBe('var(--nv-amber)');
+    expect(CENTER_LEVEL_STYLE.critical.bg).toBe('var(--nv-red)');
+    // The code stores `var(--nv-*)`, so pin each token's value in :root too.
+    expect(GLOBALS_CSS).toContain(paletteDeclaration('lime'));
+    expect(GLOBALS_CSS).toContain(paletteDeclaration('amber'));
+    expect(GLOBALS_CSS).toContain(paletteDeclaration('red'));
+    expect(GLOBALS_CSS).toContain(paletteDeclaration('navy'));
   });
 
   it('reports the aid center when its own marker is clicked', () => {

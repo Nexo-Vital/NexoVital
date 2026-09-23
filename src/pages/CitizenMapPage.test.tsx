@@ -1,11 +1,13 @@
 import { act, cleanup, render, screen, within } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { CENTER_LEVEL_STYLE, NOT_DECLARED_CENTER_STYLE } from '@/features/ciudadano/citizen-view';
 import { useEmergencyStore } from '@/features/emergencias/emergency-store';
 import { useFleetStore } from '@/features/flota/fleet-store';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
 import { DESTINATIONS } from '@/shared/realtime';
 import { FakeRealtimePort } from '@/test/fake-realtime-port';
+import { GLOBALS_CSS, paletteDeclaration } from '@/test/mockup-palette';
 import type {
   AmbulanceState,
   Ambulancia,
@@ -146,6 +148,29 @@ describe('CitizenMapPage', () => {
     expect(legendValue('Disponible')).toBe('1');
     expect(legendValue('Ocupada')).toBe('2');
     expect(legendValue('En mantenimiento')).toBe('1');
+  });
+
+  it('paints the legend center swatches from the shared marker palette', () => {
+    renderPage({ centrosAyuda: [centro('CA-1', 'RED', 4.728, -74.078)] });
+
+    const legend = screen.getByRole('complementary', { name: 'Leyenda del mapa' });
+    const swatchOf = (label: string) =>
+      within(legend).getByText(label).closest('li')?.querySelector('span');
+
+    // Anchored to the mockup tokens and their values in :root, never to
+    // CENTER_LEVEL_STYLE comparing against itself.
+    expect(CENTER_LEVEL_STYLE.critical.bg).toBe('var(--nv-red)');
+    expect(swatchOf('Estable')?.getAttribute('style')).toContain('var(--nv-lime)');
+    expect(swatchOf('Crítico')?.getAttribute('style')).toContain('var(--nv-red)');
+    // "Sin declarar" reads NOT_DECLARED_CENTER_STYLE, not a hardcoded `bg-idle`.
+    expect(NOT_DECLARED_CENTER_STYLE.bg).toBe('var(--nv-idle)');
+    expect(swatchOf('Sin declarar')?.getAttribute('style')).toContain(NOT_DECLARED_CENTER_STYLE.bg);
+    expect(GLOBALS_CSS).toContain(paletteDeclaration('lime'));
+    expect(GLOBALS_CSS).toContain(paletteDeclaration('red'));
+
+    // The critical summary chip reads the same red as the pin, not a second one.
+    const chip = screen.getByText('1 crítico').closest('li');
+    expect(chip?.getAttribute('style')).toContain('var(--nv-red)');
   });
 
   it('lists the units nearest to the citizen first, with their availability', () => {

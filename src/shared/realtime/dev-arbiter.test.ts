@@ -52,6 +52,13 @@ function accept(requestId: string, ambulanceId: string): string {
   });
 }
 
+function cancel(requestId: string): string {
+  return envelope(DESTINATIONS.solicitudes, {
+    type: 'solicitud.cancel',
+    requestId,
+  });
+}
+
 function reject(requestId: string, ambulanceId: string): string {
   return envelope(DESTINATIONS.solicitudes, {
     type: 'solicitud.reject',
@@ -65,6 +72,7 @@ function parseSingle(messages: string[]): {
   winner?: string;
   rejected?: string;
   reason?: string;
+  requestId?: string;
 } {
   expect(messages).toHaveLength(1);
   return JSON.parse(messages[0]).payload as {
@@ -72,6 +80,7 @@ function parseSingle(messages: string[]): {
     winner?: string;
     rejected?: string;
     reason?: string;
+    requestId?: string;
   };
 }
 
@@ -90,27 +99,56 @@ describe('resolveArbiterMessages', () => {
 
   it('gives the request to the first accept and rejects later ones', () => {
     const winners = new Map<string, string>();
-    resolveArbiterMessages(broadcast('REQ-1'), winners);
+    const requests: ArbiterRequests = new Map();
+    resolveArbiterMessages(broadcast('REQ-1'), winners, requests);
 
-    const first = parseSingle(resolveArbiterMessages(accept('REQ-1', 'AMB-01'), winners));
+    const first = parseSingle(resolveArbiterMessages(accept('REQ-1', 'AMB-01'), winners, requests));
     expect(first).toMatchObject({ type: 'request.taken', winner: 'AMB-01' });
 
-    const second = parseSingle(resolveArbiterMessages(accept('REQ-1', 'AMB-09'), winners));
+    // AMB-03 was notified, so its late accept is an "already taken" loss, not an
+    // arbiter rejection: the request was genuinely offered to it.
+    const second = parseSingle(
+      resolveArbiterMessages(accept('REQ-1', 'AMB-03'), winners, requests),
+    );
     expect(second).toMatchObject({
       type: 'request.already-taken',
       winner: 'AMB-01',
-      rejected: 'AMB-09',
+      rejected: 'AMB-03',
     });
+  });
+
+  it('rejects a broadcast accept from a unit that was not notified', () => {
+    const winners = new Map<string, string>();
+    const requests: ArbiterRequests = new Map();
+    resolveArbiterMessages(broadcast('REQ-1'), winners, requests);
+
+    // AMB-09 is absent from `notificadas` (['AMB-01', 'AMB-03']): the client-side
+    // inbox filter would hide the request, but a client that publishes the accept
+    // directly must still be refused server-side, before it can win.
+    const rejected = parseSingle(
+      resolveArbiterMessages(accept('REQ-1', 'AMB-09'), winners, requests),
+    );
+    expect(rejected).toMatchObject({
+      type: 'request.rejected',
+      rejected: 'AMB-09',
+      reason: 'not-notified',
+    });
+    expect(winners.size).toBe(0);
+
+    // The refusal did not consume the request: a notified unit can still win it.
+    const taken = parseSingle(resolveArbiterMessages(accept('REQ-1', 'AMB-01'), winners, requests));
+    expect(taken).toMatchObject({ type: 'request.taken', winner: 'AMB-01' });
   });
 
   it('re-opens the request when it is broadcast again', () => {
     const winners = new Map<string, string>();
-    resolveArbiterMessages(broadcast('REQ-1'), winners);
-    resolveArbiterMessages(accept('REQ-1', 'AMB-01'), winners);
+    const requests: ArbiterRequests = new Map();
+    resolveArbiterMessages(broadcast('REQ-1'), winners, requests);
+    resolveArbiterMessages(accept('REQ-1', 'AMB-01'), winners, requests);
 
-    resolveArbiterMessages(broadcast('REQ-1'), winners);
-    const next = parseSingle(resolveArbiterMessages(accept('REQ-1', 'AMB-09'), winners));
-    expect(next).toMatchObject({ type: 'request.taken', winner: 'AMB-09' });
+    resolveArbiterMessages(broadcast('REQ-1'), winners, requests);
+    const next = parseSingle(resolveArbiterMessages(accept('REQ-1', 'AMB-03'), winners, requests));
+    expect(next).toMatchObject({ type: 'request.taken', winner: 'AMB-03' });
   });
 
   it('neither creates nor announces a winner on broadcast alone', () => {
@@ -118,6 +156,45 @@ describe('resolveArbiterMessages', () => {
     const messages = resolveArbiterMessages(broadcast('REQ-1'), winners);
     expect(messages.join(' ')).not.toContain('request.taken');
     expect(winners.size).toBe(0);
+  });
+
+  describe('cancel', () => {
+    it('acknowledges a cancel and drops the pending request', () => {
+      const winners = new Map<string, string>();
+      const requests: ArbiterRequests = new Map();
+      resolveArbiterMessages(broadcast('REQ-1'), winners, requests);
+
+      const cancelled = parseSingle(resolveArbiterMessages(cancel('REQ-1'), winners, requests));
+
+      expect(cancelled).toMatchObject({ type: 'request.cancelled', requestId: 'REQ-1' });
+      expect(winners.has('REQ-1')).toBe(false);
+      expect(requests.has('REQ-1')).toBe(false);
+    });
+
+    it('drops a winner a cancel raced with', () => {
+      const winners = new Map<string, string>();
+      const requests: ArbiterRequests = new Map();
+      resolveArbiterMessages(broadcast('REQ-1'), winners, requests);
+      resolveArbiterMessages(accept('REQ-1', 'AMB-01'), winners, requests);
+
+      resolveArbiterMessages(cancel('REQ-1'), winners, requests);
+
+      expect(winners.has('REQ-1')).toBe(false);
+    });
+
+    it('lets a re-broadcast reopen a cancelled request', () => {
+      const winners = new Map<string, string>();
+      const requests: ArbiterRequests = new Map();
+      resolveArbiterMessages(broadcast('REQ-1'), winners, requests);
+      resolveArbiterMessages(cancel('REQ-1'), winners, requests);
+
+      resolveArbiterMessages(broadcast('REQ-1'), winners, requests);
+      const taken = parseSingle(
+        resolveArbiterMessages(accept('REQ-1', 'AMB-03'), winners, requests),
+      );
+
+      expect(taken).toMatchObject({ type: 'request.taken', winner: 'AMB-03' });
+    });
   });
 
   describe('direct mode', () => {

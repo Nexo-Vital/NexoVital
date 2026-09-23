@@ -1,6 +1,6 @@
 import { CircleCheck, Info, OctagonAlert, TriangleAlert } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import {
+  CENTER_LEVEL_STYLE,
   CITIZEN_LEVEL_META,
   CITIZEN_LEVEL_ORDER,
   type CitizenCenterCounts,
@@ -27,14 +27,14 @@ export function CitizenSummaryChips({ counts }: { counts: CitizenCenterCounts })
     >
       {CITIZEN_LEVEL_ORDER.map((level) => {
         const meta = CITIZEN_LEVEL_META[level];
+        // Same table the map pin and the legend swatch read, so no second red.
+        const style = CENTER_LEVEL_STYLE[level];
         const Icon = LEVEL_ICON[level];
         return (
           <li
             key={level}
-            className={cn(
-              'inline-flex items-center gap-1.5 rounded-nv-pill px-3 py-1.5 font-semibold text-xs',
-              meta.chipClass,
-            )}
+            className="inline-flex items-center gap-1.5 rounded-nv-pill px-3 py-1.5 font-semibold text-xs"
+            style={{ background: style.bg, color: style.fg }}
           >
             <Icon className="size-3.5 shrink-0" aria-hidden />
             {meta.summary(counts[level])}

@@ -6,6 +6,11 @@ import { REALTIME_PATH } from '../src/shared/realtime/messages';
  * Durable Object that relays realtime frames between every connected client and
  * decides C2 request winners (first accept wins), mirroring the dev relay.
  *
+ * The request lifecycle (accept/win, direct targeting, `solicitud.cancel` ->
+ * `request.cancelled`) is NOT reimplemented here: this object drives the same
+ * transport-free `resolveArbiterMessages` the Vite dev relay uses, so the
+ * deployed demo and local dev cannot diverge on the wire.
+ *
  * It deliberately uses the CLASSIC WebSocket API (`server.accept()`) instead of
  * the WebSocket Hibernation API. `accept()` keeps the object resident while a
  * socket is open, so the in-memory arbiter state (`winners` / `requests`)

@@ -48,7 +48,7 @@ describe('useSolicitudInbox', () => {
     act(() => result.current.accept());
 
     expect(result.current.phase).toBe('submitting');
-    expect(result.current.outcomeMessage).toBe('Submitting…');
+    expect(result.current.outcomeMessage).toBe('Enviando…');
     expect(result.current.mission).toBeNull();
     expect(port.published).toEqual([
       {
@@ -72,7 +72,7 @@ describe('useSolicitudInbox', () => {
     );
 
     expect(result.current.phase).toBe('assigned');
-    expect(result.current.outcomeMessage).toBe('Assigned to you');
+    expect(result.current.outcomeMessage).toBe('Te la asignaron');
     expect(result.current.mission?.requestId).toBe('REQ-1');
     expect(result.current.mission?.etaMinutes).toBeGreaterThan(0);
   });
@@ -99,7 +99,7 @@ describe('useSolicitudInbox', () => {
     );
 
     expect(result.current.phase).toBe('assigned');
-    expect(result.current.outcomeMessage).toBe('Assigned to you');
+    expect(result.current.outcomeMessage).toBe('Te la asignaron');
     expect(result.current.mission?.requestId).toBe('REQ-1');
   });
 
@@ -117,7 +117,7 @@ describe('useSolicitudInbox', () => {
     );
 
     expect(result.current.phase).toBe('taken');
-    expect(result.current.outcomeMessage).toBe('Taken by AMB-09');
+    expect(result.current.outcomeMessage).toBe('Tomada por AMB-09');
     expect(result.current.mission).toBeNull();
   });
 
@@ -136,10 +136,10 @@ describe('useSolicitudInbox', () => {
     );
 
     expect(result.current.phase).toBe('taken');
-    expect(result.current.outcomeMessage).toBe('Taken by AMB-09');
+    expect(result.current.outcomeMessage).toBe('Tomada por AMB-09');
   });
 
-  it('publishes a reject and clears the overlay', () => {
+  it('publishes a reject and clears the request', () => {
     const { port, result } = setup();
 
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
@@ -160,7 +160,7 @@ describe('useSolicitudInbox', () => {
     act(() => result.current.notifyTimeout());
 
     expect(result.current.phase).toBe('timeout');
-    expect(result.current.outcomeMessage).toBe('Request timed out');
+    expect(result.current.outcomeMessage).toBe('La solicitud expiró');
   });
 
   it('accepts a direct request addressed to this unit', () => {
@@ -197,6 +197,49 @@ describe('useSolicitudInbox', () => {
     );
 
     expect(result.current.phase).toBe('rejected');
-    expect(result.current.outcomeMessage).toBe('Rejected: not the targeted unit');
+    expect(result.current.outcomeMessage).toBe('Rechazada: no era la unidad destinataria');
+  });
+
+  it('ignores a broadcast that did not notify this unit', () => {
+    const { port, result } = setup();
+
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, {
+        ...BROADCAST,
+        notificadas: ['AMB-02', 'AMB-03'],
+      }),
+    );
+
+    expect(result.current.broadcast).toBeNull();
+
+    act(() => result.current.accept());
+    act(() => result.current.reject());
+    expect(port.published).toHaveLength(0);
+  });
+
+  it('drops the open request from the inbox when it is cancelled', () => {
+    const { port, result } = setup();
+
+    act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+    expect(result.current.broadcast?.requestId).toBe('REQ-1');
+
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, { type: 'request.cancelled', requestId: 'REQ-1' }),
+    );
+
+    expect(result.current.broadcast).toBeNull();
+    expect(result.current.deadlineMs).toBeNull();
+    expect(result.current.phase).toBe('idle');
+  });
+
+  it('keeps the open request when a different request is cancelled', () => {
+    const { port, result } = setup();
+
+    act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, { type: 'request.cancelled', requestId: 'REQ-OTHER' }),
+    );
+
+    expect(result.current.broadcast?.requestId).toBe('REQ-1');
   });
 });
