@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { MapContainer, Marker, Polyline, useMap, useMapEvents, ZoomControl } from 'react-leaflet';
 import { filterByLevel, useLayersStore } from '@/features/mapa/layers-store';
 import { cn } from '@/lib/utils';
-import type { Ambulancia, CentroAyuda, Emergencia, Ubicacion } from '@/types/domain';
+import type { Ambulancia, CentroAyuda, Emergencia, Ubicacion, Zona } from '@/types/domain';
 import {
   BASE_LAYERS,
   type BaseLayer,
@@ -21,6 +21,7 @@ import {
   emergencyIcon,
   requestIcon,
   selfIcon,
+  zoneIcon,
 } from './markers';
 import { outerRingRadiusKm, radarRingsPixelDiameter } from './radar-rings';
 
@@ -57,6 +58,11 @@ interface MapCanvasProps {
   ambulancias: Ambulancia[];
   emergencias: Emergencia[];
   centros?: CentroAyuda[];
+  /**
+   * Active zones (`GET /api/v1/mapa`). Each carries a single point, so it is
+   * drawn as a named marker, never as an area — see `zoneIcon`.
+   */
+  zonas?: Zona[];
   selectedAmbulanceId?: string | null;
   selectedCentroId?: string | null;
   /** Latest selection to glide to, or null to stay put. */
@@ -247,6 +253,7 @@ export function MapCanvas({
   ambulancias,
   emergencias,
   centros = [],
+  zonas = [],
   selectedAmbulanceId = null,
   selectedCentroId = null,
   focus = null,
@@ -300,6 +307,21 @@ export function MapCanvas({
       <FocusController focus={focus} />
       <CenterReporter onCenterChange={onCenterChange} />
       <MapClickHandler onMapClick={onMapClick} />
+
+      {/*
+        Active zones first and below everything: each is a single point, so it is
+        a labelled marker, not a boundary. A real affected-zone footprint would
+        need a polygon in the contract (see `zoneIcon`).
+      */}
+      {zonas.map((zona) => (
+        <Marker
+          key={zona.id}
+          position={[zona.ubicacion.lat, zona.ubicacion.lng]}
+          icon={zoneIcon(zona)}
+          zIndexOffset={-200}
+          interactive={false}
+        />
+      ))}
 
       {visibleEmergencies.map((emergency) => (
         <Marker

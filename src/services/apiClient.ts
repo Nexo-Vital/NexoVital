@@ -10,8 +10,11 @@ const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '/api/
  * It is read inside the session functions (not as a module-level constant) so
  * tests can flip it per case with `vi.stubEnv`. The flag is absent by default,
  * so local dev and every existing test keep hitting the real backend.
+ *
+ * Exported as the SINGLE source of the flag check: the map data source must make
+ * the same decision, never a second, drifting copy of it.
  */
-function isDemoMode(): boolean {
+export function isDemoMode(): boolean {
   return import.meta.env.VITE_DEMO_MODE === '1';
 }
 

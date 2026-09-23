@@ -11,6 +11,7 @@ import { MapCanvas } from '@/features/mapa/MapCanvas';
 import { MapLayersControl } from '@/features/mapa/MapLayersControl';
 import { MapLegend } from '@/features/mapa/MapLegend';
 import { BOGOTA_CENTER } from '@/features/mapa/mapConfig';
+import { useMapData } from '@/features/mapa/use-map-data';
 import { PanelDetalle } from '@/features/solicitudes/PanelDetalle';
 import { RegistroSolicitudes } from '@/features/solicitudes/RegistroSolicitudes';
 import { type SolicitudRequestPayload, toSolicitud } from '@/features/solicitudes/solicitud-form';
@@ -95,6 +96,10 @@ export default function SalaOperacionesPage({
   useEmergencySync(port);
   useSolicitudRegistrySync(port);
 
+  // Zones and centers come from the shared map source: the fixtures with the
+  // demo flag on, `GET /api/v1/mapa` with it off (never a silent fallback).
+  const mapa = useMapData(centrosAyuda);
+
   const [mapCenter, setMapCenter] = useState<Ubicacion>(BOGOTA_CENTER);
   const [fleetManagerOpen, setFleetManagerOpen] = useState(false);
   const [selectedAmbulanceId, setSelectedAmbulanceId] = useState<string | null>(null);
@@ -115,8 +120,8 @@ export default function SalaOperacionesPage({
     [solicitudItems, selectedRequestId],
   );
   const selectedCentro = useMemo(
-    () => centrosAyuda.find((item) => item.id === selectedCentroId) ?? null,
-    [centrosAyuda, selectedCentroId],
+    () => mapa.centros.find((item) => item.id === selectedCentroId) ?? null,
+    [mapa.centros, selectedCentroId],
   );
 
   const focus: Ubicacion | null = useMemo(() => {
@@ -255,7 +260,8 @@ export default function SalaOperacionesPage({
         <MapCanvas
           ambulancias={fleetUnits}
           emergencias={emergencyItems}
-          centros={centrosAyuda}
+          centros={mapa.centros}
+          zonas={mapa.zonas}
           selectedAmbulanceId={selectedAmbulanceId}
           selectedCentroId={selectedCentroId}
           focus={focus}
@@ -282,7 +288,7 @@ export default function SalaOperacionesPage({
           selectedAmbulance={selectedAmbulance}
           selectedEmergency={selectedEmergency}
           selectedRequest={selectedRequest}
-          centrosAyuda={centrosAyuda}
+          centrosAyuda={mapa.centros}
           selectedCentro={selectedCentro}
           loading={detailLoading}
         />
@@ -309,7 +315,7 @@ export default function SalaOperacionesPage({
         selectedAmbulance={selectedAmbulance}
         selectedEmergency={selectedEmergency}
         selectedRequest={selectedRequest}
-        centrosAyuda={centrosAyuda}
+        centrosAyuda={mapa.centros}
         selectedCentro={selectedCentro}
         detailLoading={detailLoading}
         solicitudes={solicitudItems}

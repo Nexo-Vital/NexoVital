@@ -45,6 +45,18 @@ function renderMapWithCenters(onSelectCentro: (id: string) => void) {
   );
 }
 
+function renderMapWithZones() {
+  return render(
+    <MapCanvas
+      ambulancias={[]}
+      emergencias={[]}
+      zonas={[{ id: 'Z-SUBA', nombre: 'Suba', ubicacion: { lat: 4.742, lng: -74.09 } }]}
+      onSelectAmbulance={() => undefined}
+      onSelectEmergency={() => undefined}
+    />,
+  );
+}
+
 function renderMapWithSelf() {
   return render(
     <MapCanvas
@@ -240,6 +252,16 @@ describe('MapCanvas smoke', () => {
     fireEvent.click(markerByLabel(container, 'Suba Norte'));
 
     expect(onSelectCentro).toHaveBeenCalledWith('CA-SUBA-NORTE');
+  });
+
+  it('draws each active zone as a named point marker, never an area', () => {
+    const { container } = renderMapWithZones();
+
+    const zone = markerByLabel(container, 'Suba');
+    expect(zone.classList.contains('nv-marker--zone')).toBe(true);
+    // The contract gives a zone a single point, so nothing draws its footprint:
+    // no polygon/area is emitted for data that has no geometry.
+    expect(container.querySelector('.leaflet-overlay-pane path')).toBeNull();
   });
 
   it('draws the citizen radar rings anchored on the self marker', () => {

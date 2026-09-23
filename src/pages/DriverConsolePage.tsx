@@ -23,6 +23,7 @@ import {
   type RequestMarker,
   type SelfMarker,
 } from '@/features/mapa/MapCanvas';
+import { useMapData } from '@/features/mapa/use-map-data';
 import { useSessionStore } from '@/features/usuarios/session';
 import { distanceKm, etaMinutes } from '@/lib/geo';
 import { MOCK_AMBULANCIAS, MOCK_CENTROS_AYUDA, MOCK_EMERGENCIAS } from '@/mocks/fixtures';
@@ -90,6 +91,9 @@ export default function DriverConsolePage({
 
   const fleetUnits = useFleetStore((state) => state.units);
   const emergencies = useEmergencyStore((state) => state.items);
+  // Zones and centers come from the shared map source: the fixtures with the
+  // demo flag on, `GET /api/v1/mapa` with it off (never a silent fallback).
+  const mapa = useMapData(centrosAyuda);
 
   // The rail reads the driver's own unit straight from the store (the self marker
   // stands in for it on the map, so `fleet` below excludes it).
@@ -163,7 +167,7 @@ export default function DriverConsolePage({
     () => fleetUnits.filter((unit) => unit.id !== unitId),
     [fleetUnits, unitId],
   );
-  const counts = useMemo(() => countCentersByLevel(centrosAyuda), [centrosAyuda]);
+  const counts = useMemo(() => countCentersByLevel(mapa.centros), [mapa.centros]);
 
   const self: SelfMarker | null = useMemo(
     () =>
@@ -260,7 +264,8 @@ export default function DriverConsolePage({
         <MapCanvas
           ambulancias={fleet}
           emergencias={emergencies}
-          centros={centrosAyuda}
+          centros={mapa.centros}
+          zonas={mapa.zonas}
           center={effectivePosition ?? CITIZEN_FALLBACK_POSITION}
           focus={hasCentered ? null : effectivePosition}
           self={self}
@@ -333,7 +338,7 @@ export default function DriverConsolePage({
           onReject: inbox.reject,
           onTimeout: inbox.notifyTimeout,
         }}
-        centros={centrosAyuda}
+        centros={mapa.centros}
       />
     </div>
   );

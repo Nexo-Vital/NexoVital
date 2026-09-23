@@ -23,6 +23,7 @@ import { useFleetStore } from '@/features/flota/fleet-store';
 import { useFleetSync } from '@/features/flota/use-fleet-sync';
 import { useDeviceLocation } from '@/features/geolocalizacion/use-device-location';
 import { MapCanvas, type RequestConnector, type SelfMarker } from '@/features/mapa/MapCanvas';
+import { useMapData } from '@/features/mapa/use-map-data';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
 import { useSolicitudRegistrySync } from '@/features/solicitudes/use-solicitud-registry-sync';
 import { etaMinutes } from '@/lib/geo';
@@ -88,6 +89,9 @@ export default function CitizenMapPage({
 
   const fleet = useFleetStore((state) => state.units);
   const location = useDeviceLocation();
+  // Zones and centers come from the shared map source: the fixtures with the
+  // demo flag on, `GET /api/v1/mapa` with it off (never a silent fallback).
+  const mapa = useMapData(centrosAyuda);
 
   const requestPhase = useCitizenRequestStore((state) => state.phase);
   const requestStartedAt = useCitizenRequestStore((state) => state.startedAt);
@@ -128,7 +132,7 @@ export default function CitizenMapPage({
   const selfPosition = location.position ?? CITIZEN_FALLBACK_POSITION;
   const usingFallbackPosition = location.position === null;
 
-  const counts = useMemo(() => countCentersByLevel(centrosAyuda), [centrosAyuda]);
+  const counts = useMemo(() => countCentersByLevel(mapa.centros), [mapa.centros]);
   const nearby = useMemo(() => nearbyAmbulances(fleet, selfPosition), [fleet, selfPosition]);
   const availableCount = useMemo(() => countAvailableUnits(fleet), [fleet]);
   const self: SelfMarker = useMemo(
@@ -234,7 +238,8 @@ export default function CitizenMapPage({
         <MapCanvas
           ambulancias={fleet}
           emergencias={NO_EMERGENCIES}
-          centros={centrosAyuda}
+          centros={mapa.centros}
+          zonas={mapa.zonas}
           center={selfPosition}
           self={self}
           selectedAmbulanceId={assigned ? acceptedBy : null}
@@ -278,7 +283,7 @@ export default function CitizenMapPage({
       ) : (
         <CitizenRail
           nearby={nearby}
-          centros={centrosAyuda}
+          centros={mapa.centros}
           availableCount={availableCount}
           onRequest={handleRequest}
         />

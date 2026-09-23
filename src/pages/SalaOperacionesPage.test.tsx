@@ -11,6 +11,18 @@ vi.mock('@/features/mapa/MapCanvas', () => ({
   MapCanvas: () => <div data-testid="map-canvas" />,
 }));
 
+// The map data source is the only network path in this screen; it is stubbed to
+// the injected fixtures so the mocked suite keeps testing the page without
+// setting the demo flag and without touching the backend.
+vi.mock('@/features/mapa/use-map-data', () => ({
+  useMapData: (fallbackCentros: unknown[]) => ({
+    centros: fallbackCentros,
+    zonas: [],
+    loading: false,
+    error: null,
+  }),
+}));
+
 describe('SalaOperacionesPage', () => {
   beforeEach(() => {
     useSessionStore.setState({ role: 'ADMIN_CENTRO_AYUDA', token: 'mock.test' });

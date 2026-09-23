@@ -6,7 +6,7 @@ import {
   NOT_DECLARED_CENTER_STYLE,
 } from '@/features/ciudadano/citizen-view';
 import { centroSemaforo } from '@/features/recursos/traffic-light';
-import type { Ambulancia, CentroAyuda, Emergencia, TrafficLight } from '@/types/domain';
+import type { Ambulancia, CentroAyuda, Emergencia, TrafficLight, Zona } from '@/types/domain';
 
 /**
  * Leaflet's default marker images break under Vite, so every marker is a
@@ -194,6 +194,23 @@ export function emergencyIcon(emergency: Emergencia): L.DivIcon {
     `<span class="nv-marker__label">${escapeHtml(emergency.id)}</span>` +
     `</div>`;
   return buildMarkerIcon(html, 30);
+}
+
+/**
+ * Active-zone marker: a small dashed ring carrying the zone's name.
+ *
+ * A `Zona` from `/api/v1/mapa` is a SINGLE point, not a boundary, so this is a
+ * point marker and NOT an area. Drawing the zone's real footprint would need a
+ * polygon in the contract (and a Leaflet polygon here); until then, painting an
+ * area would claim geometry the data does not have.
+ */
+export function zoneIcon(zona: Zona): L.DivIcon {
+  const html =
+    `<div class="nv-marker nv-marker--zone">` +
+    `<span class="nv-marker__shape"></span>` +
+    `<span class="nv-marker__label">${escapeHtml(zona.nombre)}</span>` +
+    `</div>`;
+  return buildMarkerIcon(html, 22);
 }
 
 /**

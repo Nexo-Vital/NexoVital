@@ -133,6 +133,20 @@ export interface CentroAyuda {
   items: InventarioItem[];
 }
 
+/**
+ * Active zone as returned by `GET /api/v1/mapa` (the backend `mapa` read-model).
+ *
+ * The endpoint gives a zone a SINGLE point (`ubicacion`), not a boundary, so the
+ * front can only pin it. A genuinely affected zone would need a polygon to be
+ * drawn as an area, which requires extending the contract: never draw an area
+ * the data does not have (see `zoneIcon`).
+ */
+export interface Zona {
+  id: string;
+  nombre: string;
+  ubicacion: Ubicacion;
+}
+
 export interface BitacoraEvento {
   id: string;
   tipo: string;

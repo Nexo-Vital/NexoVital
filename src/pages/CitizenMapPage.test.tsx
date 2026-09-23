@@ -39,6 +39,18 @@ vi.mock('@/features/mapa/MapCanvas', () => ({
   ),
 }));
 
+// The map data source is the only network path in these screens; it is stubbed
+// to the injected fixtures so the mocked suite keeps testing the pages without
+// setting the demo flag and without touching the backend.
+vi.mock('@/features/mapa/use-map-data', () => ({
+  useMapData: (fallbackCentros: unknown[]) => ({
+    centros: fallbackCentros,
+    zonas: [],
+    loading: false,
+    error: null,
+  }),
+}));
+
 /** Origin used by the page when the device gives no position (Suba). */
 const SUBAS = { lat: 4.728, lng: -74.078 };
 

@@ -358,6 +358,27 @@
     --nv-marker-color: var(--nv-marker-badge-color);
   }
 
+  /* ---- active-zone pin: a single point, NOT an area (see zoneIcon) ---- */
+  .nv-marker--zone {
+    width: 22px;
+    height: 22px;
+  }
+
+  .nv-marker--zone .nv-marker__shape {
+    width: 22px;
+    height: 22px;
+    border: 2px dashed var(--nv-navy-400);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--nv-on-accent) 55%, transparent);
+    filter: none;
+  }
+
+  .nv-marker--zone .nv-marker__label {
+    background: var(--nv-navy);
+    color: var(--nv-on-accent);
+    font-weight: 600;
+  }
+
   /* ---- ambulance pin: 40px circle, badge bottom-right ---- */
   .nv-marker--unit {
     width: 40px;
