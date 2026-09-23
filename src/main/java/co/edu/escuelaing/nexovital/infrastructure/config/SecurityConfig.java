@@ -62,6 +62,13 @@ public class SecurityConfig {
                         .requestMatchers("/error").permitAll()
                         // The caller's own session: every authenticated role may read it.
                         .requestMatchers(HttpMethod.GET, "/api/v1/sesiones/actual").authenticated()
+                        // Read model of aid/acopio centers: the operations room consumes
+                        // it, so every authenticated role may read it. Declared explicitly
+                        // because the chain is fail-closed.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/organizaciones").authenticated()
+                        // Read model of the map (zones + centers): same audience as the
+                        // organizations list, every authenticated role may read it.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/mapa").authenticated()
                         // Fail-closed standard: an operation that is not declared here is
                         // denied, never silently open to every authenticated role. A new
                         // operation must add its own declaration (matcher or
