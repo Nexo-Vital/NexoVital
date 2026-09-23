@@ -10,12 +10,12 @@ const VALID = {
 };
 
 describe('nextAmbulanceId', () => {
-  it('continues the AMB sequence after the fixtures', () => {
-    expect(nextAmbulanceId(MOCK_AMBULANCIAS)).toBe('AMB-11');
+  it('continues the A sequence after the fixtures', () => {
+    expect(nextAmbulanceId(MOCK_AMBULANCIAS)).toBe('A-16');
   });
 
-  it('starts at AMB-01 for an empty fleet', () => {
-    expect(nextAmbulanceId([])).toBe('AMB-01');
+  it('starts at A-01 for an empty fleet', () => {
+    expect(nextAmbulanceId([])).toBe('A-01');
   });
 });
 
@@ -37,10 +37,10 @@ describe('validateFleetForm', () => {
 
 describe('buildAmbulance', () => {
   it('builds a unit from valid form values', () => {
-    const unit = buildAmbulance(VALID, 'AMB-11');
+    const unit = buildAmbulance(VALID, 'A-16');
 
     expect(unit).toMatchObject({
-      id: 'AMB-11',
+      id: 'A-16',
       estado: 'AVAILABLE',
       driverName: 'New Driver',
       ubicacion: { lat: 4.65, lng: -74.06 },
@@ -48,6 +48,6 @@ describe('buildAmbulance', () => {
   });
 
   it('returns null when the coordinates are invalid', () => {
-    expect(buildAmbulance({ ...VALID, lat: 'abc' }, 'AMB-11')).toBeNull();
+    expect(buildAmbulance({ ...VALID, lat: 'abc' }, 'A-16')).toBeNull();
   });
 });

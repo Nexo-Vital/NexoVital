@@ -14,11 +14,20 @@ const ACTION_BUTTON_CLASS =
   'inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md px-5 font-semibold text-sm disabled:cursor-not-allowed disabled:opacity-60';
 
 /**
- * The two citizen actions the mockup shows. Neither flow exists in this build,
- * so both are rendered explicitly disabled with a visible note: nothing on the
- * screen can be clicked and then do nothing, and no fake route is wired up.
+ * The two citizen actions the mockup shows. "Pedir ambulancia" is live and calls
+ * the request action, but it is disabled while no unit is available: with zero
+ * available units the search could never be answered, so the button must not be
+ * clickable and inert. "Donar suministros" is a different flow and stays
+ * explicitly disabled with its note. Both disabled states say why (L5).
  */
-function CitizenRoleActions() {
+function CitizenRoleActions({
+  onRequest,
+  availableCount,
+}: {
+  onRequest: () => void;
+  availableCount: number;
+}) {
+  const noUnitsAvailable = availableCount === 0;
   return (
     <section
       aria-label="Acciones de tu rol"
@@ -31,8 +40,9 @@ function CitizenRoleActions() {
 
       <button
         type="button"
-        disabled
-        title="Próximamente"
+        onClick={onRequest}
+        disabled={noUnitsAvailable}
+        title={noUnitsAvailable ? 'No hay ambulancias disponibles en este momento.' : undefined}
         className={cn(ACTION_BUTTON_CLASS, 'bg-nv-red-600 text-white')}
       >
         <Ambulance className="size-5" aria-hidden />
@@ -50,8 +60,14 @@ function CitizenRoleActions() {
       </button>
 
       <p className="text-nv-navy-400 text-xs">
-        Próximamente: estas acciones se habilitarán cuando el flujo esté publicado.
+        Próximamente: Donar suministros se habilitará cuando el flujo esté publicado.
       </p>
+
+      {availableCount === 0 && (
+        <p role="status" className="text-critical text-xs">
+          No hay ambulancias disponibles en este momento.
+        </p>
+      )}
     </section>
   );
 }
@@ -120,16 +136,20 @@ function AidCenterRow({ centro }: { centro: CentroAyuda }) {
 interface CitizenRailProps {
   nearby: NearbyAmbulance[];
   centros: CentroAyuda[];
+  /** Units currently AVAILABLE; zero disables the search honestly. */
+  availableCount: number;
+  /** Starts the citizen request from the "Pedir ambulancia" action. */
+  onRequest: () => void;
 }
 
 /** Citizen rail: role actions, then the units and centers nearest to the map. */
-export function CitizenRail({ nearby, centros }: CitizenRailProps) {
+export function CitizenRail({ nearby, centros, availableCount, onRequest }: CitizenRailProps) {
   return (
     <aside
       aria-label="Panel del ciudadano"
       className="flex flex-col gap-4 lg:min-h-0 lg:overflow-y-auto"
     >
-      <CitizenRoleActions />
+      <CitizenRoleActions onRequest={onRequest} availableCount={availableCount} />
 
       <section
         aria-label="Ambulancias cerca de ti"

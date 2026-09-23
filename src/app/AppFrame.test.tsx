@@ -80,9 +80,9 @@ describe('AppFrame', () => {
   });
 
   it('appends the role detail suffix when given, e.g. the driver unit', () => {
-    renderFrame('CONDUCTOR', 'AMB-01');
+    renderFrame('CONDUCTOR', 'A-07');
 
-    expect(screen.getByText('Conductor de ambulancia · AMB-01')).toBeInTheDocument();
+    expect(screen.getByText('Conductor de ambulancia · A-07')).toBeInTheDocument();
   });
 
   it('renders the search as a non-interactive hint, never an input', () => {
@@ -100,14 +100,14 @@ describe('AppFrame', () => {
   });
 
   it('renders the bell badge with the pending count when given', () => {
-    renderFrame('CONDUCTOR', 'AMB-01', 3);
+    renderFrame('CONDUCTOR', 'A-07', 3);
 
     expect(screen.getByTestId('bell-badge')).toHaveTextContent('3');
     expect(screen.getByLabelText('3 solicitudes pendientes')).toBeInTheDocument();
   });
 
   it('caps the bell badge at 9+', () => {
-    renderFrame('CONDUCTOR', 'AMB-01', 12);
+    renderFrame('CONDUCTOR', 'A-07', 12);
 
     expect(screen.getByTestId('bell-badge')).toHaveTextContent('9+');
   });

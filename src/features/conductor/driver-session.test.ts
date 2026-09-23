@@ -12,7 +12,7 @@ describe('resolveDriverAmbulanceId', () => {
     expect(conductorIds).toHaveLength(5);
     const units = conductorIds.map((id) => resolveDriverAmbulanceId(id));
 
-    expect(units).toEqual(['AMB-01', 'AMB-02', 'AMB-03', 'AMB-04', 'AMB-05']);
+    expect(units).toEqual(['A-07', 'A-12', 'A-03', 'A-09', 'A-15']);
     // The regression being fixed: five drivers used to collapse onto one unit,
     // so "the first to accept wins" could never involve two real accounts.
     expect(new Set(units).size).toBe(units.length);
@@ -26,7 +26,7 @@ describe('resolveDriverAmbulanceId', () => {
     }
   });
 
-  it('falls back to AMB-01 for an unknown or missing user', () => {
+  it('falls back to A-07 for an unknown or missing user', () => {
     expect(resolveDriverAmbulanceId('not-a-driver')).toBe(FALLBACK_DRIVER_AMBULANCE_ID);
     expect(resolveDriverAmbulanceId(null)).toBe(FALLBACK_DRIVER_AMBULANCE_ID);
     expect(resolveDriverAmbulanceId(undefined)).toBe(FALLBACK_DRIVER_AMBULANCE_ID);

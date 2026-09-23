@@ -1,9 +1,19 @@
-import { useEffect, useMemo } from 'react';
+import { Check } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AcceptancePopup } from '@/features/ciudadano/AcceptancePopup';
+import { ArrivalPopup } from '@/features/ciudadano/ArrivalPopup';
 import { CitizenMapLegend } from '@/features/ciudadano/CitizenMapLegend';
 import { CitizenRail } from '@/features/ciudadano/CitizenRail';
+import { CitizenRequestRail } from '@/features/ciudadano/CitizenRequestRail';
 import { CitizenSummaryChips } from '@/features/ciudadano/CitizenSummaryChips';
+import { citizenSceneLabel, countAvailableUnits } from '@/features/ciudadano/citizen-request';
+import {
+  useCitizenRequestStore,
+  useCitizenRequestSync,
+} from '@/features/ciudadano/citizen-request-store';
 import {
   CITIZEN_FALLBACK_POSITION,
+  citizenUnitStatus,
   countCentersByLevel,
   nearbyAmbulances,
 } from '@/features/ciudadano/citizen-view';
@@ -12,9 +22,10 @@ import { useEmergencySync } from '@/features/emergencias/use-emergency-sync';
 import { useFleetStore } from '@/features/flota/fleet-store';
 import { useFleetSync } from '@/features/flota/use-fleet-sync';
 import { useDeviceLocation } from '@/features/geolocalizacion/use-device-location';
-import { MapCanvas, type SelfMarker } from '@/features/mapa/MapCanvas';
+import { MapCanvas, type RequestConnector, type SelfMarker } from '@/features/mapa/MapCanvas';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
 import { useSolicitudRegistrySync } from '@/features/solicitudes/use-solicitud-registry-sync';
+import { etaMinutes } from '@/lib/geo';
 import {
   MOCK_AMBULANCIAS,
   MOCK_CENTROS_AYUDA,
@@ -30,6 +41,9 @@ import type { Ambulancia, CentroAyuda, Emergencia, SolicitudAmbulancia } from '@
  * keeps the MapCanvas memo from invalidating on every render.
  */
 const NO_EMERGENCIES: Emergencia[] = [];
+
+/** Stable empty id list: keeps the MapCanvas memo props stable while idle. */
+const NO_UNIT_IDS: readonly string[] = [];
 
 interface CitizenMapPageProps {
   ambulancias?: Ambulancia[];
@@ -70,16 +84,53 @@ export default function CitizenMapPage({
   useFleetSync(port);
   useEmergencySync(port);
   useSolicitudRegistrySync(port);
+  useCitizenRequestSync(port);
 
   const fleet = useFleetStore((state) => state.units);
   const location = useDeviceLocation();
 
+  const requestPhase = useCitizenRequestStore((state) => state.phase);
+  const requestStartedAt = useCitizenRequestStore((state) => state.startedAt);
+  const notifiedIds = useCitizenRequestStore((state) => state.notifiedIds);
+  const acceptedBy = useCitizenRequestStore((state) => state.acceptedBy);
+  const acceptedAt = useCitizenRequestStore((state) => state.acceptedAt);
+  const arrivedAt = useCitizenRequestStore((state) => state.arrivedAt);
+  const confirmedAt = useCitizenRequestStore((state) => state.confirmedAt);
+  const searching = requestPhase === 'searching';
+  const accepted = requestPhase === 'accepted';
+  const arrived = requestPhase === 'arrived';
+  const closed = requestPhase === 'closed';
+  // The c4/c5/c6 rail replaces the search for good once a unit is assigned.
+  const assigned = accepted || arrived || closed;
+
+  // The acceptance popup is a one-shot notice: it opens when the phase turns
+  // accepted (only for OUR request — the store ignores other request ids) and
+  // closes itself. "Cerrar" is just a shortcut; the c4 rail stays underneath.
+  const [acceptanceOpen, setAcceptanceOpen] = useState(false);
+  useEffect(() => {
+    setAcceptanceOpen(accepted && acceptedBy !== null);
+  }, [accepted, acceptedBy]);
+  const closeAcceptance = useCallback(() => setAcceptanceOpen(false), []);
+
+  // The arrival dialog is a real modal that asks for an answer, but it can be
+  // dismissed without confirming. Dismissing reveals the c5 rail, whose
+  // "Cancelar solicitud" is the honest exit from a false arrival.
+  const [arrivalOpen, setArrivalOpen] = useState(false);
+  useEffect(() => {
+    setArrivalOpen(arrived && acceptedBy !== null);
+  }, [arrived, acceptedBy]);
+  const closeArrival = useCallback(() => setArrivalOpen(false), []);
+
   // Device position when the browser grants it; a Suba fallback otherwise, so
-  // the "Tú" marker (and the distances in the rail) always have an origin.
+  // the "Tú" marker (and the distances in the rail) always have an origin. The
+  // fallback is tracked separately so the subtitle never claims it is the real
+  // location, and the request is labelled as a reference/demo point instead.
   const selfPosition = location.position ?? CITIZEN_FALLBACK_POSITION;
+  const usingFallbackPosition = location.position === null;
 
   const counts = useMemo(() => countCentersByLevel(centrosAyuda), [centrosAyuda]);
   const nearby = useMemo(() => nearbyAmbulances(fleet, selfPosition), [fleet, selfPosition]);
+  const availableCount = useMemo(() => countAvailableUnits(fleet), [fleet]);
   const self: SelfMarker = useMemo(
     () => ({
       position: selfPosition,
@@ -89,17 +140,88 @@ export default function CitizenMapPage({
     [selfPosition, location.simulated],
   );
 
+  // Only while a search is open: the alerted units wear the ring, the occupied
+  // units dim back (mockup `C.c3`), and the radar rings anchor on the citizen.
+  const dimmedIds = useMemo(
+    () =>
+      searching
+        ? fleet.filter((unit) => citizenUnitStatus(unit.estado) !== 'free').map((unit) => unit.id)
+        : NO_UNIT_IDS,
+    [searching, fleet],
+  );
+
+  const handleRequest = useCallback(() => {
+    useCitizenRequestStore.getState().start({
+      port,
+      units: useFleetStore.getState().units,
+      origin: selfPosition,
+    });
+  }, [port, selfPosition]);
+
+  const handleCancel = useCallback(() => {
+    useCitizenRequestStore.getState().cancel(port);
+  }, [port]);
+
+  const handleConfirmArrival = useCallback(() => {
+    useCitizenRequestStore.getState().confirmArrival(port);
+  }, [port]);
+
+  // `C.c6` "Volver al mapa": the closed request is dropped and the map rail
+  // comes back; nothing is republished because the loop is already closed.
+  const handleBackToMap = useCallback(() => {
+    useCitizenRequestStore.getState().reset();
+  }, []);
+
+  // The assigned unit as the live fleet knows it: the popup's id is real, and
+  // the c4/c5/c6 rail and map read the unit's own driver, plate, model and type.
+  const assignedUnit = useMemo(
+    () => (assigned && acceptedBy ? (fleet.find((unit) => unit.id === acceptedBy) ?? null) : null),
+    [assigned, acceptedBy, fleet],
+  );
+
+  // Solid connector from the assigned unit to the citizen (mockup `C.c4`); it is
+  // a visual connector, not a calculated route (no routing engine in this build).
+  const acceptanceConnector: RequestConnector | null = useMemo(
+    () => (assignedUnit ? { from: assignedUnit.ubicacion, to: selfPosition, dashed: false } : null),
+    [assignedUnit, selfPosition],
+  );
+
+  // The assigned unit's marker carries its computed ETA label ("A-07 · 5 min").
+  const ambulanceLabels = useMemo(
+    () =>
+      assignedUnit
+        ? {
+            [assignedUnit.id]: `${assignedUnit.id} · ${etaMinutes(assignedUnit.ubicacion, selfPosition)} min`,
+          }
+        : undefined,
+    [assignedUnit, selfPosition],
+  );
+
+  const title = searching
+    ? 'Pidiendo ambulancia'
+    : accepted
+      ? 'Tu ambulancia va en camino'
+      : arrived
+        ? 'Tu ambulancia llegó'
+        : closed
+          ? 'Solicitud atendida'
+          : 'Mapa de operación';
+  const subtitle =
+    searching || accepted || arrived
+      ? citizenSceneLabel(selfPosition, { fallback: usingFallbackPosition })
+      : 'Suba, Bogotá · en vivo';
+
   return (
     <div className="flex h-full min-h-0 w-full flex-col gap-3 overflow-y-auto bg-nv-mint text-nv-navy lg:grid lg:grid-cols-[minmax(0,1fr)_344px] lg:grid-rows-[auto_minmax(0,1fr)] lg:gap-5 lg:overflow-hidden">
       <header className="flex flex-wrap items-end justify-between gap-3 lg:col-span-2">
         <div>
-          <h1 className="font-semibold text-2xl tracking-tight">Mapa de operación</h1>
+          <h1 className="font-semibold text-2xl tracking-tight">{title}</h1>
           <p className="mt-1 flex items-center gap-2 text-nv-navy-400 text-sm">
             <span
               className="size-2 shrink-0 rounded-full bg-nv-teal shadow-[0_0_0_3px_rgb(93_186_168_/_0.28)]"
               aria-hidden
             />
-            Suba, Bogotá · en vivo
+            {subtitle}
           </p>
         </div>
         <CitizenSummaryChips counts={counts} />
@@ -115,13 +237,71 @@ export default function CitizenMapPage({
           centros={centrosAyuda}
           center={selfPosition}
           self={self}
+          selectedAmbulanceId={assigned ? acceptedBy : null}
+          selfRings={searching}
+          notifiedAmbulanceIds={searching ? notifiedIds : NO_UNIT_IDS}
+          dimmedAmbulanceIds={dimmedIds}
+          requestConnector={acceptanceConnector}
+          ambulanceLabels={ambulanceLabels}
           onSelectAmbulance={() => undefined}
           onSelectEmergency={() => undefined}
         />
         <CitizenMapLegend counts={counts} units={fleet} />
+
+        {/* `C.c6`: the closing toast. It exists only once the request is closed. */}
+        {closed && (
+          <div className="pointer-events-none absolute inset-x-0 top-5 z-[1000] flex justify-center px-3">
+            <div className="flex items-center gap-2.5 rounded-nv-md bg-nv-navy px-4 py-3 font-medium text-sm text-white shadow-nv-float">
+              <span className="grid size-7 shrink-0 place-items-center rounded-full bg-nv-lime text-nv-navy">
+                <Check className="size-4" aria-hidden />
+              </span>
+              Confirmaste la llegada. Tu solicitud quedó cerrada.
+            </div>
+          </div>
+        )}
       </section>
 
-      <CitizenRail nearby={nearby} centros={centrosAyuda} />
+      {requestPhase !== 'idle' ? (
+        <CitizenRequestRail
+          phase={requestPhase}
+          notifiedIds={notifiedIds}
+          startedAt={requestStartedAt}
+          acceptedBy={acceptedBy}
+          acceptedAt={acceptedAt}
+          arrivedAt={arrivedAt}
+          confirmedAt={confirmedAt}
+          units={fleet}
+          origin={selfPosition}
+          onCancel={handleCancel}
+          onBackToMap={handleBackToMap}
+        />
+      ) : (
+        <CitizenRail
+          nearby={nearby}
+          centros={centrosAyuda}
+          availableCount={availableCount}
+          onRequest={handleRequest}
+        />
+      )}
+
+      {acceptanceOpen && acceptedBy && (
+        <AcceptancePopup ambulanceId={acceptedBy} onClose={closeAcceptance} />
+      )}
+
+      {/*
+        `C.c5`: the arrival dialog asks for an answer and can be dismissed
+        (Escape, outside click or "Cerrar") without confirming. It is NOT keyed:
+        its open state is re-derived from the phase above, so a new request
+        starts with a fresh dialog instead of inheriting a previous dismissal.
+      */}
+      {arrivalOpen && acceptedBy && (
+        <ArrivalPopup
+          unitId={acceptedBy}
+          unit={assignedUnit}
+          onConfirm={handleConfirmArrival}
+          onClose={closeArrival}
+        />
+      )}
     </div>
   );
 }

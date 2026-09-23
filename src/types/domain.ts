@@ -54,6 +54,17 @@ export type AmbulanceState = 'AVAILABLE' | 'ASSIGNED' | 'EN_ROUTE' | 'MAINTENANC
 export interface Ambulancia {
   id: string;
   placa: string;
+  /**
+   * UI convenience: vehicle model, as the mockup writes it ("Renault Master
+   * 2023"). Optional because a unit created in the fleet manager or hydrated
+   * from a live frame may not know it yet; the UI omits it instead of inventing.
+   */
+  modelo?: string;
+  /**
+   * UI convenience: unit type, as the mockup writes it ("Básica (TAB)").
+   * Optional for the same reason as `modelo`.
+   */
+  tipo?: string;
   estado: AmbulanceState;
   ubicacion: Ubicacion;
   zona: string;
@@ -85,9 +96,18 @@ export interface SolicitudAmbulancia {
   notifiedCount: number;
   /** Winning unit once the request is resolved. Never chosen by the client. */
   ambulanciaAsignadaId?: string | null;
+  /**
+   * UI convenience (not part of the OpenAPI schema): when the winning unit
+   * declared its arrival. Set by the registry sync from `request.arrived`, so the
+   * coordinator can see the milestone without inventing a domain state.
+   */
+  llegadaEn?: string;
 }
 
 export type TrafficLight = 'RED' | 'AMBER' | 'GREEN' | 'NOT_DECLARED';
+
+/** Grammatical number of an item name, used to agree the need label's verb. */
+export type GrammaticalNumber = 'singular' | 'plural';
 
 export interface InventarioItem {
   id: string;
@@ -96,6 +116,14 @@ export interface InventarioItem {
   disponible: number;
   requerido: number;
   semaforo: TrafficLight;
+  /**
+   * UI-only convenience (not part of the OpenAPI schema): the grammatical number
+   * of `nombre`, declared by the data so the citizen need label can agree the
+   * verb — "Le falta agua potable" vs "Le faltan alimentos". The text alone
+   * cannot tell them apart ("gas" is singular and ends in "s", while "casas" is
+   * plural and also ends in "s"), so this is declared, never inferred.
+   */
+  grammaticalNumber: GrammaticalNumber;
 }
 
 export interface CentroAyuda {

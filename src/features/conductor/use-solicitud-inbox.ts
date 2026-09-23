@@ -5,6 +5,7 @@ import {
   type RealtimePort,
   type SolicitudAcceptPayload,
   type SolicitudBroadcastPayload,
+  type SolicitudLlegadaPayload,
   type SolicitudPayload,
   type SolicitudRejectPayload,
 } from '@/shared/realtime';
@@ -12,13 +13,27 @@ import type { EmergencyLevel, Ubicacion } from '@/types/domain';
 
 export type SolicitudPhase = 'idle' | 'submitting' | 'assigned' | 'taken' | 'rejected' | 'timeout';
 
+/**
+ * Mission lifecycle after this unit won the request. The client never sets a
+ * phase on its own: `arrived` follows the relay's `request.arrived` and
+ * `confirmed` follows its `request.confirmed`.
+ */
+export type DriverMissionPhase = 'en_route' | 'arrived' | 'confirmed';
+
 export interface Mission {
   requestId: string;
   zonaId: string;
   tipo: string;
-  nivel: EmergencyLevel;
+  /** Absent when the request declared no severity (a citizen request). */
+  nivel?: EmergencyLevel;
   escena: Ubicacion;
   etaMinutes: number;
+  /** When the arbiter assigned this mission (epoch ms). */
+  acceptedAt: number;
+  /** When this unit declared arrival (epoch ms); null until it does. */
+  arrivedAt: number | null;
+  /** When the citizen confirmed (epoch ms); null until they do. */
+  confirmedAt: number | null;
 }
 
 export interface SolicitudInboxState {
@@ -38,10 +53,16 @@ export interface SolicitudInboxState {
   /** Human-readable Spanish outcome; announced through aria-live by the rail. */
   outcomeMessage: string | null;
   mission: Mission | null;
+  /** Derived mission phase; `en_route` until the arrival event arrives. */
+  missionPhase: DriverMissionPhase;
   accept: () => void;
   reject: () => void;
   /** Called by the request card when the countdown reaches zero. */
   notifyTimeout: () => void;
+  /** Declares arrival: publishes `solicitud.llegada` and waits for the relay. */
+  declareArrival: () => void;
+  /** Ends the mission locally; the unit is free again (the page republishes). */
+  finishService: () => void;
   dismiss: () => void;
 }
 
@@ -71,6 +92,7 @@ export function useSolicitudInbox(
 
   const broadcastRef = useRef<SolicitudBroadcastPayload | null>(null);
   const phaseRef = useRef<SolicitudPhase>('idle');
+  const missionRef = useRef<Mission | null>(null);
   const positionRef = useRef<Ubicacion | null>(currentPosition);
   /**
    * Request id this unit has already won. The relay broadcasts
@@ -80,6 +102,7 @@ export function useSolicitudInbox(
   const wonRequestIdRef = useRef<string | null>(null);
   positionRef.current = currentPosition;
   phaseRef.current = phase;
+  missionRef.current = mission;
 
   const dismiss = useCallback(() => {
     broadcastRef.current = null;
@@ -160,6 +183,9 @@ export function useSolicitudInbox(
             nivel: active.nivel,
             escena: active.escena,
             etaMinutes: etaMinutes(from, active.escena),
+            acceptedAt: Date.now(),
+            arrivedAt: null,
+            confirmedAt: null,
           });
         } else {
           setPhase('taken');
@@ -208,6 +234,32 @@ export function useSolicitudInbox(
         setRequestedAtMs(null);
         setPhase('idle');
         setOutcomeMessage(null);
+        return;
+      }
+
+      if (payload.type === 'request.arrived') {
+        const active = missionRef.current;
+        // Only OUR mission reacts, and only the FIRST arrival: a repeated event
+        // must not reset the arrival instant (or any counter derived from it).
+        if (active?.requestId !== payload.requestId || active.arrivedAt !== null) {
+          return;
+        }
+        const next = { ...active, arrivedAt: Date.now() };
+        missionRef.current = next;
+        setMission(next);
+        return;
+      }
+
+      if (payload.type === 'request.confirmed') {
+        const active = missionRef.current;
+        // The citizen confirmed: stamp it once so the toast and the timeline's
+        // third entry appear, and never reopen the notice on a repeat.
+        if (active?.requestId !== payload.requestId || active.confirmedAt !== null) {
+          return;
+        }
+        const next = { ...active, confirmedAt: Date.now() };
+        missionRef.current = next;
+        setMission(next);
       }
     });
   }, [port, ambulanceId]);
@@ -262,6 +314,34 @@ export function useSolicitudInbox(
     }
   }, []);
 
+  const declareArrival = useCallback(() => {
+    const active = missionRef.current;
+    if (!port || !active) {
+      return;
+    }
+    // Publish only: the mission advances when the relay echoes `request.arrived`,
+    // so this client never decides the state on its own (server is the truth).
+    port.publish<SolicitudLlegadaPayload>(DESTINATIONS.solicitudes, {
+      type: 'solicitud.llegada',
+      requestId: active.requestId,
+      ambulanceId,
+    });
+  }, [port, ambulanceId]);
+
+  const finishService = useCallback(() => {
+    // Local end of the mission: the page republishes the unit as available.
+    missionRef.current = null;
+    setMission(null);
+    setOutcomeMessage(null);
+  }, []);
+
+  const missionPhase: DriverMissionPhase =
+    mission?.confirmedAt != null
+      ? 'confirmed'
+      : mission?.arrivedAt != null
+        ? 'arrived'
+        : 'en_route';
+
   return {
     broadcast,
     deadlineMs,
@@ -270,9 +350,12 @@ export function useSolicitudInbox(
     phase,
     outcomeMessage,
     mission,
+    missionPhase,
     accept,
     reject,
     notifyTimeout,
+    declareArrival,
+    finishService,
     dismiss,
   };
 }

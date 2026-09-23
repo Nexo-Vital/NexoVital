@@ -3,11 +3,17 @@ import type { RolUsuario } from '@/types/domain';
 /**
  * Build-time demo catalog for the deployed build (`VITE_DEMO_MODE=1`).
  *
- * It mirrors, one to one, the ten users the backend seeds (`DataSeeder.java`,
- * design decision D2): same emails, passwords and roles. Keeping both lists in
- * sync is what makes the login screen, the demo profiles panel and the deployed
- * demo agree about who can sign in. The plaintext password exists only here and
- * in the seeder: the real backend stores it as a BCrypt hash.
+ * It matches the ten users the backend seeds (`DataSeeder.java`, design
+ * decision D2) on the credentials that actually authenticate: same emails,
+ * same passwords and same roles. Keeping both lists in sync is what makes the
+ * login screen, the demo profiles panel and the deployed demo agree about who
+ * can sign in.
+ *
+ * The display names are our own demo data, not the seeder's: the seeder names
+ * each driver after its unit ("Conductor ABC101"), while here they carry the
+ * real names the mockup uses (e.g. "Carlos Pérez Gómez"). Only email, password
+ * and role are shared with the seeder. The plaintext password exists only here
+ * and in the seeder: the real backend stores it as a BCrypt hash.
  */
 export interface DemoAccount {
   id: string;
@@ -58,35 +64,35 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
   },
   {
     id: 'usr-demo-conductor-1',
-    nombre: 'Conductor ABC101',
+    nombre: 'Carlos Pérez Gómez',
     email: 'conductor1@nexovital.co',
     rol: 'CONDUCTOR',
     password: CONDUCTOR_PASSWORD,
   },
   {
     id: 'usr-demo-conductor-2',
-    nombre: 'Conductor ABC202',
+    nombre: 'Laura Restrepo Díaz',
     email: 'conductor2@nexovital.co',
     rol: 'CONDUCTOR',
     password: CONDUCTOR_PASSWORD,
   },
   {
     id: 'usr-demo-conductor-3',
-    nombre: 'Conductor ABC303',
+    nombre: 'Andrés Gómez Peña',
     email: 'conductor3@nexovital.co',
     rol: 'CONDUCTOR',
     password: CONDUCTOR_PASSWORD,
   },
   {
     id: 'usr-demo-conductor-4',
-    nombre: 'Conductor ABC404',
+    nombre: 'Valentina Ruiz Mora',
     email: 'conductor4@nexovital.co',
     rol: 'CONDUCTOR',
     password: CONDUCTOR_PASSWORD,
   },
   {
     id: 'usr-demo-conductor-5',
-    nombre: 'Conductor ABC505',
+    nombre: 'Diego Herrera Cruz',
     email: 'conductor5@nexovital.co',
     rol: 'CONDUCTOR',
     password: CONDUCTOR_PASSWORD,

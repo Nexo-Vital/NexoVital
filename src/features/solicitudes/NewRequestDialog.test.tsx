@@ -29,7 +29,7 @@ describe('NewRequestDialog', () => {
     await user.selectOptions(screen.getByLabelText('Emergency'), 'EMG-001');
 
     expect(screen.getByRole('status')).toHaveTextContent(
-      '5 units will be notified. The first to accept wins.',
+      '3 units will be notified. The first to accept wins.',
     );
 
     await user.click(screen.getByRole('button', { name: /create request/i }));
@@ -39,7 +39,7 @@ describe('NewRequestDialog', () => {
       type: 'solicitud.broadcast',
       mode: 'broadcast',
       emergenciaId: 'EMG-001',
-      notifiedCount: 5,
+      notifiedCount: 3,
     });
   });
 
@@ -49,17 +49,17 @@ describe('NewRequestDialog', () => {
 
     await user.selectOptions(screen.getByLabelText('Emergency'), 'EMG-001');
     await user.click(screen.getByRole('radio', { name: /direct/i }));
-    await user.selectOptions(screen.getByLabelText('Unit'), 'AMB-03');
+    await user.selectOptions(screen.getByLabelText('Unit'), 'A-03');
 
-    expect(screen.getByRole('status')).toHaveTextContent('Only AMB-03 will be notified.');
+    expect(screen.getByRole('status')).toHaveTextContent('Only A-03 will be notified.');
 
     await user.click(screen.getByRole('button', { name: /create request/i }));
 
     expect(onCreate.mock.calls[0]?.[0]).toMatchObject({
       type: 'solicitud.direct',
       mode: 'direct',
-      targetAmbulanceId: 'AMB-03',
-      notificadas: ['AMB-03'],
+      targetAmbulanceId: 'A-03',
+      notificadas: ['A-03'],
       notifiedCount: 1,
     });
   });

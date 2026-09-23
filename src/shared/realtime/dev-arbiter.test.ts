@@ -67,12 +67,28 @@ function reject(requestId: string, ambulanceId: string): string {
   });
 }
 
+function llegada(requestId: string, ambulanceId: string): string {
+  return envelope(DESTINATIONS.solicitudes, {
+    type: 'solicitud.llegada',
+    requestId,
+    ambulanceId,
+  });
+}
+
+function confirmar(requestId: string): string {
+  return envelope(DESTINATIONS.solicitudes, {
+    type: 'solicitud.confirmar',
+    requestId,
+  });
+}
+
 function parseSingle(messages: string[]): {
   type: string;
   winner?: string;
   rejected?: string;
   reason?: string;
   requestId?: string;
+  ambulanceId?: string;
 } {
   expect(messages).toHaveLength(1);
   return JSON.parse(messages[0]).payload as {
@@ -81,6 +97,7 @@ function parseSingle(messages: string[]): {
     rejected?: string;
     reason?: string;
     requestId?: string;
+    ambulanceId?: string;
   };
 }
 
@@ -194,6 +211,66 @@ describe('resolveArbiterMessages', () => {
       );
 
       expect(taken).toMatchObject({ type: 'request.taken', winner: 'AMB-03' });
+    });
+  });
+
+  describe('arrival and confirmation', () => {
+    function wonRequest(): { winners: Map<string, string>; requests: ArbiterRequests } {
+      const winners = new Map<string, string>();
+      const requests: ArbiterRequests = new Map();
+      resolveArbiterMessages(broadcast('REQ-1'), winners, requests);
+      resolveArbiterMessages(accept('REQ-1', 'AMB-01'), winners, requests);
+      return { winners, requests };
+    }
+
+    it('lets the winner declare arrival and announces it exactly once', () => {
+      const { winners, requests } = wonRequest();
+
+      const arrived = parseSingle(
+        resolveArbiterMessages(llegada('REQ-1', 'AMB-01'), winners, requests),
+      );
+      expect(arrived).toMatchObject({
+        type: 'request.arrived',
+        requestId: 'REQ-1',
+        ambulanceId: 'AMB-01',
+      });
+
+      // Idempotent: the repeat emits NOTHING, so no counter resets and no notice
+      // reopens; the recorded arrival stays where it was.
+      expect(resolveArbiterMessages(llegada('REQ-1', 'AMB-01'), winners, requests)).toEqual([]);
+      expect(requests.get('REQ-1')?.arrived).toBe(true);
+    });
+
+    it('refuses an arrival from a unit that did not win the request', () => {
+      const { winners, requests } = wonRequest();
+
+      expect(resolveArbiterMessages(llegada('REQ-1', 'AMB-09'), winners, requests)).toEqual([]);
+      expect(requests.get('REQ-1')?.arrived).toBeUndefined();
+    });
+
+    it('confirms only after a declared arrival, and only once', () => {
+      const { winners, requests } = wonRequest();
+
+      // A confirmation before any arrival is not a valid step.
+      expect(resolveArbiterMessages(confirmar('REQ-1'), winners, requests)).toEqual([]);
+
+      resolveArbiterMessages(llegada('REQ-1', 'AMB-01'), winners, requests);
+      const confirmed = parseSingle(resolveArbiterMessages(confirmar('REQ-1'), winners, requests));
+      expect(confirmed).toMatchObject({ type: 'request.confirmed', requestId: 'REQ-1' });
+
+      // Idempotent: the request is already closed; a repeat must not reopen it.
+      expect(resolveArbiterMessages(confirmar('REQ-1'), winners, requests)).toEqual([]);
+    });
+
+    it('drops the recorded arrival when the request is broadcast again', () => {
+      const { winners, requests } = wonRequest();
+      resolveArbiterMessages(llegada('REQ-1', 'AMB-01'), winners, requests);
+
+      resolveArbiterMessages(broadcast('REQ-1'), winners, requests);
+
+      // A fresh round re-opens the id: the previous arrival does not leak in.
+      expect(requests.get('REQ-1')?.arrived).toBeUndefined();
+      expect(requests.get('REQ-1')?.confirmed).toBeUndefined();
     });
   });
 

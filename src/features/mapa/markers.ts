@@ -1,6 +1,7 @@
 import L from 'leaflet';
 import {
   CENTER_LEVEL_STYLE,
+  centerShortName,
   citizenCenterLevel,
   NOT_DECLARED_CENTER_STYLE,
 } from '@/features/ciudadano/citizen-view';
@@ -104,25 +105,49 @@ function buildMarkerIcon(html: string, size: number): L.DivIcon {
  *
  * `notified` adds the static teal ring a unit gets while it is part of an open
  * request's `notificadas`. It defaults to false, so the citizen and CRUE maps
- * draw exactly the same marker they always did.
+ * draw exactly the same marker they always did. `label` overrides the default
+ * unit-id label (the citizen tracking screen writes "A-07 · 5 min").
  */
 export function ambulanceIcon(
   ambulance: Ambulancia,
   selected: boolean,
   notified = false,
+  dim = false,
+  label?: string,
 ): L.DivIcon {
   const stateClass = `nv-marker--${ambulance.estado.toLowerCase()}`;
   const selectedClass = selected ? ' nv-marker--selected' : '';
   const simulatedClass = ambulance.source === 'simulated' ? ' nv-marker--sim' : '';
   const notifiedClass = notified ? ' nv-marker--notified' : '';
+  const dimClass = dim ? ' nv-marker--dim' : '';
   const badge = ambulance.estado === 'AVAILABLE' ? CHECK_GLYPH : CLOCK_GLYPH;
   const html =
-    `<div class="nv-marker nv-marker--unit ${stateClass}${selectedClass}${simulatedClass}${notifiedClass}">` +
+    `<div class="nv-marker nv-marker--unit ${stateClass}${selectedClass}${simulatedClass}${notifiedClass}${dimClass}">` +
     `<span class="nv-marker__shape">${AMBULANCE_GLYPH}</span>` +
     `<span class="nv-marker__badge">${badge}</span>` +
-    `<span class="nv-marker__label">${escapeHtml(ambulance.id)}</span>` +
+    `<span class="nv-marker__label">${escapeHtml(label ?? ambulance.id)}</span>` +
     `</div>`;
   return buildMarkerIcon(html, 40);
+}
+
+/**
+ * Radar rings anchored on the citizen while a request is open (mockup `C.c3`):
+ * a static filled outer ring plus two animated rings. `sizePx` is the icon's
+ * pixel diameter, and the caller sizes it so the OUTER ring spans the search's
+ * real ground diameter at the current zoom (`radarRingsPixelDiameter`); the two
+ * inner rings keep the mockup's 67%/40% proportions in CSS. The rings therefore
+ * cover the same terrain at any zoom. Rendered as its own marker so it paints
+ * below the "Tú" dot; the animation itself lives in CSS and only runs when the
+ * user allows motion.
+ */
+export function citizenRingsIcon(sizePx: number): L.DivIcon {
+  const html =
+    `<div class="nv-rings">` +
+    `<span class="nv-ring nv-ring--fill"></span>` +
+    `<span class="nv-ring nv-ring--anim"></span>` +
+    `<span class="nv-ring nv-ring--anim nv-ring--d2"></span>` +
+    `</div>`;
+  return buildMarkerIcon(html, sizePx);
 }
 
 /**
@@ -188,7 +213,7 @@ export function centerIcon(center: CentroAyuda, selected = false): L.DivIcon {
     `<div class="nv-marker nv-marker--center${selectedClass}" style="${styleAttribute}">` +
     `<span class="nv-marker__shape">${WAREHOUSE_GLYPH}</span>` +
     `<span class="nv-marker__badge">${CENTER_BADGE_GLYPH[traffic]}</span>` +
-    `<span class="nv-marker__label">${escapeHtml(center.id)}</span>` +
+    `<span class="nv-marker__label">${escapeHtml(centerShortName(center))}</span>` +
     `</div>`;
   return buildMarkerIcon(html, 48);
 }

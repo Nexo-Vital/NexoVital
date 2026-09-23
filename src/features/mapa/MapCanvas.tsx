@@ -2,9 +2,10 @@ import 'leaflet/dist/leaflet.css';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type {} from '@maplibre/maplibre-gl-leaflet';
 import L from 'leaflet';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { MapContainer, Marker, Polyline, useMap, useMapEvents, ZoomControl } from 'react-leaflet';
 import { filterByLevel, useLayersStore } from '@/features/mapa/layers-store';
+import { cn } from '@/lib/utils';
 import type { Ambulancia, CentroAyuda, Emergencia, Ubicacion } from '@/types/domain';
 import {
   BASE_LAYERS,
@@ -13,7 +14,15 @@ import {
   MAP_ZOOM,
   MAPLIBRE_WORKER_URL,
 } from './mapConfig';
-import { ambulanceIcon, centerIcon, emergencyIcon, requestIcon, selfIcon } from './markers';
+import {
+  ambulanceIcon,
+  centerIcon,
+  citizenRingsIcon,
+  emergencyIcon,
+  requestIcon,
+  selfIcon,
+} from './markers';
+import { outerRingRadiusKm, radarRingsPixelDiameter } from './radar-rings';
 
 /** The viewer's own unit, rendered apart from the fleet markers. */
 export interface SelfMarker {
@@ -37,6 +46,11 @@ export interface RequestMarker {
 export interface RequestConnector {
   from: Ubicacion;
   to: Ubicacion;
+  /**
+   * Dashed by default (the pending-request connector). A live mission draws it
+   * SOLID, the same visual difference the mockup makes between `d3` and `d4`.
+   */
+  dashed?: boolean;
 }
 
 interface MapCanvasProps {
@@ -57,6 +71,19 @@ interface MapCanvasProps {
   requestConnector?: RequestConnector | null;
   /** Fleet unit ids currently part of an open request (`notificadas`). */
   notifiedAmbulanceIds?: readonly string[];
+  /** Fleet unit ids to de-emphasise (the units an open request did NOT alert). */
+  dimmedAmbulanceIds?: readonly string[];
+  /**
+   * Per-unit marker label override, keyed by unit id. The citizen tracking
+   * screen labels the assigned unit with its computed ETA ("A-07 · 5 min");
+   * without an entry the marker keeps its plain id.
+   */
+  ambulanceLabels?: Readonly<Record<string, string>>;
+  /**
+   * Citizen search: draw the radar rings anchored on the self marker. The outer
+   * radius is the real distance to the farthest unit in `notifiedAmbulanceIds`.
+   */
+  selfRings?: boolean;
   /** Map click in lat/lng (used by tap-to-move while simulating). */
   onMapClick?: (ubicacion: Ubicacion) => void;
   /** Fired when a dragged self marker is released. */
@@ -110,6 +137,34 @@ function CenterReporter({ onCenterChange }: { onCenterChange?: (ubicacion: Ubica
   }, [map, onCenterChange]);
 
   return null;
+}
+
+/**
+ * Citizen search radar (mockup `C.c3`). The outer ring's real ground radius is
+ * `outerKm`; the icon is re-sized from that distance on every settled zoom, so
+ * the rings keep covering the same terrain instead of the same pixels. Leaflet
+ * already scales the marker during the zoom animation, so `zoomend` is enough.
+ */
+function CitizenRadar({ position, outerKm }: { position: Ubicacion; outerKm: number }) {
+  const map = useMap();
+  const [zoom, setZoom] = useState(() => map.getZoom());
+  useMapEvents({
+    zoomend: () => setZoom(map.getZoom()),
+  });
+
+  const sizePx = radarRingsPixelDiameter(outerKm, position.lat, zoom);
+  // Memoised on the size alone: an unrelated re-render must not rebuild the
+  // marker's DOM through `setIcon`.
+  const icon = useMemo(() => citizenRingsIcon(sizePx), [sizePx]);
+
+  return (
+    <Marker
+      position={[position.lat, position.lng]}
+      icon={icon}
+      zIndexOffset={-100}
+      interactive={false}
+    />
+  );
 }
 
 /**
@@ -200,6 +255,9 @@ export function MapCanvas({
   request = null,
   requestConnector = null,
   notifiedAmbulanceIds = [],
+  dimmedAmbulanceIds = [],
+  ambulanceLabels,
+  selfRings = false,
   onMapClick,
   onSelfDragEnd,
   onCenterChange,
@@ -215,6 +273,19 @@ export function MapCanvas({
     () => (overlays.emergencias ? filterByLevel(emergencias, visibleLevels) : []),
     [emergencias, overlays.emergencias, visibleLevels],
   );
+
+  /**
+   * Citizen search radar: only while a search is open AND at least one alerted
+   * unit is on the map. The outer radius is the real distance to the farthest
+   * one, so an idle map (or one whose alert reached no drawn unit) draws no ring.
+   */
+  const radar = useMemo(() => {
+    if (!selfRings || !self) {
+      return null;
+    }
+    const outerKm = outerRingRadiusKm(self.position, ambulancias, notifiedAmbulanceIds);
+    return outerKm !== null && outerKm > 0 ? { position: self.position, outerKm } : null;
+  }, [selfRings, self, ambulancias, notifiedAmbulanceIds]);
 
   return (
     <MapContainer
@@ -248,6 +319,8 @@ export function MapCanvas({
               ambulance,
               ambulance.id === selectedAmbulanceId,
               notifiedAmbulanceIds.includes(ambulance.id),
+              dimmedAmbulanceIds.includes(ambulance.id),
+              ambulanceLabels?.[ambulance.id],
             )}
             eventHandlers={{ click: () => onSelectAmbulance(ambulance.id) }}
           />
@@ -284,9 +357,12 @@ export function MapCanvas({
               [requestConnector.from.lat, requestConnector.from.lng],
               [requestConnector.to.lat, requestConnector.to.lng],
             ]}
-            className="nv-connector-line"
+            className={cn(
+              'nv-connector-line',
+              requestConnector.dashed === false && 'nv-connector-line--solid',
+            )}
             weight={6}
-            dashArray="1 12"
+            dashArray={requestConnector.dashed === false ? undefined : '1 12'}
             lineCap="round"
             interactive={false}
           />
@@ -301,6 +377,8 @@ export function MapCanvas({
           interactive={false}
         />
       )}
+
+      {radar && <CitizenRadar position={radar.position} outerKm={radar.outerKm} />}
 
       {self && (
         <Marker

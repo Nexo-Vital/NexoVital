@@ -14,9 +14,9 @@ export interface FleetFormErrors {
   lng?: string;
 }
 
-const ID_PATTERN = /^AMB-(\d+)$/;
+const ID_PATTERN = /^A-(\d+)$/;
 
-/** Next free auto id, e.g. AMB-11 when AMB-01..AMB-10 exist. */
+/** Next free auto id in the fixture scheme, e.g. A-16 when A-03..A-15 exist. */
 export function nextAmbulanceId(units: Ambulancia[]): string {
   let max = 0;
   for (const unit of units) {
@@ -25,7 +25,7 @@ export function nextAmbulanceId(units: Ambulancia[]): string {
       max = Math.max(max, Number(match[1]));
     }
   }
-  return `AMB-${String(max + 1).padStart(2, '0')}`;
+  return `A-${String(max + 1).padStart(2, '0')}`;
 }
 
 /**

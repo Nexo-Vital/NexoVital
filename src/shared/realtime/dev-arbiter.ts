@@ -2,7 +2,9 @@ import {
   DESTINATIONS,
   type RealtimeEnvelope,
   type RequestAlreadyTakenPayload,
+  type RequestArrivedPayload,
   type RequestCancelledPayload,
+  type RequestConfirmedPayload,
   type RequestRejectedPayload,
   type RequestTakenPayload,
   type SolicitudMode,
@@ -32,6 +34,10 @@ import {
  *   - `solicitud.cancel` withdraws the request: the pending metadata and any
  *     winner are dropped, and `request.cancelled` is fanned out so every client
  *     stops offering a mission nobody asked for.
+ *   - `solicitud.llegada` / `solicitud.confirmar` close the loop: only the
+ *     recorded winner may declare arrival, the citizen may only confirm an
+ *     arrival that was already declared, and repeating either is a no-op (the
+ *     relay emits the event ONCE, so no counter resets and no notice reopens).
  */
 export interface ArbiterRequest {
   mode: SolicitudMode;
@@ -44,6 +50,10 @@ export interface ArbiterRequest {
    * skipped rather than rejecting every unit.
    */
   notificadas?: string[];
+  /** The winning unit already declared arrival; a repeat is a no-op. */
+  arrived?: boolean;
+  /** The citizen already confirmed; a repeat is a no-op. */
+  confirmed?: boolean;
 }
 
 /** requestId -> request metadata. Persistent for the life of the relay. */
@@ -114,6 +124,60 @@ export function resolveArbiterMessages(
         type: 'request.cancelled',
         requestId,
       } satisfies RequestCancelledPayload),
+    ];
+  }
+
+  if (payload.type === 'solicitud.llegada') {
+    const { requestId, ambulanceId } = payload;
+    if (typeof requestId !== 'string' || typeof ambulanceId !== 'string') {
+      return [raw];
+    }
+    // Only the unit that WON the request may declare arrival: a stale client
+    // cannot announce a mission it never owned. With no recorded winner (a
+    // legacy frame) the check is skipped, matching the accept leniency.
+    const winner = winners.get(requestId);
+    if (winner !== undefined && winner !== ambulanceId) {
+      return [];
+    }
+    const request = requests.get(requestId);
+    if (request?.arrived) {
+      // Idempotent: a repeated arrival is a no-op, never a second notice.
+      return [];
+    }
+    if (request) {
+      request.arrived = true;
+    }
+    return [
+      serialize(DESTINATIONS.solicitudes, {
+        type: 'request.arrived',
+        requestId,
+        ambulanceId,
+      } satisfies RequestArrivedPayload),
+    ];
+  }
+
+  if (payload.type === 'solicitud.confirmar') {
+    const { requestId } = payload;
+    if (typeof requestId !== 'string') {
+      return [raw];
+    }
+    const request = requests.get(requestId);
+    if (request && !request.arrived) {
+      // A confirmation before any declared arrival is not a valid step.
+      return [];
+    }
+    if (request?.confirmed) {
+      // Idempotent: the request is already closed; do not reopen it.
+      return [];
+    }
+    if (request) {
+      request.confirmed = true;
+    }
+    return [
+      serialize(DESTINATIONS.solicitudes, {
+        type: 'request.confirmed',
+        requestId,
+      } satisfies RequestConfirmedPayload),
     ];
   }
 

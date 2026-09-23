@@ -64,7 +64,7 @@ function renderMapWithRequest() {
       emergencias={MOCK_EMERGENCIAS}
       request={{ position: { lat: 4.63, lng: -74.07 }, label: 'Suba · 1,2 km' }}
       requestConnector={{ from: { lat: 4.65, lng: -74.06 }, to: { lat: 4.63, lng: -74.07 } }}
-      notifiedAmbulanceIds={['AMB-02']}
+      notifiedAmbulanceIds={['A-15']}
       onSelectAmbulance={() => undefined}
       onSelectEmergency={() => undefined}
     />,
@@ -80,6 +80,22 @@ function markerByLabel(container: HTMLElement, label: string): HTMLElement {
     throw new Error(`marker ${label} not found`);
   }
   return marker;
+}
+
+/** The citizen search state: rings on the self marker, alerted and dimmed units. */
+function renderMapWithSearch() {
+  return render(
+    <MapCanvas
+      ambulancias={MOCK_AMBULANCIAS}
+      emergencias={MOCK_EMERGENCIAS}
+      self={{ position: { lat: 4.65, lng: -74.06 }, simulated: false, label: 'Tú' }}
+      selfRings
+      notifiedAmbulanceIds={['A-07', 'A-12', 'A-03']}
+      dimmedAmbulanceIds={['A-09', 'A-15']}
+      onSelectAmbulance={() => undefined}
+      onSelectEmergency={() => undefined}
+    />,
+  );
 }
 
 describe('MapCanvas smoke', () => {
@@ -109,14 +125,14 @@ describe('MapCanvas smoke', () => {
 
     const labels = markerLabels(renderMap().container);
 
-    expect(labels).not.toContain('AMB-01');
+    expect(labels).not.toContain('A-07');
     expect(labels).toContain('EMG-001');
   });
 
   it('draws an inline glyph for units, emergencies and aid centers', () => {
     const { container } = renderMapWithCenters(() => undefined);
 
-    for (const label of ['AMB-01', 'EMG-001', 'CA-NORTE']) {
+    for (const label of ['A-07', 'EMG-001', 'Suba Norte']) {
       expect(markerByLabel(container, label).querySelector('.nv-marker__glyph')).not.toBeNull();
     }
     // The anonymous dot is gone: every marker now has a shaped glyph.
@@ -126,7 +142,7 @@ describe('MapCanvas smoke', () => {
   it('draws a level badge on aid-center markers', () => {
     const { container } = renderMapWithCenters(() => undefined);
 
-    const badge = markerByLabel(container, 'CA-NORTE').querySelector('.nv-marker__badge');
+    const badge = markerByLabel(container, 'Suba Norte').querySelector('.nv-marker__badge');
     expect(badge).not.toBeNull();
     expect(badge?.querySelector('.nv-marker__glyph')).not.toBeNull();
   });
@@ -134,8 +150,8 @@ describe('MapCanvas smoke', () => {
   it('draws free and busy unit variants without a heading rotation', () => {
     const { container } = renderMap();
 
-    const free = markerByLabel(container, 'AMB-01'); // AVAILABLE
-    const busy = markerByLabel(container, 'AMB-02'); // EN_ROUTE
+    const free = markerByLabel(container, 'A-07'); // AVAILABLE
+    const busy = markerByLabel(container, 'A-15'); // EN_ROUTE
 
     expect(free.classList.contains('nv-marker--available')).toBe(true);
     expect(free.querySelector('.nv-marker__badge')).not.toBeNull();
@@ -165,19 +181,42 @@ describe('MapCanvas smoke', () => {
 
     // The connector is a dashed visual line, not a calculated route.
     expect(container.querySelectorAll('.nv-connector-line').length).toBeGreaterThan(0);
+    expect(container.querySelector('.nv-connector-line--solid')).toBeNull();
 
     // Only the notified unit carries the static teal ring.
-    expect(markerByLabel(container, 'AMB-02').classList.contains('nv-marker--notified')).toBe(true);
-    expect(markerByLabel(container, 'AMB-01').classList.contains('nv-marker--notified')).toBe(
-      false,
+    expect(markerByLabel(container, 'A-15').classList.contains('nv-marker--notified')).toBe(true);
+    expect(markerByLabel(container, 'A-07').classList.contains('nv-marker--notified')).toBe(false);
+  });
+
+  it('draws the live-mission connector solid and lets a unit carry its own label', () => {
+    const { container } = render(
+      <MapCanvas
+        ambulancias={MOCK_AMBULANCIAS}
+        emergencias={MOCK_EMERGENCIAS}
+        request={{ position: { lat: 4.63, lng: -74.07 }, label: 'Suba · 1,2 km' }}
+        requestConnector={{
+          from: { lat: 4.65, lng: -74.06 },
+          to: { lat: 4.63, lng: -74.07 },
+          dashed: false,
+        }}
+        ambulanceLabels={{ 'A-07': 'A-07 · 5 min' }}
+        onSelectAmbulance={() => undefined}
+        onSelectEmergency={() => undefined}
+      />,
     );
+
+    // `C.d4`/`C.c4`: the mission connector is solid, not dashed.
+    expect(container.querySelector('.nv-connector-line--solid')).not.toBeNull();
+    expect(container.querySelector('.nv-connector-casing')).not.toBeNull();
+    // The assigned unit's marker shows the computed ETA label, not its bare id.
+    expect(markerByLabel(container, 'A-07 · 5 min')).not.toBeNull();
   });
 
   it('colours an aid center from the palette shared with the legend', () => {
     const { container } = renderMapWithCenters(() => undefined);
 
-    // CA-NORTE: 60% AMBER, 20% RED, 90% GREEN, NOT_DECLARED -> worst is RED.
-    const pin = markerByLabel(container, 'CA-NORTE');
+    // Suba Norte: 10% RED (agua potable), 90% GREEN, 50% AMBER -> worst is RED.
+    const pin = markerByLabel(container, 'Suba Norte');
     // Anchored to the real mockup tokens and values, never to CENTER_LEVEL_STYLE
     // comparing against itself: a lime -> blue change must break this test.
     expect(pin.style.getPropertyValue('--nv-marker-bg')).toBe('var(--nv-red)');
@@ -198,8 +237,89 @@ describe('MapCanvas smoke', () => {
     const onSelectCentro = vi.fn();
     const { container } = renderMapWithCenters(onSelectCentro);
 
-    fireEvent.click(markerByLabel(container, 'CA-NORTE'));
+    fireEvent.click(markerByLabel(container, 'Suba Norte'));
 
-    expect(onSelectCentro).toHaveBeenCalledWith('CA-NORTE');
+    expect(onSelectCentro).toHaveBeenCalledWith('CA-SUBA-NORTE');
+  });
+
+  it('draws the citizen radar rings anchored on the self marker', () => {
+    const { container } = renderMapWithSearch();
+
+    const rings = container.querySelector('.nv-rings');
+    expect(rings).not.toBeNull();
+    expect(rings?.querySelectorAll('.nv-ring')).toHaveLength(3);
+    expect(rings?.querySelector('.nv-ring--fill')).not.toBeNull();
+    expect(rings?.querySelectorAll('.nv-ring--anim')).toHaveLength(2);
+  });
+
+  it('draws no radar rings when no search is active', () => {
+    const { container } = renderMapWithSelf();
+
+    expect(container.querySelector('.nv-rings')).toBeNull();
+  });
+
+  it('keeps the search radius on the ground across zoom levels, not in pixels', () => {
+    const { container } = renderMapWithSearch();
+
+    // The divIcon's pixel size IS the ring's ground diameter at the current zoom.
+    const diameterPx = () => {
+      const rings = container.querySelector('.nv-rings');
+      if (!rings?.parentElement) {
+        throw new Error('radar rings not rendered');
+      }
+      return Number.parseFloat(rings.parentElement.style.width);
+    };
+
+    const before = diameterPx();
+    expect(before).toBeGreaterThan(0);
+    // One zoom step doubles the pixels a metre spans, so the same terrain needs
+    // twice the pixels: the icon grows with the zoom instead of staying fixed.
+    fireEvent.click(container.querySelector('.leaflet-control-zoom-in') as HTMLElement);
+
+    expect(diameterPx()).toBeCloseTo(2 * before, 3);
+  });
+
+  it('draws no radar rings when the search alerted no unit on the map', () => {
+    const { container } = render(
+      <MapCanvas
+        ambulancias={MOCK_AMBULANCIAS}
+        emergencias={MOCK_EMERGENCIAS}
+        self={{ position: { lat: 4.65, lng: -74.06 }, simulated: false, label: 'Tú' }}
+        selfRings
+        notifiedAmbulanceIds={['A-99']}
+        onSelectAmbulance={() => undefined}
+        onSelectEmergency={() => undefined}
+      />,
+    );
+
+    // There is no alerted unit to measure, so there is no honest radius to draw.
+    expect(container.querySelector('.nv-rings')).toBeNull();
+  });
+
+  it('marks the alerted units with the notified ring and dims the rest', () => {
+    const { container } = renderMapWithSearch();
+
+    for (const id of ['A-07', 'A-12', 'A-03']) {
+      const marker = markerByLabel(container, id);
+      expect(marker.classList.contains('nv-marker--notified')).toBe(true);
+      expect(marker.classList.contains('nv-marker--dim')).toBe(false);
+    }
+    for (const id of ['A-09', 'A-15']) {
+      expect(markerByLabel(container, id).classList.contains('nv-marker--dim')).toBe(true);
+    }
+  });
+
+  it('ships the radar/spinner CSS, animated only without a reduced-motion preference', () => {
+    expect(GLOBALS_CSS).toContain('.nv-ring--fill');
+    expect(GLOBALS_CSS).toContain('.nv-ring--d2');
+    // The mockup's `.d3` ring (1.6s) is dead CSS the mockup never emits: no node
+    // and no rule for a third animated ring must exist here either.
+    expect(GLOBALS_CSS).not.toContain('nv-ring--d3');
+    expect(GLOBALS_CSS).toContain('.nv-marker--dim');
+    // The solid mission connector is a real rule, not only a class name.
+    expect(GLOBALS_CSS).toContain('.nv-connector-line--solid');
+    expect(GLOBALS_CSS).toContain('@keyframes nv-radar');
+    expect(GLOBALS_CSS).toContain('@keyframes nv-spin');
+    expect(GLOBALS_CSS).toContain('prefers-reduced-motion: no-preference');
   });
 });

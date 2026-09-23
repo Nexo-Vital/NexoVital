@@ -9,9 +9,9 @@ import {
 } from './solicitud-form';
 
 const EMERGENCY = MOCK_EMERGENCIAS[0]; // EMG-001, CRITICAL, IN_PROGRESS
-const TARGET = MOCK_AMBULANCIAS.find((unit) => unit.id === 'AMB-03');
+const TARGET = MOCK_AMBULANCIAS.find((unit) => unit.id === 'A-03');
 if (!TARGET) {
-  throw new Error('AMB-03 fixture is required');
+  throw new Error('A-03 fixture is required');
 }
 
 describe('activeEmergencies', () => {
@@ -54,15 +54,15 @@ describe('buildSolicitudRequest', () => {
       emergencia: EMERGENCY,
       mode: 'broadcast',
       scope: 'zone',
-      zone: 'Centro',
+      zone: 'Usaquén',
       target: null,
       units: MOCK_AMBULANCIAS,
       requestId: 'REQ-2',
     });
 
-    // AMB-02 is Centro but EN_ROUTE; AMB-10 is the only available Centro unit.
-    expect(payload.notificadas).toEqual(['AMB-10']);
-    expect(payload.zonaId).toBe('Centro');
+    // A-12 is the only available unit in Usaquén; A-09 (Kennedy) is busy.
+    expect(payload.notificadas).toEqual(['A-12']);
+    expect(payload.zonaId).toBe('Usaquén');
   });
 
   it('direct notifies exactly the target', () => {
@@ -79,10 +79,10 @@ describe('buildSolicitudRequest', () => {
     expect(payload).toMatchObject({
       type: 'solicitud.direct',
       mode: 'direct',
-      targetAmbulanceId: 'AMB-03',
+      targetAmbulanceId: 'A-03',
       notifiedCount: 1,
     });
-    expect(payload.notificadas).toEqual(['AMB-03']);
+    expect(payload.notificadas).toEqual(['A-03']);
   });
 });
 
@@ -134,7 +134,7 @@ describe('validateRequestForm', () => {
         mode: 'direct',
         scope: 'all',
         zone: '',
-        targetAmbulanceId: 'AMB-04',
+        targetAmbulanceId: 'A-15',
       },
       MOCK_EMERGENCIAS,
       MOCK_AMBULANCIAS,

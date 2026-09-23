@@ -9,15 +9,15 @@
  * same ambulance, so at most one account could ever answer.
  */
 export const DRIVER_AMBULANCE_BY_USER: Record<string, string> = {
-  'usr-driver': 'AMB-01',
-  'usr-demo-conductor-1': 'AMB-01',
-  'usr-demo-conductor-2': 'AMB-02',
-  'usr-demo-conductor-3': 'AMB-03',
-  'usr-demo-conductor-4': 'AMB-04',
-  'usr-demo-conductor-5': 'AMB-05',
+  'usr-driver': 'A-07',
+  'usr-demo-conductor-1': 'A-07',
+  'usr-demo-conductor-2': 'A-12',
+  'usr-demo-conductor-3': 'A-03',
+  'usr-demo-conductor-4': 'A-09',
+  'usr-demo-conductor-5': 'A-15',
 };
 
-export const FALLBACK_DRIVER_AMBULANCE_ID = 'AMB-01';
+export const FALLBACK_DRIVER_AMBULANCE_ID = 'A-07';
 
 export function resolveDriverAmbulanceId(userId: string | null | undefined): string {
   if (userId && DRIVER_AMBULANCE_BY_USER[userId]) {

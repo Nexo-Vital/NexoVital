@@ -16,6 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import { type ReactNode, useEffect, useRef } from 'react';
+import { formatCoordinates } from '@/features/ciudadano/citizen-request';
 import {
   CENTER_LEVEL_STYLE,
   CITIZEN_LEVEL_META,
@@ -35,9 +36,10 @@ import { useClock } from '@/hooks/use-clock';
 import { formatCountdown, formatElapsed } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { SolicitudBroadcastPayload } from '@/shared/realtime';
-import type { Ambulancia, CentroAyuda } from '@/types/domain';
+import type { Ambulancia, CentroAyuda, EmergencyLevel } from '@/types/domain';
+import { DriverMissionPanel } from './DriverMissionPanel';
 import { DRIVER_STATUS_META, DRIVER_STATUS_ORDER, type DriverStatus } from './driver-status';
-import type { Mission, SolicitudPhase } from './use-solicitud-inbox';
+import type { DriverMissionPhase, Mission, SolicitudPhase } from './use-solicitud-inbox';
 
 /** Panel shell shared by the three rail blocks: same card as the citizen rail. */
 function RailPanel({ label, children }: { label: string; children: ReactNode }) {
@@ -48,6 +50,26 @@ function RailPanel({ label, children }: { label: string; children: ReactNode }) 
     >
       {children}
     </section>
+  );
+}
+
+/**
+ * Emergency-level chip. A request with no declared level (a citizen request has
+ * no triage behind it) reads "Sin clasificar" instead of an invented severity.
+ * The colour still comes from the shared `EMERGENCY_LEVEL_META` table.
+ */
+function LevelChip({ level, className }: { level?: EmergencyLevel; className?: string }) {
+  const meta = level ? EMERGENCY_LEVEL_META[level] : null;
+  return (
+    <span
+      className={cn(
+        'shrink-0 rounded-nv-pill border px-2.5 py-1 font-semibold text-xs',
+        meta ? cn(meta.borderClass, meta.textClass) : 'border-idle/40 text-idle',
+        className,
+      )}
+    >
+      {meta ? meta.label : 'Sin clasificar'}
+    </span>
   );
 }
 
@@ -83,8 +105,10 @@ function locationHint(location: DeviceLocationState): { text: string; tone: stri
  * buckets, so "off duty" cannot read as "En mantenimiento". The icon keeps the
  * shared unit marker meta because it is a map-availability glyph, not a label.
  *
- * The secondary line only carries what the domain actually has. There is no
- * model or unit type, so none is invented: the zone is shown when present.
+ * The secondary line mirrors the mockup's "Tu ambulancia" ("Renault Master 2023
+ * · Básica (TAB)") when the unit carries a model and type; a unit created in the
+ * fleet manager or hydrated from a live frame may not know them yet, so the zone
+ * is the honest fallback rather than an invented model.
  */
 function MyUnitPanel({
   unitId,
@@ -107,12 +131,21 @@ function MyUnitPanel({
   mission: Mission | null;
   location: DeviceLocationState;
 }) {
-  const meta = CITIZEN_UNIT_META[citizenUnitStatus(DRIVER_STATUS_META[status].estado)];
+  const missionActive = mission !== null;
+  // While a mission is open the unit is genuinely occupied, so the chip reads
+  // the vehicle bucket ("Ocupada") the mockup shows in `C.d4`, not the driver's
+  // declared availability. The four status buttons keep their own vocabulary.
+  const meta =
+    CITIZEN_UNIT_META[
+      missionActive ? 'busy' : citizenUnitStatus(DRIVER_STATUS_META[status].estado)
+    ];
   const driverMeta = DRIVER_STATUS_META[status];
+  const chipLabel = missionActive ? CITIZEN_UNIT_META.busy.label : driverMeta.label;
+  const chipClass = missionActive ? CITIZEN_UNIT_META.busy.chipClass : driverMeta.chipClass;
   const hint = locationHint(location);
-  const levelMeta = mission ? EMERGENCY_LEVEL_META[mission.nivel] : null;
   const plate = unit?.placa;
-  const zone = unit?.zona;
+  const modelType = unit?.modelo && unit.tipo ? `${unit.modelo} · ${unit.tipo}` : null;
+  const secondary = modelType ?? unit?.zona ?? null;
 
   return (
     <RailPanel label="Tu ambulancia">
@@ -134,16 +167,15 @@ function MyUnitPanel({
             {unitId}
             {plate ? ` · ${plate}` : ''}
           </b>
-          {zone ? <small className="block truncate text-nv-navy-400 text-xs">{zone}</small> : null}
+          {secondary ? (
+            <small className="block truncate text-nv-navy-400 text-xs">{secondary}</small>
+          ) : null}
         </span>
         <span
           data-testid="driver-status-chip"
-          className={cn(
-            'shrink-0 rounded-nv-pill px-2.5 py-1 font-semibold text-xs',
-            driverMeta.chipClass,
-          )}
+          className={cn('shrink-0 rounded-nv-pill px-2.5 py-1 font-semibold text-xs', chipClass)}
         >
-          {driverMeta.label}
+          {chipLabel}
         </span>
       </div>
 
@@ -212,31 +244,11 @@ function MyUnitPanel({
         </div>
       </fieldset>
 
-      {mission && levelMeta && (
-        <div className="flex flex-col gap-2 rounded-nv-md border border-nv-line bg-nv-mint p-3">
-          <div className="flex items-center gap-2">
-            <Navigation className="size-4 text-nv-navy-600" aria-hidden />
-            <span className="nv-label text-nv-navy-400">Misión actual</span>
-            <span
-              className={cn(
-                'ml-auto shrink-0 rounded-nv-pill border px-2.5 py-1 font-semibold text-xs',
-                levelMeta.borderClass,
-                levelMeta.textClass,
-              )}
-            >
-              {levelMeta.label}
-            </span>
-          </div>
-          <p className="font-medium text-sm">{mission.tipo}</p>
-          <div className="flex items-center gap-3 text-xs">
-            <span className="flex items-center gap-1 text-nv-navy-400">
-              <MapPin className="size-3.5" aria-hidden />
-              {mission.zonaId}
-            </span>
-            <span className="tabular ml-auto font-medium">ETA {mission.etaMinutes} min</span>
-          </div>
-        </div>
-      )}
+      {/*
+        The mission itself lives in the `C.d4` panel below ("Solicitud
+        aceptada"): its type, severity, ETA and scene. Keeping a second copy
+        here would show the same data twice.
+      */}
 
       <div className="flex flex-col gap-2 rounded-nv-md border border-nv-line p-3">
         <div className="flex items-center gap-2">
@@ -388,10 +400,6 @@ function RequestCard({
   const isSubmitting = phase === 'submitting';
   const others = broadcast.notificadas.filter((id) => id !== unitId);
   const windowSeconds = Math.max(1, Math.round(windowMs / 1000));
-  // The emergency level is a real payload field; the chip reads the shared
-  // `EMERGENCY_LEVEL_META` table so its label/colour cannot drift from the map
-  // legend and the CRUE registry.
-  const levelMeta = EMERGENCY_LEVEL_META[broadcast.nivel];
 
   const distanceLabel =
     distanceKm !== null
@@ -414,15 +422,7 @@ function RequestCard({
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <h3 className="font-semibold text-[17px]">Solicitud de ambulancia</h3>
-        <span
-          className={cn(
-            'shrink-0 rounded-nv-pill border px-2.5 py-1 font-semibold text-xs',
-            levelMeta.borderClass,
-            levelMeta.textClass,
-          )}
-        >
-          {levelMeta.label}
-        </span>
+        <LevelChip level={broadcast.nivel} />
         <span className="flex-1" />
         {!decided && deadlineMs !== null && (
           <RequestCountdown deadlineMs={deadlineMs} onTimeout={onTimeout} />
@@ -443,7 +443,14 @@ function RequestCard({
           value={`${broadcast.emergenciaId} · ${broadcast.tipo}`}
           icon={User}
         />
-        <RequestDataRow label="Ubicación" value={broadcast.zonaId} icon={MapPin} />
+        {/* A citizen request declares no zone, so the coordinates it really
+            reported (`escena`) are shown instead of an empty zone slot. A CRUE
+            request keeps its declared zone. */}
+        <RequestDataRow
+          label="Ubicación"
+          value={broadcast.zonaId || formatCoordinates(broadcast.escena)}
+          icon={MapPin}
+        />
         <RequestDataRow label="Distancia" value={distanceLabel} icon={Navigation} />
         <RequestDataRow label="Solicitada" value={requestedLabel} icon={Clock} />
       </div>
@@ -497,12 +504,46 @@ function RequestCard({
 }
 
 /**
- * "Solicitudes": mirrors the driver's live inbox. With no active broadcast it
- * shows the mockup's empty state; with one pending it renders the request card,
- * which now owns accept/reject and the inbox outcome.
+ * "Solicitudes": mirrors the driver's live inbox.
+ *
+ * While a mission is open (the arbiter assigned this unit) the panel becomes the
+ * `C.d4` mission rail instead of a request card: an occupied unit is not looking
+ * for work. A NEW broadcast while occupied still shows its card, because the
+ * driver may be asked to respond to it.
  */
-function RequestsPanel(props: RequestPanelProps) {
-  if (!props.broadcast) {
+function RequestsPanel({
+  mission,
+  missionDistanceKm,
+  missionEtaMin,
+  missionLocation,
+  missionPhase,
+  missionAcceptedAt,
+  missionArrivedAt,
+  missionConfirmedAt,
+  onDeclareArrival,
+  onFinish,
+  ...request
+}: RequestPanelProps & MissionPanelProps & { mission: Mission | null }) {
+  const requestOpen = request.phase === 'idle' || request.phase === 'submitting';
+  if (mission && !requestOpen) {
+    return (
+      <DriverMissionPanel
+        tipo={mission.tipo}
+        nivel={mission.nivel}
+        distanceKm={missionDistanceKm}
+        etaMin={missionEtaMin}
+        locationLabel={missionLocation}
+        outcomeMessage={request.outcomeMessage}
+        phase={missionPhase}
+        acceptedAt={missionAcceptedAt}
+        arrivedAt={missionArrivedAt}
+        confirmedAt={missionConfirmedAt}
+        onDeclareArrival={onDeclareArrival}
+        onFinish={onFinish}
+      />
+    );
+  }
+  if (!request.broadcast) {
     return (
       <RailPanel label="Solicitudes">
         <h4 className="flex items-center gap-2 font-bold text-sm">
@@ -519,7 +560,7 @@ function RequestsPanel(props: RequestPanelProps) {
       </RailPanel>
     );
   }
-  return <RequestCard {...props} broadcast={props.broadcast} />;
+  return <RequestCard {...request} broadcast={request.broadcast} />;
 }
 
 /**
@@ -599,7 +640,24 @@ interface RequestPanelProps {
   onTimeout: () => void;
 }
 
-interface DriverRailProps {
+/** Extra inputs the `C.d4`/`C.d5` mission panel needs, computed by the driver page. */
+interface MissionPanelProps {
+  /** Distance and ETA from the driver to the mission scene. */
+  missionDistanceKm: number | null;
+  missionEtaMin: number | null;
+  /** Real scene label: the declared zone, or the reported coordinates. */
+  missionLocation: string;
+  /** Mission lifecycle, so the panel renders `d4` or `d5`. */
+  missionPhase: DriverMissionPhase;
+  /** Real instants of each mission step, for the `d5` timeline. */
+  missionAcceptedAt: number | null;
+  missionArrivedAt: number | null;
+  missionConfirmedAt: number | null;
+  onDeclareArrival: () => void;
+  onFinish: () => void;
+}
+
+interface DriverRailProps extends MissionPanelProps {
   /** Id of the unit this driver operates. */
   unitId: string;
   /** The unit as hydrated in the fleet store, or null before it is known. */
@@ -612,7 +670,7 @@ interface DriverRailProps {
   onStatusChange: (status: DriverStatus) => void;
   onGoOnline: () => void;
   onGoOffline: () => void;
-  /** The assigned mission, shown in "Tu ambulancia", or null. */
+  /** The assigned mission; while it is open the rail shows the `C.d4` panel. */
   mission: Mission | null;
   /** Device/simulated position state, rendered as the simulation fallback. */
   location: DeviceLocationState;
@@ -632,6 +690,15 @@ export function DriverRail({
   onGoOnline,
   onGoOffline,
   mission,
+  missionDistanceKm,
+  missionEtaMin,
+  missionLocation,
+  missionPhase,
+  missionAcceptedAt,
+  missionArrivedAt,
+  missionConfirmedAt,
+  onDeclareArrival,
+  onFinish,
   location,
   request,
   centros,
@@ -652,7 +719,19 @@ export function DriverRail({
         mission={mission}
         location={location}
       />
-      <RequestsPanel {...request} />
+      <RequestsPanel
+        {...request}
+        mission={mission}
+        missionDistanceKm={missionDistanceKm}
+        missionEtaMin={missionEtaMin}
+        missionLocation={missionLocation}
+        missionPhase={missionPhase}
+        missionAcceptedAt={missionAcceptedAt}
+        missionArrivedAt={missionArrivedAt}
+        missionConfirmedAt={missionConfirmedAt}
+        onDeclareArrival={onDeclareArrival}
+        onFinish={onFinish}
+      />
       <AidCentersPanel centros={centros} />
     </aside>
   );

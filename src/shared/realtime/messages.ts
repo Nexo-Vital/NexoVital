@@ -106,10 +106,14 @@ export type SolicitudType =
   | 'solicitud.cancel'
   | 'solicitud.accept'
   | 'solicitud.reject'
+  | 'solicitud.llegada'
+  | 'solicitud.confirmar'
   | 'request.taken'
   | 'request.already-taken'
   | 'request.rejected'
-  | 'request.cancelled';
+  | 'request.cancelled'
+  | 'request.arrived'
+  | 'request.confirmed';
 
 export interface SolicitudBroadcastPayload {
   type: 'solicitud.broadcast';
@@ -117,7 +121,13 @@ export interface SolicitudBroadcastPayload {
   emergenciaId: string;
   zonaId: string;
   tipo: string;
-  nivel: EmergencyLevel;
+  /**
+   * Emergency severity. Optional on purpose: a request raised by a citizen has
+   * no triage behind it, so it carries no level and the driver card shows
+   * "Sin clasificar" instead of an invented severity. A request created from the
+   * CRUE always carries the emergency's real level.
+   */
+  nivel?: EmergencyLevel;
   escena: Ubicacion;
   /** ISO timestamp when the accept window closes. */
   timeoutEn: string;
@@ -167,6 +177,35 @@ export interface RequestCancelledPayload {
   requestId: string;
 }
 
+/**
+ * The winning driver declares arrival at the scene (client -> relay). Only the
+ * recorded winner may send it; the relay validates and fans the arrival out.
+ */
+export interface SolicitudLlegadaPayload {
+  type: 'solicitud.llegada';
+  requestId: string;
+  ambulanceId: string;
+}
+
+/** The relay acknowledged the arrival; every client reflects it once. */
+export interface RequestArrivedPayload {
+  type: 'request.arrived';
+  requestId: string;
+  ambulanceId: string;
+}
+
+/** The citizen confirms the ambulance is with them (client -> relay). */
+export interface SolicitudConfirmarPayload {
+  type: 'solicitud.confirmar';
+  requestId: string;
+}
+
+/** The relay acknowledged the confirmation; the request is closed. */
+export interface RequestConfirmedPayload {
+  type: 'request.confirmed';
+  requestId: string;
+}
+
 export interface SolicitudRejectPayload {
   type: 'solicitud.reject';
   requestId: string;
@@ -206,7 +245,11 @@ export type SolicitudPayload =
   | SolicitudAcceptPayload
   | SolicitudCancelPayload
   | SolicitudRejectPayload
+  | SolicitudLlegadaPayload
+  | SolicitudConfirmarPayload
   | RequestTakenPayload
   | RequestAlreadyTakenPayload
   | RequestRejectedPayload
-  | RequestCancelledPayload;
+  | RequestCancelledPayload
+  | RequestArrivedPayload
+  | RequestConfirmedPayload;

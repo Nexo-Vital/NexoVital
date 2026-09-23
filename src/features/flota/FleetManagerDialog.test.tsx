@@ -40,7 +40,7 @@ describe('FleetManagerDialog', () => {
 
     expect(onCreate).toHaveBeenCalledTimes(1);
     expect(onCreate.mock.calls[0]?.[0]).toMatchObject({
-      id: 'AMB-11',
+      id: 'A-16',
       driverName: 'Nina Torres',
       estado: 'AVAILABLE',
       ubicacion: { lat: 4.65, lng: -74.06 },
@@ -63,13 +63,13 @@ describe('FleetManagerDialog', () => {
     const user = userEvent.setup();
     const { onUpdate } = renderDialog();
 
-    await user.click(screen.getByRole('button', { name: 'Edit AMB-01' }));
+    await user.click(screen.getByRole('button', { name: 'Edit A-07' }));
     const driver = screen.getByLabelText('Driver name');
     await user.clear(driver);
     await user.type(driver, 'Renamed Driver');
     await user.click(screen.getByRole('button', { name: /save changes/i }));
 
-    expect(onUpdate).toHaveBeenCalledWith('AMB-01', {
+    expect(onUpdate).toHaveBeenCalledWith('A-07', {
       driverName: 'Renamed Driver',
       estado: 'AVAILABLE',
     });
@@ -79,10 +79,10 @@ describe('FleetManagerDialog', () => {
     const user = userEvent.setup();
     const { onDelete } = renderDialog();
 
-    await user.click(screen.getByRole('button', { name: 'Delete AMB-01' }));
+    await user.click(screen.getByRole('button', { name: 'Delete A-07' }));
     await user.click(screen.getByRole('button', { name: 'Confirm' }));
 
-    expect(onDelete).toHaveBeenCalledWith('AMB-01');
+    expect(onDelete).toHaveBeenCalledWith('A-07');
   });
 
   it('shows the empty state when the fleet has no units', () => {

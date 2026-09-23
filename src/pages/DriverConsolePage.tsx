@@ -1,6 +1,7 @@
-import { Radio } from 'lucide-react';
+import { Check, Radio } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CitizenSummaryChips } from '@/features/ciudadano/CitizenSummaryChips';
+import { formatCoordinates } from '@/features/ciudadano/citizen-request';
 import {
   CITIZEN_FALLBACK_POSITION,
   countCentersByLevel,
@@ -76,8 +77,6 @@ export default function DriverConsolePage({
   const [status, setStatus] = useState<DriverStatus>('OFF_DUTY');
   const [hasCentered, setHasCentered] = useState(false);
 
-  const inbox = useSolicitudInbox(port, unitId, location.position);
-
   // Shared stores: emergencies reported and units created on another client
   // show up on the driver map too (UPSERT semantics).
   useEffect(() => {
@@ -92,27 +91,55 @@ export default function DriverConsolePage({
   const fleetUnits = useFleetStore((state) => state.units);
   const emergencies = useEmergencyStore((state) => state.items);
 
+  // The rail reads the driver's own unit straight from the store (the self marker
+  // stands in for it on the map, so `fleet` below excludes it).
+  const ownUnit = useMemo(
+    () => fleetUnits.find((unit) => unit.id === unitId) ?? null,
+    [fleetUnits, unitId],
+  );
+
+  /*
+    RAD-3: without a GPS fix the driver still has a declared position — the one
+    the fleet data gives their own unit. Use it as the origin for distances, the
+    connector and the self marker, and report it as SIMULATED through the app's
+    existing `simulated` flag: the self marker gets `nv-marker--sim` and the
+    /topic/flota payload carries `source: 'simulated'`. With no unit either,
+    `effectivePosition` stays null and the UI keeps its honest "Sin ubicación".
+  */
+  const fallbackToUnit = location.position === null && ownUnit !== null;
+  const effectivePosition = location.position ?? ownUnit?.ubicacion ?? null;
+  const effectiveSimulated = location.simulated || fallbackToUnit;
+
+  const inbox = useSolicitudInbox(port, unitId, effectivePosition);
+
+  const requestOpen = inbox.phase === 'idle' || inbox.phase === 'submitting';
+  // `C.d4`: an open mission owns the rail and the map, unless a new request is
+  // actually waiting for an answer (phase idle/submitting).
+  const missionActive = inbox.mission !== null && !requestOpen;
+
   useEffect(() => {
-    if (!hasCentered && location.position) {
+    if (!hasCentered && effectivePosition) {
       setHasCentered(true);
     }
-  }, [hasCentered, location.position]);
+  }, [hasCentered, effectivePosition]);
 
-  // Report this unit on /topic/flota while online so the CRUE map tracks it.
-  const { position, heading, simulated } = location;
+  // Report this unit on /topic/flota while online so the CRUE map tracks it. A
+  // live mission reports the unit as ASSIGNED regardless of the declared status,
+  // so finishing the service really flips it back to AVAILABLE on the wire.
+  const { heading } = location;
   useEffect(() => {
-    if (!online || !port || !position) {
+    if (!online || !port || !effectivePosition) {
       return;
     }
     const payload: LiveUnitPayload = {
       ambulanceId: unitId,
-      ubicacion: position,
-      estado: DRIVER_STATUS_META[status].estado,
+      ubicacion: effectivePosition,
+      estado: missionActive ? 'ASSIGNED' : DRIVER_STATUS_META[status].estado,
       heading,
-      source: simulated ? 'simulated' : 'device',
+      source: effectiveSimulated ? 'simulated' : 'device',
     };
     port.publish(DESTINATIONS.flota, payload);
-  }, [online, port, unitId, position, heading, simulated, status]);
+  }, [online, port, unitId, effectivePosition, heading, effectiveSimulated, status, missionActive]);
 
   const goOnline = useCallback(() => {
     setOnline(true);
@@ -124,73 +151,82 @@ export default function DriverConsolePage({
     setStatus('OFF_DUTY');
   }, []);
 
+  // "Finalizar servicio": the mission ends locally and the unit is declared
+  // available again, so the /topic/flota effect republishes it as AVAILABLE and
+  // the rail drops back to the operations map.
+  const finishService = useCallback(() => {
+    inbox.finishService();
+    setStatus('AVAILABLE');
+  }, [inbox.finishService]);
+
   const fleet = useMemo(
     () => fleetUnits.filter((unit) => unit.id !== unitId),
     [fleetUnits, unitId],
   );
-  // The driver's own unit is excluded from the map fleet (the self marker stands
-  // in for it), so the rail reads it straight from the store.
-  const ownUnit = useMemo(
-    () => fleetUnits.find((unit) => unit.id === unitId) ?? null,
-    [fleetUnits, unitId],
-  );
-
   const counts = useMemo(() => countCentersByLevel(centrosAyuda), [centrosAyuda]);
 
   const self: SelfMarker | null = useMemo(
     () =>
-      location.position
+      effectivePosition
         ? {
-            position: location.position,
-            simulated: location.simulated,
+            position: effectivePosition,
+            simulated: effectiveSimulated,
             label: `Tú · ${unitId}`,
           }
         : null,
-    [location.position, location.simulated, unitId],
+    [effectivePosition, effectiveSimulated, unitId],
   );
 
+  const activeScene = (missionActive ? inbox.mission : inbox.broadcast)?.escena ?? null;
   const requestDistance =
-    inbox.broadcast && location.position
-      ? distanceKm(location.position, inbox.broadcast.escena)
-      : null;
+    activeScene && effectivePosition ? distanceKm(effectivePosition, activeScene) : null;
   const requestEta =
-    inbox.broadcast && location.position
-      ? etaMinutes(location.position, inbox.broadcast.escena)
-      : null;
+    activeScene && effectivePosition ? etaMinutes(effectivePosition, activeScene) : null;
 
   // The shell bell mirrors the pending request count. The driver console is the
-  // only writer; it resets to zero when the page unmounts.
-  const pendingRequests = inbox.broadcast ? 1 : 0;
+  // only writer; it resets to zero when the page unmounts. A won mission is not
+  // a pending request, so the bell drops with the card it mirrored.
+  const pendingRequests = inbox.broadcast && !missionActive ? 1 : 0;
   useEffect(() => {
     const { setPendingRequests } = useDriverAlertsStore.getState();
     setPendingRequests(pendingRequests);
     return () => setPendingRequests(0);
   }, [pendingRequests]);
 
+  // The request has no reverse geocoding: the label is the declared zone, or the
+  // real reported coordinates when the citizen declared none.
+  const sceneLabel = activeScene
+    ? (missionActive ? inbox.mission?.zonaId : inbox.broadcast?.zonaId) ||
+      formatCoordinates(activeScene)
+    : '';
+
   const requestMarker: RequestMarker | null = useMemo(
     () =>
-      inbox.broadcast
+      activeScene
         ? {
-            position: inbox.broadcast.escena,
+            position: activeScene,
             label:
               requestDistance !== null
-                ? `${inbox.broadcast.zonaId} · ${formatDistance(requestDistance)}`
-                : inbox.broadcast.zonaId,
+                ? `${sceneLabel} · ${formatDistance(requestDistance)}`
+                : sceneLabel,
           }
         : null,
-    [inbox.broadcast, requestDistance],
+    [activeScene, sceneLabel, requestDistance],
   );
 
-  // A straight visual connector, NOT a calculated route: no routing engine.
+  // A straight visual connector, NOT a calculated route: no routing engine. A
+  // live mission draws it solid (`C.d4`); a pending request keeps it dashed.
   const requestConnector: RequestConnector | null = useMemo(
     () =>
-      inbox.broadcast && location.position
-        ? { from: location.position, to: inbox.broadcast.escena }
+      activeScene && effectivePosition
+        ? { from: effectivePosition, to: activeScene, dashed: !missionActive }
         : null,
-    [inbox.broadcast, location.position],
+    [activeScene, effectivePosition, missionActive],
   );
 
-  const requestOpen = inbox.phase === 'idle' || inbox.phase === 'submitting';
+  const missionLocation =
+    inbox.mission && (inbox.mission.zonaId || formatCoordinates(inbox.mission.escena));
+
   const toastText = `Nueva solicitud de ambulancia${
     requestDistance !== null ? ` a ${formatDistance(requestDistance)}` : ''
   }`;
@@ -199,7 +235,13 @@ export default function DriverConsolePage({
     <div className="relative flex h-full min-h-0 w-full flex-col gap-3 overflow-y-auto bg-nv-mint text-nv-navy lg:grid lg:grid-cols-[minmax(0,1fr)_344px] lg:grid-rows-[auto_minmax(0,1fr)] lg:gap-5 lg:overflow-hidden">
       <header className="flex flex-wrap items-end justify-between gap-3 lg:col-span-2">
         <div>
-          <h1 className="font-semibold text-2xl tracking-tight">Mapa de operación</h1>
+          <h1 className="font-semibold text-2xl tracking-tight">
+            {missionActive
+              ? inbox.missionPhase === 'en_route'
+                ? 'En camino al ciudadano'
+                : 'Llegaste al destino'
+              : 'Mapa de operación'}
+          </h1>
           <p className="mt-1 flex items-center gap-2 text-nv-navy-400 text-sm">
             <span
               className="size-2 shrink-0 rounded-full bg-nv-teal shadow-[0_0_0_3px_rgb(93_186_168_/_0.28)]"
@@ -219,14 +261,16 @@ export default function DriverConsolePage({
           ambulancias={fleet}
           emergencias={emergencies}
           centros={centrosAyuda}
-          center={location.position ?? CITIZEN_FALLBACK_POSITION}
-          focus={hasCentered ? null : location.position}
+          center={effectivePosition ?? CITIZEN_FALLBACK_POSITION}
+          focus={hasCentered ? null : effectivePosition}
           self={self}
           request={requestMarker}
           requestConnector={requestConnector}
-          notifiedAmbulanceIds={inbox.broadcast?.notificadas ?? NO_NOTIFIED_UNITS}
-          onMapClick={location.simulated ? location.setSimulatedPosition : undefined}
-          onSelfDragEnd={location.simulated ? location.setSimulatedPosition : undefined}
+          notifiedAmbulanceIds={
+            missionActive ? NO_NOTIFIED_UNITS : (inbox.broadcast?.notificadas ?? NO_NOTIFIED_UNITS)
+          }
+          onMapClick={effectiveSimulated ? location.setSimulatedPosition : undefined}
+          onSelfDragEnd={effectiveSimulated ? location.setSimulatedPosition : undefined}
           onSelectAmbulance={() => undefined}
           onSelectEmergency={() => undefined}
         />
@@ -241,6 +285,19 @@ export default function DriverConsolePage({
             </div>
           </div>
         )}
+
+        {/* Only once the citizen confirmed: the toast never announces a step
+            that has not happened (`C.d5`). */}
+        {missionActive && inbox.mission?.confirmedAt != null && (
+          <div className="pointer-events-none absolute inset-x-0 top-5 z-[1000] flex justify-center px-3">
+            <div className="flex items-center gap-2.5 whitespace-nowrap rounded-nv-md bg-nv-navy px-4 py-3 font-medium text-sm text-white shadow-nv-float">
+              <span className="grid size-7 shrink-0 place-items-center rounded-full bg-nv-lime text-nv-navy">
+                <Check className="size-4" aria-hidden />
+              </span>
+              El ciudadano confirmó que llegaste
+            </div>
+          </div>
+        )}
       </section>
 
       <DriverRail
@@ -252,6 +309,15 @@ export default function DriverConsolePage({
         onGoOnline={goOnline}
         onGoOffline={goOffline}
         mission={inbox.mission}
+        missionDistanceKm={missionActive ? requestDistance : null}
+        missionEtaMin={missionActive ? requestEta : null}
+        missionLocation={missionLocation ?? ''}
+        missionPhase={inbox.missionPhase}
+        missionAcceptedAt={inbox.mission?.acceptedAt ?? null}
+        missionArrivedAt={inbox.mission?.arrivedAt ?? null}
+        missionConfirmedAt={inbox.mission?.confirmedAt ?? null}
+        onDeclareArrival={inbox.declareArrival}
+        onFinish={finishService}
         location={location}
         request={{
           broadcast: inbox.broadcast,

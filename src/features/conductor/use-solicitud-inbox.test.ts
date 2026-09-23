@@ -23,6 +23,7 @@ const BROADCAST: SolicitudBroadcastPayload = {
 const DIRECT: SolicitudDirectPayload = {
   ...BROADCAST,
   type: 'solicitud.direct',
+  nivel: 'HIGH',
   mode: 'direct',
   targetAmbulanceId: 'AMB-03',
   notificadas: ['AMB-03'],
@@ -241,5 +242,111 @@ describe('useSolicitudInbox', () => {
     );
 
     expect(result.current.broadcast?.requestId).toBe('REQ-1');
+  });
+
+  /** Drives a full win so the mission lifecycle tests start from `en_route`. */
+  function winMission(
+    port: FakeRealtimePort,
+    result: { current: ReturnType<typeof useSolicitudInbox> },
+  ) {
+    act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+    act(() => result.current.accept());
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, {
+        type: 'request.taken',
+        requestId: 'REQ-1',
+        winner: 'AMB-01',
+      }),
+    );
+  }
+
+  it('records the acceptance instant and publishes the arrival as a command', () => {
+    const { port, result } = setup();
+    winMission(port, result);
+
+    expect(result.current.missionPhase).toBe('en_route');
+    expect(result.current.mission?.acceptedAt).toBeGreaterThan(0);
+    expect(result.current.mission?.arrivedAt).toBeNull();
+
+    act(() => result.current.declareArrival());
+
+    expect(port.published[port.published.length - 1]?.payload).toEqual({
+      type: 'solicitud.llegada',
+      requestId: 'REQ-1',
+      ambulanceId: 'AMB-01',
+    });
+    // Still en_route: this client waits for the relay to echo the arrival.
+    expect(result.current.missionPhase).toBe('en_route');
+  });
+
+  it('advances to arrived on request.arrived and ignores a repeat', () => {
+    const { port, result } = setup();
+    winMission(port, result);
+
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, {
+        type: 'request.arrived',
+        requestId: 'REQ-1',
+        ambulanceId: 'AMB-01',
+      }),
+    );
+
+    expect(result.current.missionPhase).toBe('arrived');
+    const arrivedAt = result.current.mission?.arrivedAt;
+    expect(arrivedAt).toBeGreaterThan(0);
+
+    // A repeated arrival must not reset the instant.
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, {
+        type: 'request.arrived',
+        requestId: 'REQ-1',
+        ambulanceId: 'AMB-01',
+      }),
+    );
+    expect(result.current.mission?.arrivedAt).toBe(arrivedAt);
+  });
+
+  it('ignores an arrival that belongs to another request', () => {
+    const { port, result } = setup();
+    winMission(port, result);
+
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, {
+        type: 'request.arrived',
+        requestId: 'REQ-OTHER',
+        ambulanceId: 'AMB-01',
+      }),
+    );
+
+    expect(result.current.missionPhase).toBe('en_route');
+  });
+
+  it('marks the citizen confirmation once, then finishes the service', () => {
+    const { port, result } = setup();
+    winMission(port, result);
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, {
+        type: 'request.arrived',
+        requestId: 'REQ-1',
+        ambulanceId: 'AMB-01',
+      }),
+    );
+
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, { type: 'request.confirmed', requestId: 'REQ-1' }),
+    );
+    expect(result.current.missionPhase).toBe('confirmed');
+    const confirmedAt = result.current.mission?.confirmedAt;
+    expect(confirmedAt).toBeGreaterThan(0);
+
+    // A repeated confirmation must not reopen the notice or reset the instant.
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, { type: 'request.confirmed', requestId: 'REQ-1' }),
+    );
+    expect(result.current.mission?.confirmedAt).toBe(confirmedAt);
+
+    act(() => result.current.finishService());
+    expect(result.current.mission).toBeNull();
+    expect(result.current.missionPhase).toBe('en_route');
   });
 });

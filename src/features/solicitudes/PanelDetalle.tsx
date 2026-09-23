@@ -184,6 +184,8 @@ function UnitDetail({ ambulance }: { ambulance: Ambulancia }) {
       </div>
       <div className="flex flex-col gap-1.5">
         <DetailRow label="Plate" value={ambulance.placa} />
+        {ambulance.modelo && <DetailRow label="Model" value={ambulance.modelo} />}
+        {ambulance.tipo && <DetailRow label="Type" value={ambulance.tipo} />}
         <DetailRow label="Driver" value={ambulance.driverName} />
         <DetailRow label="Zone" value={ambulance.zona} />
         <DetailRow

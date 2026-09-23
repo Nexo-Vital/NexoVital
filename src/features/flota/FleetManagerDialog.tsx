@@ -38,7 +38,7 @@ interface FleetManagerDialogProps {
 }
 
 /**
- * Fleet CRUD surface. Create assigns an auto id (AMB-11, AMB-12, ...); edit
+ * Fleet CRUD surface. Create assigns an auto id (A-16, A-17, ...); edit
  * changes driver name and state; delete removes the unit. Position is a numeric
  * lat/lng pair or the current map center. The parent owns store + publish.
  */

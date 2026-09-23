@@ -15,6 +15,7 @@ function centroWith(semaforos: TrafficLight[]): CentroAyuda {
       disponible: 0,
       requerido: 0,
       semaforo,
+      grammaticalNumber: 'singular',
     })),
   };
 }

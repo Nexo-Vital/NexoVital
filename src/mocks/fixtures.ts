@@ -3,6 +3,7 @@ import type {
   Ambulancia,
   CentroAyuda,
   Emergencia,
+  GrammaticalNumber,
   InventarioItem,
   SolicitudAmbulancia,
 } from '@/types/domain';
@@ -30,6 +31,7 @@ function inventoryItem(
   nombre: string,
   disponible: number,
   requerido: number,
+  grammaticalNumber: GrammaticalNumber,
 ): InventarioItem {
   return {
     id,
@@ -38,89 +40,73 @@ function inventoryItem(
     disponible,
     requerido,
     semaforo: trafficLight(disponible, requerido),
+    grammaticalNumber,
   };
 }
 
+/**
+ * Demo fleet, aligned with the v2 mockup (`AMBS()`, lines 544-554).
+ *
+ * LITERAL from the mockup: the five ids and their availability (A-07/A-12/A-03
+ * available, A-09/A-15 busy), and A-07's plate, model and type (`myUnit()`, line
+ * 907: WNR-418, Renault Master 2023, Básica (TAB)).
+ *
+ * INVENTED demo data: the mockup only details A-07, so the plate, model and type
+ * of A-12, A-03, A-09 and A-15 are made up here, chosen to be distinct from each
+ * other and coherent with each unit's role. Positions are plausible points
+ * around Bogotá; the app computes distances and ETAs from them, so they are not
+ * the mockup's exact figures.
+ */
 export const MOCK_AMBULANCIAS: Ambulancia[] = [
   {
-    id: 'AMB-01',
-    placa: 'OVX-101',
+    id: 'A-07',
+    placa: 'WNR-418',
+    modelo: 'Renault Master 2023',
+    tipo: 'Básica (TAB)',
     estado: 'AVAILABLE',
-    ubicacion: { lat: 4.653, lng: -74.062 },
-    zona: 'Chapinero',
-    driverName: 'Carlos Ramírez',
-  },
-  {
-    id: 'AMB-02',
-    placa: 'OVX-102',
-    estado: 'EN_ROUTE',
-    ubicacion: { lat: 4.598, lng: -74.075 },
-    zona: 'Centro',
-    driverName: 'Lucía Fernández',
-  },
-  {
-    id: 'AMB-03',
-    placa: 'OVX-103',
-    estado: 'AVAILABLE',
-    ubicacion: { lat: 4.702, lng: -74.032 },
-    zona: 'Usaquén',
-    driverName: 'Andrés Gómez',
-  },
-  {
-    id: 'AMB-04',
-    placa: 'OVX-104',
-    estado: 'MAINTENANCE',
-    ubicacion: { lat: 4.628, lng: -74.148 },
-    zona: 'Kennedy',
-    driverName: 'Marta Rojas',
-  },
-  {
-    id: 'AMB-05',
-    placa: 'OVX-105',
-    estado: 'ASSIGNED',
-    ubicacion: { lat: 4.742, lng: -74.09 },
+    ubicacion: { lat: 4.72, lng: -74.078 },
     zona: 'Suba',
-    driverName: 'Julián Torres',
+    driverName: 'Carlos Pérez Gómez',
   },
   {
-    id: 'AMB-06',
-    placa: 'OVX-106',
+    id: 'A-12',
+    placa: 'SNK-742',
+    modelo: 'Chevrolet N300 2022',
+    tipo: 'Básica (TAB)',
     estado: 'AVAILABLE',
-    ubicacion: { lat: 4.64, lng: -74.09 },
-    zona: 'Teusaquillo',
-    driverName: 'Paula Cárdenas',
+    ubicacion: { lat: 4.701, lng: -74.041 },
+    zona: 'Usaquén',
+    driverName: 'Laura Restrepo Díaz',
   },
   {
-    id: 'AMB-07',
-    placa: 'OVX-107',
-    estado: 'EN_ROUTE',
-    ubicacion: { lat: 4.696, lng: -74.116 },
+    id: 'A-03',
+    placa: 'HGV-259',
+    modelo: 'Toyota Hiace 2021',
+    tipo: 'Traslado asistencial',
+    estado: 'AVAILABLE',
+    ubicacion: { lat: 4.692, lng: -74.112 },
     zona: 'Engativá',
-    driverName: 'Diego Herrera',
+    driverName: 'Andrés Gómez Peña',
   },
   {
-    id: 'AMB-08',
-    placa: 'OVX-108',
-    estado: 'AVAILABLE',
-    ubicacion: { lat: 4.605, lng: -74.19 },
+    id: 'A-09',
+    placa: 'LQZ-813',
+    modelo: 'Mercedes-Benz Sprinter 2023',
+    tipo: 'UCI móvil',
+    estado: 'ASSIGNED',
+    ubicacion: { lat: 4.628, lng: -74.144 },
+    zona: 'Kennedy',
+    driverName: 'Valentina Ruiz Mora',
+  },
+  {
+    id: 'A-15',
+    placa: 'JTP-604',
+    modelo: 'Ford Transit 2022',
+    tipo: 'Básica (TAB)',
+    estado: 'EN_ROUTE',
+    ubicacion: { lat: 4.608, lng: -74.186 },
     zona: 'Bosa',
-    driverName: 'Sofía Mendoza',
-  },
-  {
-    id: 'AMB-09',
-    placa: 'OVX-109',
-    estado: 'MAINTENANCE',
-    ubicacion: { lat: 4.66, lng: -74.055 },
-    zona: 'Chapinero',
-    driverName: 'Óscar Pineda',
-  },
-  {
-    id: 'AMB-10',
-    placa: 'OVX-110',
-    estado: 'AVAILABLE',
-    ubicacion: { lat: 4.59, lng: -74.07 },
-    zona: 'Centro',
-    driverName: 'Valentina Ruiz',
+    driverName: 'Diego Herrera Cruz',
   },
 ];
 
@@ -172,108 +158,136 @@ export const MOCK_EMERGENCIAS: Emergencia[] = [
   },
 ];
 
+/**
+ * Requests reference real units and centers from the lists above. Only the two
+ * busy units carry an open assignment (A-15 EN_ROUTE and A-09 ASSIGNED): keeping
+ * one unit on one mission is the C2 invariant, so no unit is assigned twice.
+ *
+ * A PENDING request only ever notifies AVAILABLE units, which is the rule the
+ * request form enforces, so the two open requests list just the free units; the
+ * resolved ones keep their historical notification list.
+ */
 export const MOCK_SOLICITUDES: SolicitudAmbulancia[] = [
   {
     id: 'REQ-1001',
     emergenciaId: 'EMG-002',
     estado: 'PENDING',
-    centroAyudaId: 'CA-NORTE',
+    centroAyudaId: 'CA-LA-GAITANA',
     zonaId: 'Kennedy',
     tipo: 'Traffic collision',
     solicitadaEn: minutesAgo(2),
     timeoutEn: minutesAhead(3),
-    ambulanciasNotificadas: ['AMB-01', 'AMB-03', 'AMB-05', 'AMB-06', 'AMB-08', 'AMB-10'],
-    notifiedCount: 6,
+    ambulanciasNotificadas: ['A-07', 'A-12', 'A-03'],
+    notifiedCount: 3,
     ambulanciaAsignadaId: null,
   },
   {
     id: 'REQ-1002',
     emergenciaId: 'EMG-001',
     estado: 'TAKEN',
-    centroAyudaId: 'CA-NORTE',
+    centroAyudaId: 'CA-SUBA-NORTE',
     zonaId: 'Centro',
     tipo: 'Cardiac arrest',
     solicitadaEn: minutesAgo(8),
     timeoutEn: minutesAgo(5),
-    ambulanciasNotificadas: ['AMB-02', 'AMB-05', 'AMB-07', 'AMB-10'],
-    notifiedCount: 4,
-    ambulanciaAsignadaId: 'AMB-05',
+    ambulanciasNotificadas: ['A-15', 'A-07', 'A-12'],
+    notifiedCount: 3,
+    ambulanciaAsignadaId: 'A-15',
   },
   {
     id: 'REQ-1003',
     emergenciaId: 'EMG-003',
-    estado: 'CONFIRMED',
-    centroAyudaId: 'CA-NORTE',
+    estado: 'ASSIGNED',
+    centroAyudaId: 'CA-SUBA-NORTE',
     zonaId: 'Suba',
     tipo: 'Respiratory distress',
     solicitadaEn: minutesAgo(11),
     timeoutEn: minutesAgo(8),
-    ambulanciasNotificadas: ['AMB-02', 'AMB-03', 'AMB-06', 'AMB-07', 'AMB-10'],
-    notifiedCount: 5,
-    ambulanciaAsignadaId: 'AMB-02',
+    ambulanciasNotificadas: ['A-09', 'A-07', 'A-03', 'A-12'],
+    notifiedCount: 4,
+    ambulanciaAsignadaId: 'A-09',
   },
   {
     id: 'REQ-1004',
     emergenciaId: 'EMG-004',
-    estado: 'ASSIGNED',
-    centroAyudaId: 'CA-SUR',
+    estado: 'REJECTED',
+    centroAyudaId: 'CA-TIBABUYES',
     zonaId: 'Bosa',
     tipo: 'Structural collapse',
     solicitadaEn: minutesAgo(18),
     timeoutEn: minutesAgo(14),
-    ambulanciasNotificadas: ['AMB-01', 'AMB-04', 'AMB-05', 'AMB-06', 'AMB-07', 'AMB-08', 'AMB-10'],
-    notifiedCount: 7,
-    ambulanciaAsignadaId: 'AMB-07',
+    ambulanciasNotificadas: ['A-07', 'A-03', 'A-09', 'A-12', 'A-15'],
+    notifiedCount: 5,
+    ambulanciaAsignadaId: null,
   },
   {
     id: 'REQ-1005',
     emergenciaId: 'EMG-005',
-    estado: 'REJECTED',
-    centroAyudaId: 'CA-NORTE',
+    estado: 'TIMEOUT',
+    centroAyudaId: 'CA-LA-GAITANA',
     zonaId: 'Usaquén',
     tipo: 'Minor fall',
     solicitadaEn: minutesAgo(45),
     timeoutEn: minutesAgo(41),
-    ambulanciasNotificadas: ['AMB-01', 'AMB-03', 'AMB-06'],
+    ambulanciasNotificadas: ['A-07', 'A-12', 'A-03'],
     notifiedCount: 3,
     ambulanciaAsignadaId: null,
   },
   {
     id: 'REQ-1006',
     emergenciaId: 'EMG-002',
-    estado: 'TIMEOUT',
-    centroAyudaId: 'CA-SUR',
+    estado: 'PENDING',
+    centroAyudaId: 'CA-TIBABUYES',
     zonaId: 'Kennedy',
     tipo: 'Traffic collision',
     solicitadaEn: minutesAgo(6),
-    timeoutEn: minutesAgo(2),
-    ambulanciasNotificadas: ['AMB-04', 'AMB-05', 'AMB-07', 'AMB-08'],
-    notifiedCount: 4,
+    timeoutEn: minutesAhead(1),
+    ambulanciasNotificadas: ['A-12', 'A-03'],
+    notifiedCount: 2,
     ambulanciaAsignadaId: null,
   },
 ];
 
+/**
+ * Demo aid centers from the v2 mockup (`CENTERS()`, lines 535-543). Names are
+ * literal; the short marker label is derived from the name (`centerShortName`),
+ * not stored twice. The traffic-light level is NEVER set here: it comes from the
+ * inventory through `trafficLight`, so each center's worst item produces the
+ * mockup's level — Suba Norte critical, La Gaitana alert, Tibabuyes stable.
+ */
 export const MOCK_CENTROS_AYUDA: CentroAyuda[] = [
   {
-    id: 'CA-NORTE',
-    nombre: 'Northern Aid Center',
+    id: 'CA-SUBA-NORTE',
+    nombre: 'Acopio Suba Norte',
     ubicacion: { lat: 4.742, lng: -74.09 },
     items: [
-      inventoryItem('INV-N-1', 'CA-NORTE', 'IV fluids', 120, 200),
-      inventoryItem('INV-N-2', 'CA-NORTE', 'Trauma kits', 8, 40),
-      inventoryItem('INV-N-3', 'CA-NORTE', 'Oxygen cylinders', 90, 100),
-      inventoryItem('INV-N-4', 'CA-NORTE', 'Blankets', 300, 0),
+      // Worst item: 20/200 = 10% -> RED (the mockup's "Le falta agua potable").
+      inventoryItem('INV-SN-1', 'CA-SUBA-NORTE', 'Agua potable', 20, 200, 'singular'),
+      inventoryItem('INV-SN-2', 'CA-SUBA-NORTE', 'Alimentos', 180, 200, 'plural'),
+      inventoryItem('INV-SN-3', 'CA-SUBA-NORTE', 'Medicamentos básicos', 50, 100, 'plural'),
+      inventoryItem('INV-SN-4', 'CA-SUBA-NORTE', 'Cobijas', 120, 100, 'plural'),
     ],
   },
   {
-    id: 'CA-SUR',
-    nombre: 'Southern Aid Center',
-    ubicacion: { lat: 4.605, lng: -74.19 },
+    id: 'CA-LA-GAITANA',
+    nombre: 'Acopio La Gaitana',
+    ubicacion: { lat: 4.72, lng: -74.05 },
     items: [
-      inventoryItem('INV-S-1', 'CA-SUR', 'Analgesics', 45, 100),
-      inventoryItem('INV-S-2', 'CA-SUR', 'Surgical masks', 1500, 1000),
-      inventoryItem('INV-S-3', 'CA-SUR', 'Defibrillators', 2, 10),
-      inventoryItem('INV-S-4', 'CA-SUR', 'Wheelchairs', 12, 0),
+      // Worst item: 90/200 = 45% -> AMBER (the mockup's "Le faltan alimentos").
+      inventoryItem('INV-LG-1', 'CA-LA-GAITANA', 'Alimentos', 90, 200, 'plural'),
+      inventoryItem('INV-LG-2', 'CA-LA-GAITANA', 'Agua potable', 300, 300, 'singular'),
+      inventoryItem('INV-LG-3', 'CA-LA-GAITANA', 'Cobijas', 40, 0, 'plural'),
+    ],
+  },
+  {
+    id: 'CA-TIBABUYES',
+    nombre: 'Acopio Tibabuyes',
+    ubicacion: { lat: 4.73, lng: -74.1 },
+    items: [
+      // Every declared item is above 80% -> GREEN ("Inventario suficiente").
+      inventoryItem('INV-TB-1', 'CA-TIBABUYES', 'Agua potable', 500, 500, 'singular'),
+      inventoryItem('INV-TB-2', 'CA-TIBABUYES', 'Alimentos', 360, 400, 'plural'),
+      inventoryItem('INV-TB-3', 'CA-TIBABUYES', 'Cobijas', 200, 0, 'plural'),
     ],
   },
 ];

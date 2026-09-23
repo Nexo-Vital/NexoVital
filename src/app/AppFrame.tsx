@@ -20,7 +20,7 @@ interface AppFrameProps {
   activeKey: string;
   /**
    * Optional suffix appended to the role label, e.g. the driver's unit id
-   * ("Conductor de ambulancia · AMB-01"). The value comes from the session, so
+   * ("Conductor de ambulancia · A-07"). The value comes from the session, so
    * no extra domain field is invented. Omitted, the topbar is unchanged.
    */
   roleDetail?: string;

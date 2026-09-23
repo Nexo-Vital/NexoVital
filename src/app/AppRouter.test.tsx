@@ -124,7 +124,7 @@ describe('AppRouter shell selection', () => {
 
     expect(screen.getAllByText('NexoVital').length).toBeGreaterThan(0);
     expect(screen.queryByText('CRUE Operations')).not.toBeInTheDocument();
-    expect(screen.getByText('Conductor de ambulancia · AMB-01')).toBeInTheDocument();
+    expect(screen.getByText('Conductor de ambulancia · A-07')).toBeInTheDocument();
 
     const bar = screen.getByRole('complementary', { name: 'Barra lateral' });
     expect(within(bar).getByText('Mapa')).toHaveAttribute('aria-current', 'page');

@@ -489,6 +489,12 @@
     pointer-events: none;
   }
 
+  /* Units an open request did NOT alert fade back (mockup `.apin.dim`). */
+  .nv-marker--dim {
+    opacity: 0.4;
+    filter: saturate(0.6);
+  }
+
   /*
     ---- pending requester pin (`pinReq`) ----
     44px red circle with a person glyph plus two STATIC red rings. The rings are
@@ -546,8 +552,105 @@
     stroke: var(--nv-navy-400);
   }
 
+  /* Live-mission connector (mockup `C.d4`/`C.c4`): solid and navy, not dashed. */
+  .nv-connector-line--solid {
+    stroke: var(--nv-navy);
+  }
+
+  /*
+    ---- citizen search: radar rings + spinner ----
+    Rings anchored on the "Tú" marker. The map sizes the icon box from the
+    search's real ground radius (radar-rings.ts), so the outer fill ring is 100%
+    of it and the two animated ones keep the mockup's 67%/40% ratios: the rings
+    cover the same terrain at every zoom. The `.nv-ring` prefix avoids Tailwind's
+    own `ring` utility. Animation runs only under
+    `prefers-reduced-motion: no-preference`.
+  */
+  .nv-rings {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+
+  .nv-ring {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    border: 2px solid var(--nv-teal);
+    border-radius: 50%;
+    pointer-events: none;
+  }
+
+  .nv-ring--fill {
+    /* The outer ring: the whole search radius (mockup 300/300). */
+    width: 100%;
+    height: 100%;
+    opacity: 0.9;
+    background: rgb(93 186 168 / 0.1);
+  }
+
+  .nv-ring--anim {
+    /* Middle ring (mockup 200/300); the pulse overrides the size while running. */
+    width: 66.667%;
+    height: 66.667%;
+    opacity: 0.6;
+  }
+
+  .nv-ring--d2 {
+    /* Inner ring (mockup 120/300); the pulse overrides the size while running. */
+    width: 40%;
+    height: 40%;
+    opacity: 0.8;
+  }
+
+  .nv-spinner {
+    position: absolute;
+    inset: 0;
+    border: 4px solid var(--nv-sky);
+    border-top-color: var(--nv-teal);
+    border-radius: 50%;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .nv-spinner {
+      animation: nv-spin 1.1s linear infinite;
+    }
+
+    .nv-ring--anim {
+      animation: nv-radar 2.4s ease-out infinite;
+    }
+
+    .nv-ring--d2 {
+      animation-delay: 0.8s;
+    }
+  }
+
   .nv-pulse {
     animation: nv-pulse 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes nv-radar {
+  0% {
+    /* 40 / 300 of the mockup's outer ring, as a share of the icon box. */
+    width: 13.333%;
+    height: 13.333%;
+    opacity: 0.9;
+  }
+
+  100% {
+    /* 360 / 300: the pulse overshoots the outer ring, exactly as the mockup. */
+    width: 120%;
+    height: 120%;
+    opacity: 0;
+  }
+}
+
+@keyframes nv-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 

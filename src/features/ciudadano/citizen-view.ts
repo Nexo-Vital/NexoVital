@@ -147,13 +147,40 @@ export function mostUrgentItem(centro: CentroAyuda): InventarioItem | null {
   return urgent;
 }
 
-/** One-line "what this center needs" for the rail row. */
+/**
+ * Short label for a center's map marker.
+ *
+ * The mockup writes the full name on the rail ("Acopio Suba Norte") and the
+ * short one on the pin ("Suba Norte"), so the short label is DERIVED by dropping
+ * the "Acopio " prefix instead of stored a second time. A name without the
+ * prefix is used as-is.
+ */
+export function centerShortName(centro: CentroAyuda): string {
+  return centro.nombre.replace(/^Acopio\s+/, '');
+}
+
+/**
+ * One-line "what this center needs" for the rail row, LITERAL from the mockup:
+ * "Le falta agua potable" / "Le faltan alimentos" / "Inventario suficiente".
+ *
+ * Nothing is hardcoded per center: the level comes from the inventory and the
+ * item is the scarcest declared one (`mostUrgentItem`), so a changed inventory
+ * changes the text. The verb agrees with the item's grammatical number, which
+ * the item itself declares (`grammaticalNumber`) — a bare name cannot give a
+ * reliable signal ("gas" is singular and ends in "s", "casas" is plural and also
+ * ends in "s"), so the agreement lives in the data, never in a text heuristic.
+ */
 export function centerNeedLabel(centro: CentroAyuda): string {
+  const level = centerLevel(centro);
+  if (level === 'stable') {
+    return 'Inventario suficiente';
+  }
   const urgent = mostUrgentItem(centro);
   if (!urgent) {
     return 'Sin requerimientos declarados';
   }
-  return `${urgent.nombre}: ${urgent.disponible} de ${urgent.requerido}`;
+  const name = urgent.nombre.toLowerCase();
+  return urgent.grammaticalNumber === 'plural' ? `Le faltan ${name}` : `Le falta ${name}`;
 }
 
 /**
