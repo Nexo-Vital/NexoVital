@@ -12,6 +12,7 @@ import {
   buildCitizenReportInput,
   type CitizenReportErrors,
   type CitizenReportValues,
+  MAX_DESCRIPCION,
   validateCitizenReport,
 } from '@/features/emergencias/citizen-report-form';
 import type { ReportarEmergenciaInput } from '@/features/emergencias/emergency-api';
@@ -181,6 +182,7 @@ export function CitizenReportDialog({
               id="citizen-report-description"
               name="descripcion"
               rows={3}
+              maxLength={MAX_DESCRIPCION}
               value={values.descripcion}
               onChange={(event) =>
                 setValues((current) => ({ ...current, descripcion: event.target.value }))

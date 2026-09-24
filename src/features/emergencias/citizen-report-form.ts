@@ -19,11 +19,21 @@ export interface CitizenReportErrors {
   lng?: string;
 }
 
+/**
+ * The backend column is `@Column(nullable = false, length = 500)`, and a longer
+ * value fails at persist time as a generic 500 with no hint of what to fix. Bounding
+ * it here turns that into an actionable field error.
+ */
+export const MAX_DESCRIPCION = 500;
+
 /** Validates the required description and the coordinates via the shared parsers. */
 export function validateCitizenReport(values: CitizenReportValues): CitizenReportErrors {
   const errors: CitizenReportErrors = {};
-  if (!values.descripcion.trim()) {
+  const descripcion = values.descripcion.trim();
+  if (!descripcion) {
     errors.descripcion = 'La descripción es obligatoria.';
+  } else if (descripcion.length > MAX_DESCRIPCION) {
+    errors.descripcion = `La descripción no puede superar los ${MAX_DESCRIPCION} caracteres.`;
   }
   if (parseLatitude(values.lat) === null) {
     errors.lat = 'La latitud debe ser un número entre -90 y 90.';

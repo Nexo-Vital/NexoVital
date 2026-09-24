@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildCitizenReportInput, validateCitizenReport } from './citizen-report-form';
+import {
+  buildCitizenReportInput,
+  MAX_DESCRIPCION,
+  validateCitizenReport,
+} from './citizen-report-form';
 
 const VALID = {
   nivel: 'HIGH' as const,
@@ -21,6 +25,23 @@ describe('validateCitizenReport', () => {
 
   it('accepts a complete report', () => {
     expect(validateCitizenReport(VALID)).toEqual({});
+  });
+
+  it('rejects a description past the backend column length', () => {
+    const errors = validateCitizenReport({
+      ...VALID,
+      descripcion: 'x'.repeat(MAX_DESCRIPCION + 1),
+    });
+
+    expect(errors.descripcion).toEqual(expect.any(String));
+    expect(errors.lat).toBeUndefined();
+    expect(errors.lng).toBeUndefined();
+  });
+
+  it('accepts a description exactly at the backend column length', () => {
+    expect(validateCitizenReport({ ...VALID, descripcion: 'x'.repeat(MAX_DESCRIPCION) })).toEqual(
+      {},
+    );
   });
 });
 
