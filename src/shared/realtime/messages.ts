@@ -15,12 +15,14 @@ import type {
  *   /topic/flota       - live fleet positions
  *   /topic/suministros - inventory + traffic light
  *   /queue/solicitudes - broadcast requests (driver inbox)
+ *   /topic/map.events  - map element lifecycle (zones and aid centers)
  */
 export const DESTINATIONS = {
   flota: '/topic/flota',
   emergencias: '/topic/emergencias',
   suministros: '/topic/suministros',
   solicitudes: '/queue/solicitudes',
+  mapa: '/topic/map.events',
 } as const;
 
 export type Destination = (typeof DESTINATIONS)[keyof typeof DESTINATIONS];
@@ -81,6 +83,48 @@ export interface EmergencyUpsertPayload {
   type: 'emergency.upsert';
   emergency: Emergencia;
 }
+
+/** Class of a map element carried on /topic/map.events. */
+export type MapaElementoClase = 'ZONA' | 'CENTRO';
+
+/**
+ * A map element as the backend publishes it on /topic/map.events: the same shape
+ * the map already serves over REST (`GET /api/v1/mapa`). The optional fields are
+ * class-specific — a ZONA only carries `contorno`, a CENTRO only carries `zonaId`
+ * and `tipo` — so the producer fills only the ones its class has.
+ */
+export interface MapaElementoPayload {
+  clase: MapaElementoClase;
+  id: string;
+  nombre: string;
+  ubicacion: Ubicacion;
+  /** ZONA only: ordered polygon vertices that draw the zone as an area. */
+  contorno?: Ubicacion[];
+  /** CENTRO only: id of the zone the center belongs to. */
+  zonaId?: string;
+  /** CENTRO only: center type as the backend returns it. */
+  tipo?: string;
+}
+
+/**
+ * Map element created or updated on /topic/map.events. Consumers UPSERT: an
+ * unknown `clase:id` is created, a known one is merged in place (the same rule
+ * fleet and emergency frames follow).
+ */
+export interface MapaElementoUpsertPayload {
+  type: 'mapa.elemento.upsert';
+  elemento: MapaElementoPayload;
+}
+
+/** Map element removal published on /topic/map.events. */
+export interface MapaElementoDeletePayload {
+  type: 'mapa.elemento.delete';
+  clase: MapaElementoClase;
+  id: string;
+}
+
+/** Every payload that can arrive on /topic/map.events. */
+export type MapaPayload = MapaElementoUpsertPayload | MapaElementoDeletePayload;
 
 /**
  * Request lifecycle on /queue/solicitudes.

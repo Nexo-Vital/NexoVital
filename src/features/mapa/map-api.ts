@@ -41,7 +41,12 @@ export function mapaToCentros(mapa: MapaResponse): CentroAyuda[] {
   return mapa.centros.map((centro) => ({
     id: centro.id,
     nombre: centro.nombre,
-    zonaId: centro.zonaId,
+    // An absent zone is OMITTED, never written as a present-but-undefined key:
+    // the realtime upsert MERGES an element field by field (design D4), and a
+    // `zonaId: undefined` would ERASE the zone a center already had, breaking
+    // `zoneForCentro`. The REST path always carries a zone, so this branch only
+    // matters for a realtime frame that omits it.
+    ...(centro.zonaId === undefined ? {} : { zonaId: centro.zonaId }),
     ubicacion: centro.ubicacion,
     items: [],
   }));
