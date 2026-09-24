@@ -17,8 +17,8 @@ import {
 } from '@/features/emergencias/citizen-report-form';
 import type { ReportarEmergenciaInput } from '@/features/emergencias/emergency-api';
 import {
+  type DeviceLocationState,
   INSECURE_CONTEXT_MESSAGE,
-  useDeviceLocation,
 } from '@/features/geolocalizacion/use-device-location';
 import type { EmergencyLevel, Ubicacion } from '@/types/domain';
 
@@ -51,6 +51,11 @@ interface CitizenReportDialogProps {
   onOpenChange: (open: boolean) => void;
   /** The point the citizen has on screen; offered as "Use map center" (D3). */
   mapCenter: Ubicacion;
+  /**
+   * Device GPS owned by the always-mounted page. The dialog never opens its own
+   * watcher: a second high-accuracy watch would run for the whole session.
+   */
+  location: DeviceLocationState;
   /** Publishes the report (POST with backend, local publish in demo mode). */
   onSubmit: (input: ReportarEmergenciaInput) => Promise<void>;
 }
@@ -64,6 +69,7 @@ export function CitizenReportDialog({
   open,
   onOpenChange,
   mapCenter,
+  location,
   onSubmit,
 }: CitizenReportDialogProps) {
   const [values, setValues] = useState<CitizenReportValues>(EMPTY_FORM);
@@ -71,7 +77,6 @@ export function CitizenReportDialog({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [geoMessage, setGeoMessage] = useState<string | null>(null);
-  const location = useDeviceLocation();
 
   useEffect(() => {
     if (!open) {

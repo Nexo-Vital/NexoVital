@@ -1,17 +1,41 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { INSECURE_CONTEXT_MESSAGE } from '@/features/geolocalizacion/use-device-location';
+import {
+  type DeviceLocationState,
+  INSECURE_CONTEXT_MESSAGE,
+} from '@/features/geolocalizacion/use-device-location';
 import { CitizenReportDialog } from './CitizenReportDialog';
 
 const MAP_CENTER = { lat: 4.73, lng: -74.08 };
 
-function renderDialog(onSubmit = vi.fn().mockResolvedValue(undefined)) {
+/**
+ * The dialog no longer owns a geolocation watcher: the page passes the shared
+ * state down. This stands in for it, defaulting to the "unsupported" status jsdom
+ * used to produce through the hook (no geolocation API).
+ */
+function locationState(overrides: Partial<DeviceLocationState> = {}): DeviceLocationState {
+  return {
+    position: null,
+    heading: null,
+    status: 'unsupported',
+    simulated: false,
+    setSimulatedPosition: vi.fn(),
+    clearSimulated: vi.fn(),
+    ...overrides,
+  };
+}
+
+function renderDialog(
+  onSubmit = vi.fn().mockResolvedValue(undefined),
+  location: DeviceLocationState = locationState(),
+) {
   const onOpenChange = vi.fn();
   render(
     <CitizenReportDialog
       open
       onOpenChange={onOpenChange}
       mapCenter={MAP_CENTER}
+      location={location}
       onSubmit={onSubmit}
     />,
   );
@@ -73,7 +97,8 @@ describe('CitizenReportDialog', () => {
 
     fireEvent.click(within(dialog()).getByRole('button', { name: 'Usar mi ubicación' }));
 
-    // jsdom has no geolocation API, so the hook reports "unsupported".
+    // The page reports an unsupported geolocation (no HTTPS or no API), so the
+    // dialog shows the shared insecure-context message.
     expect(within(dialog()).getByText(INSECURE_CONTEXT_MESSAGE)).toBeInTheDocument();
 
     fireEvent.change(within(dialog()).getByLabelText('Descripción'), {
@@ -83,5 +108,17 @@ describe('CitizenReportDialog', () => {
     fireEvent.change(within(dialog()).getByLabelText('Longitud'), { target: { value: '-74' } });
 
     expect(within(dialog()).getByRole('button', { name: 'Reportar' })).toBeEnabled();
+  });
+
+  it('fills the coordinates from the position the page hands down', () => {
+    renderDialog(
+      vi.fn().mockResolvedValue(undefined),
+      locationState({ status: 'granted', position: { lat: 4.61, lng: -74.08 } }),
+    );
+
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Usar mi ubicación' }));
+
+    expect(within(dialog()).getByLabelText('Latitud')).toHaveValue('4.61');
+    expect(within(dialog()).getByLabelText('Longitud')).toHaveValue('-74.08');
   });
 });

@@ -177,9 +177,16 @@ export async function getMe(token: string): Promise<Usuario> {
     return demoGetMe();
   }
 
-  const response = await fetch(`${API_BASE}/sesiones/actual`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}/sesiones/actual`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    // Same defect class as `apiFetch`: a rejected fetch is a native TypeError,
+    // and its raw English message must never reach the Spanish UI.
+    throw new ApiError(0, 'No se pudo conectar al servidor');
+  }
 
   if (response.status === 401) {
     throw new ApiError(401, 'Sesión expirada o no autenticado');
@@ -202,7 +209,15 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  } catch {
+    // A rejected fetch (backend down, no network) is a native TypeError, not an
+    // ApiError. Wrap it in the same 0-status Spanish ApiError `login` uses, so
+    // consumers never surface the browser's raw English message.
+    throw new ApiError(0, 'No se pudo conectar al servidor');
+  }
 
   if (response.status === 401) {
     logout();

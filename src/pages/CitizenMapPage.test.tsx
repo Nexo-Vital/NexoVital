@@ -1130,4 +1130,25 @@ describe('CitizenMapPage', () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it('opens a single GPS watcher although the report dialog is always mounted', () => {
+    const watchPosition = vi.fn().mockReturnValue(1);
+    const clearWatch = vi.fn();
+    Object.defineProperty(window.navigator, 'geolocation', {
+      value: { watchPosition, clearWatch },
+      configurable: true,
+    });
+    try {
+      renderPage();
+
+      // The page owns the one high-accuracy watcher; the always-mounted report
+      // dialog reuses it through the `location` prop instead of opening a second.
+      expect(watchPosition).toHaveBeenCalledTimes(1);
+    } finally {
+      Object.defineProperty(window.navigator, 'geolocation', {
+        value: undefined,
+        configurable: true,
+      });
+    }
+  });
 });

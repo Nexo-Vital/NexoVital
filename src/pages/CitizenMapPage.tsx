@@ -511,6 +511,7 @@ export default function CitizenMapPage({
         open={reportOpen}
         onOpenChange={setReportOpen}
         mapCenter={mapCenter}
+        location={location}
         onSubmit={handleReportSubmit}
       />
     </div>
