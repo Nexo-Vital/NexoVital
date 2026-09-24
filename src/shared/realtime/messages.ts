@@ -9,7 +9,8 @@ import type {
 /**
  * Message contract shared by every realtime transport.
  *
- * Destinations mirror the STOMP contract in `src/services/stompClient.ts`:
+ * Destinations mirror the STOMP contract served by the backend (`/ws`), wired
+ * by `StompRealtimeAdapter`:
  *   /topic/emergencias  - new / updated emergency
  *   /topic/flota       - live fleet positions
  *   /topic/suministros - inventory + traffic light

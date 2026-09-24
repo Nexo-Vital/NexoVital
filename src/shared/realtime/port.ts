@@ -10,7 +10,7 @@ export type RealtimeHandler<T = unknown> = (payload: T, envelope: RealtimeEnvelo
  *
  * The app only depends on this interface, so the dev WebSocket adapter
  * (`dev-relay-adapter.ts`) can be swapped for the real STOMP adapter
- * (`src/services/stompClient.ts`) without touching feature code.
+ * (`stomp-adapter.ts`) without touching feature code.
  */
 export interface RealtimePort {
   readonly state: RealtimeState;
