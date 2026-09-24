@@ -12,6 +12,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -260,8 +261,73 @@ class EmergenciasHttpTest extends LoginTestBase {
     }
 
     // -----------------------------------------------------------------------
+    // Design D7: the read model is open to EVERY authenticated role, not only
+    // the citizen who reports. This pins that decision.
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("GET /emergencias as another authenticated role: 200 (D7 opens it to every role)")
+    void t11_listarEmergenciasOtroRolAutenticado() throws Exception {
+        String token = tokenDe(RANGEL, RANGEL_PASSWORD);
+
+        mockMvc.perform(get("/api/v1/emergencias")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
+    }
+
+    // -----------------------------------------------------------------------
+    // The repository orders by createdAt descending; without this case the only
+    // new query decision would be untested (a plain findAll() would pass T8).
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("GET /emergencias lists the newest report first (createdAt descending)")
+    void t12_listarEmergenciasOrdenaLaMasRecientePrimero() throws Exception {
+        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+
+        String idVieja = reportarYDevolverId(token, "Reporte antiguo");
+        clock.avanzar(Duration.ofMinutes(5));
+        String idNueva = reportarYDevolverId(token, "Reporte reciente");
+
+        MvcResult listado = mockMvc.perform(get("/api/v1/emergencias")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode emergencias = objectMapper.readTree(listado.getResponse().getContentAsString());
+        int posicionNueva = indiceDe(emergencias, idNueva);
+        int posicionVieja = indiceDe(emergencias, idVieja);
+
+        assertTrue(posicionNueva >= 0 && posicionVieja >= 0,
+                "both reports must be listed");
+        assertTrue(posicionNueva < posicionVieja,
+                "the newest report must come first: " + idNueva + " before " + idVieja);
+    }
+
+    // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
+
+    /** Reports and returns the server-assigned id. */
+    private String reportarYDevolverId(String token, String descripcion) throws Exception {
+        MvcResult alta = mockMvc.perform(post("/api/v1/emergencias")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpo(SUBA_LAT, SUBA_LNG, "ALTO", descripcion)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return objectMapper.readTree(alta.getResponse().getContentAsString()).get("id").asText();
+    }
+
+    /** Position of the report with that id in the listed array, or -1. */
+    private static int indiceDe(JsonNode emergencias, String id) {
+        for (int i = 0; i < emergencias.size(); i++) {
+            if (id.equals(emergencias.get(i).get("id").asText())) {
+                return i;
+            }
+        }
+        return -1;
+    }
 
     /** Logs in with real credentials and returns the issued token. */
     private String tokenDe(String email, String password) throws Exception {
