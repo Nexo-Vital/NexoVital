@@ -84,6 +84,31 @@ describe('demo fixtures parity with the v2 mockup', () => {
     expect(centerNeedLabel(reshuffled)).toBe('Le falta agua potable');
   });
 
+  it('writes Suba Norte inventory and address literally from the mockup c7 card', () => {
+    const suba = MOCK_CENTROS_AYUDA.find((centro) => centro.id === 'CA-SUBA-NORTE');
+    // The address is the mockup's demo address; the units are the mockup's, not
+    // invented. "Alimentos" (La Gaitana/Tibabuyes) has no mockup unit, so it is
+    // left undefined rather than made up.
+    expect(suba?.direccion).toBe('Cl. 145 #91-19');
+    expect(
+      suba?.items.map((item) => [item.nombre, item.disponible, item.requerido, item.unidad]),
+    ).toEqual([
+      ['Agua potable', 12, 60, 'bidones'],
+      ['Kits de higiene', 18, 40, 'kits'],
+      ['Medicamentos básicos', 32, 35, 'cajas'],
+      ['Cobijas', 44, 50, 'unidades'],
+    ]);
+    const alimentos = MOCK_CENTROS_AYUDA.flatMap((centro) => centro.items).find(
+      (item) => item.nombre === 'Alimentos',
+    );
+    expect(alimentos?.unidad).toBeUndefined();
+
+    // The c8 stepper's more specific unit is the mockup's line 876 ("bidones de
+    // 5 L"); it is declared, not derived, and only water carries one.
+    const agua = suba?.items.find((item) => item.id === 'INV-SN-1');
+    expect(agua?.unitDetail).toBe('bidones de 5 L');
+  });
+
   it('matches every demo driver name to the unit it drives', () => {
     const drivers = DEMO_ACCOUNTS.filter((account) => account.rol === 'CONDUCTOR');
     expect(drivers).toHaveLength(5);

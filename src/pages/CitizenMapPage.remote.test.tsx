@@ -89,6 +89,10 @@ describe('CitizenMapPage against /api/v1/mapa', () => {
     // No inventory in the payload: every backend center is counted as undeclared.
     expect(await screen.findByText('3 sin declarar')).toBeInTheDocument();
 
+    // With nothing declared there is nothing to donate to, so the mock-only flow
+    // stays off with its reason instead of opening an empty screen.
+    expect(screen.getByRole('button', { name: 'Donar suministros' })).toBeDisabled();
+
     // Each zone is a named point marker, not an area.
     const zoneLabels = Array.from(container.querySelectorAll('.nv-marker--zone')).map(
       (marker) => marker.querySelector('.nv-marker__label')?.textContent,

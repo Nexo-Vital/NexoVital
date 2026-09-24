@@ -1,4 +1,4 @@
-import { Check } from 'lucide-react';
+import { Check, HandHeart } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AcceptancePopup } from '@/features/ciudadano/AcceptancePopup';
 import { ArrivalPopup } from '@/features/ciudadano/ArrivalPopup';
@@ -17,6 +17,18 @@ import {
   countCentersByLevel,
   nearbyAmbulances,
 } from '@/features/ciudadano/citizen-view';
+import {
+  CenterDetailRail,
+  DonationCenterPicker,
+  DonationDialog,
+} from '@/features/donaciones/DonationFlow';
+import {
+  type DonationRecord,
+  donableCenters,
+  donationToast,
+  useDonationStore,
+  withDonations,
+} from '@/features/donaciones/donation';
 import { useEmergencyStore } from '@/features/emergencias/emergency-store';
 import { useEmergencySync } from '@/features/emergencias/use-emergency-sync';
 import { useFleetStore } from '@/features/flota/fleet-store';
@@ -24,6 +36,7 @@ import { useFleetSync } from '@/features/flota/use-fleet-sync';
 import { useDeviceLocation } from '@/features/geolocalizacion/use-device-location';
 import { MapCanvas, type RequestConnector, type SelfMarker } from '@/features/mapa/MapCanvas';
 import { useMapData } from '@/features/mapa/use-map-data';
+import { centroSemaforo } from '@/features/recursos/traffic-light';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
 import { useSolicitudRegistrySync } from '@/features/solicitudes/use-solicitud-registry-sync';
 import { etaMinutes } from '@/lib/geo';
@@ -93,6 +106,31 @@ export default function CitizenMapPage({
   // demo flag on, `GET /api/v1/mapa` with it off (never a silent fallback).
   const mapa = useMapData(centrosAyuda);
 
+  // Donations MUTATE the front state on top of that base: `updated` holds the
+  // centers whose inventory changed, and the merged list is what the map, the
+  // rail, the header chips and the legend all read. With the demo flag off the
+  // backend centers carry no inventory, so this overlay is simply never used.
+  const updatedCentros = useDonationStore((state) => state.updated);
+  const centros = useMemo(
+    () => withDonations(mapa.centros, updatedCentros),
+    [mapa.centros, updatedCentros],
+  );
+
+  // Center detail (mockup c7/c8/c9). It only takes over while no ambulance
+  // request is open, so the request flow is never disturbed.
+  const [detailCentroId, setDetailCentroId] = useState<string | null>(null);
+  const [donationOpen, setDonationOpen] = useState(false);
+  // "Donar suministros" opens the picker, never a center: the citizen chooses.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [lastDonation, setLastDonation] = useState<DonationRecord | null>(null);
+  const detailCentro = useMemo(
+    () => centros.find((centro) => centro.id === detailCentroId) ?? null,
+    [centros, detailCentroId],
+  );
+  // The centers that can receive a donation, worst first. The list only decides
+  // whether the action is offered; it never picks one for the citizen.
+  const donable = useMemo(() => donableCenters(centros), [centros]);
+
   const requestPhase = useCitizenRequestStore((state) => state.phase);
   const requestStartedAt = useCitizenRequestStore((state) => state.startedAt);
   const notifiedIds = useCitizenRequestStore((state) => state.notifiedIds);
@@ -132,7 +170,7 @@ export default function CitizenMapPage({
   const selfPosition = location.position ?? CITIZEN_FALLBACK_POSITION;
   const usingFallbackPosition = location.position === null;
 
-  const counts = useMemo(() => countCentersByLevel(mapa.centros), [mapa.centros]);
+  const counts = useMemo(() => countCentersByLevel(centros), [centros]);
   const nearby = useMemo(() => nearbyAmbulances(fleet, selfPosition), [fleet, selfPosition]);
   const availableCount = useMemo(() => countAvailableUnits(fleet), [fleet]);
   const self: SelfMarker = useMemo(
@@ -155,6 +193,8 @@ export default function CitizenMapPage({
   );
 
   const handleRequest = useCallback(() => {
+    // A request takes over the rail, so any open donation picker is dropped.
+    setPickerOpen(false);
     useCitizenRequestStore.getState().start({
       port,
       units: useFleetStore.getState().units,
@@ -175,6 +215,43 @@ export default function CitizenMapPage({
   const handleBackToMap = useCallback(() => {
     useCitizenRequestStore.getState().reset();
   }, []);
+
+  // --- Donation flow (mockup c7/c8/c9) ---------------------------------------
+
+  // Opens a center's c7 detail and closes the picker: the same handler serves the
+  // picker row and the map tap, so both paths land on the identical detail.
+  const openCenterDetail = useCallback((id: string) => {
+    setPickerOpen(false);
+    setDetailCentroId(id);
+    setLastDonation(null);
+  }, []);
+
+  // "Donar suministros" only OPENS THE PICKER. It never selects a center: the
+  // citizen chooses one from the list or taps it on the map (criterion 3).
+  const handleDonate = useCallback(() => {
+    setPickerOpen(true);
+  }, []);
+
+  const handleBackFromDetail = useCallback(() => {
+    setDetailCentroId(null);
+    setDonationOpen(false);
+    setLastDonation(null);
+  }, []);
+
+  // Confirming applies the donation to the front state and remembers the level
+  // the center moved from, so the c9 card can say "Antes estaba en crítico".
+  const handleConfirmDonation = useCallback(
+    (itemId: string, amount: number) => {
+      if (!detailCentro) {
+        return;
+      }
+      const beforeCenterLevel = centroSemaforo(detailCentro);
+      const next = useDonationStore.getState().donate(detailCentro, itemId, amount);
+      setLastDonation({ centroId: next.id, itemId, amount, beforeCenterLevel });
+      setDonationOpen(false);
+    },
+    [detailCentro],
+  );
 
   // The assigned unit as the live fleet knows it: the popup's id is real, and
   // the c4/c5/c6 rail and map read the unit's own driver, plate, model and type.
@@ -201,19 +278,40 @@ export default function CitizenMapPage({
     [assignedUnit, selfPosition],
   );
 
-  const title = searching
-    ? 'Pidiendo ambulancia'
-    : accepted
-      ? 'Tu ambulancia va en camino'
-      : arrived
-        ? 'Tu ambulancia llegó'
-        : closed
-          ? 'Solicitud atendida'
-          : 'Mapa de operación';
+  // The donation that produced this center's current c9 state, if any. Narrowed
+  // here so the rail and the toast read a non-null record.
+  const detailDonation =
+    detailCentro && lastDonation?.centroId === detailCentro.id ? lastDonation : null;
+  const donatedItem =
+    detailCentro && detailDonation
+      ? (detailCentro.items.find((item) => item.id === detailDonation.itemId) ?? null)
+      : null;
+  const donationMessage =
+    detailCentro && detailDonation && donatedItem
+      ? donationToast(detailCentro, detailDonation, donatedItem)
+      : null;
+  const showDetail = requestPhase === 'idle' && detailCentro !== null;
+
+  const title =
+    detailCentro && showDetail
+      ? 'Centro de acopio'
+      : searching
+        ? 'Pidiendo ambulancia'
+        : accepted
+          ? 'Tu ambulancia va en camino'
+          : arrived
+            ? 'Tu ambulancia llegó'
+            : closed
+              ? 'Solicitud atendida'
+              : 'Mapa de operación';
   const subtitle =
-    searching || accepted || arrived
-      ? citizenSceneLabel(selfPosition, { fallback: usingFallbackPosition })
-      : 'Suba, Bogotá · en vivo';
+    detailCentro && showDetail
+      ? detailDonation
+        ? `El semáforo de ${detailCentro.nombre} se actualizó para todos`
+        : `Seleccionaste ${detailCentro.nombre} en el mapa`
+      : searching || accepted || arrived
+        ? citizenSceneLabel(selfPosition, { fallback: usingFallbackPosition })
+        : 'Suba, Bogotá · en vivo';
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col gap-3 overflow-y-auto bg-nv-mint text-nv-navy lg:grid lg:grid-cols-[minmax(0,1fr)_344px] lg:grid-rows-[auto_minmax(0,1fr)] lg:gap-5 lg:overflow-hidden">
@@ -238,11 +336,13 @@ export default function CitizenMapPage({
         <MapCanvas
           ambulancias={fleet}
           emergencias={NO_EMERGENCIES}
-          centros={mapa.centros}
+          centros={centros}
           zonas={mapa.zonas}
           center={selfPosition}
           self={self}
           selectedAmbulanceId={assigned ? acceptedBy : null}
+          selectedCentroId={detailCentro?.id ?? null}
+          changedCentroId={detailDonation?.centroId ?? null}
           selfRings={searching}
           notifiedAmbulanceIds={searching ? notifiedIds : NO_UNIT_IDS}
           dimmedAmbulanceIds={dimmedIds}
@@ -250,6 +350,7 @@ export default function CitizenMapPage({
           ambulanceLabels={ambulanceLabels}
           onSelectAmbulance={() => undefined}
           onSelectEmergency={() => undefined}
+          onSelectCentro={requestPhase === 'idle' ? openCenterDetail : undefined}
         />
         <CitizenMapLegend counts={counts} units={fleet} />
 
@@ -261,6 +362,18 @@ export default function CitizenMapPage({
                 <Check className="size-4" aria-hidden />
               </span>
               Confirmaste la llegada. Tu solicitud quedó cerrada.
+            </div>
+          </div>
+        )}
+
+        {/* `C.c9`: the donation toast, with the real amount and level change. */}
+        {donationMessage && (
+          <div className="pointer-events-none absolute inset-x-0 top-5 z-[1000] flex justify-center px-3">
+            <div className="flex items-center gap-2.5 rounded-nv-md bg-nv-navy px-4 py-3 font-medium text-sm text-white shadow-nv-float">
+              <span className="grid size-7 shrink-0 place-items-center rounded-full bg-nv-lime text-nv-navy">
+                <HandHeart className="size-4" aria-hidden />
+              </span>
+              {donationMessage}
             </div>
           </div>
         )}
@@ -280,12 +393,37 @@ export default function CitizenMapPage({
           onCancel={handleCancel}
           onBackToMap={handleBackToMap}
         />
+      ) : detailCentro && showDetail ? (
+        <CenterDetailRail
+          centro={detailCentro}
+          origin={selfPosition}
+          lastDonation={detailDonation}
+          onDonate={() => setDonationOpen(true)}
+          onBackToMap={handleBackFromDetail}
+        />
+      ) : pickerOpen ? (
+        <DonationCenterPicker
+          centros={donable}
+          onSelect={openCenterDetail}
+          onCancel={() => setPickerOpen(false)}
+        />
       ) : (
         <CitizenRail
           nearby={nearby}
-          centros={mapa.centros}
+          centros={centros}
           availableCount={availableCount}
           onRequest={handleRequest}
+          onDonate={handleDonate}
+          donationEnabled={donable.length > 0}
+          onSelectCentro={openCenterDetail}
+        />
+      )}
+
+      {donationOpen && detailCentro && (
+        <DonationDialog
+          centro={detailCentro}
+          onConfirm={handleConfirmDonation}
+          onClose={() => setDonationOpen(false)}
         />
       )}
 

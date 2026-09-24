@@ -124,6 +124,20 @@ export interface InventarioItem {
    * plural and also ends in "s"), so this is declared, never inferred.
    */
   grammaticalNumber: GrammaticalNumber;
+  /**
+   * UI-only convenience (not part of the OpenAPI schema): the unit the stock is
+   * counted in, written literally from the mockup ("bidones", "kits", "cajas",
+   * "unidades"). Optional because a live frame may not carry one; when absent the
+   * UI shows the bare numbers instead of inventing a unit.
+   */
+  unidad?: string;
+  /**
+   * UI-only convenience (not part of the OpenAPI schema): the more specific unit
+   * the mockup's c8 quantity stepper writes ("bidones de 5 L"), while the c7 rail
+   * keeps the plain `unidad` ("bidones"). Optional: the modal falls back to
+   * `unidad` and, with neither, shows the bare number rather than inventing one.
+   */
+  unitDetail?: string;
 }
 
 export interface CentroAyuda {
@@ -131,6 +145,13 @@ export interface CentroAyuda {
   nombre: string;
   ubicacion: Ubicacion;
   items: InventarioItem[];
+  /**
+   * UI-only convenience (not part of the OpenAPI schema): the street address as
+   * the mockup's c7 card writes it ("Cl. 145 #91-19"). Demo data — the backend
+   * map read-model does not carry one yet — so it stays optional and the UI
+   * simply omits the line when the data has no address.
+   */
+  direccion?: string;
 }
 
 /**

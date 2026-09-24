@@ -19,12 +19,19 @@ function DialogOverlay({ className, ...props }: ComponentProps<typeof DialogPrim
 
 function DialogContent({
   className,
+  overlayClassName,
+  showClose = true,
   children,
   ...props
-}: ComponentProps<typeof DialogPrimitive.Content>) {
+}: ComponentProps<typeof DialogPrimitive.Content> & {
+  /** Extra classes for the scrim; lets a fixed-palette surface override its theme colours. */
+  overlayClassName?: string;
+  /** Hides the built-in close affordance; a dialog with its own "Cancelar" can opt out. */
+  showClose?: boolean;
+}) {
   return (
     <DialogPortal>
-      <DialogOverlay />
+      <DialogOverlay className={overlayClassName} />
       <DialogPrimitive.Content
         className={cn(
           // z-index clears the Leaflet control panes (up to 1000) and the
@@ -35,10 +42,12 @@ function DialogContent({
         {...props}
       >
         {children}
-        <DialogPrimitive.Close className="absolute top-3 right-3 rounded-sm text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
-          <X className="size-4" />
-          <span className="sr-only">Close</span>
-        </DialogPrimitive.Close>
+        {showClose && (
+          <DialogPrimitive.Close className="absolute top-3 right-3 rounded-sm text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
+            <X className="size-4" />
+            <span className="sr-only">Close</span>
+          </DialogPrimitive.Close>
+        )}
       </DialogPrimitive.Content>
     </DialogPortal>
   );

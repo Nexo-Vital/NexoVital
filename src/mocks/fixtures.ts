@@ -32,6 +32,8 @@ function inventoryItem(
   disponible: number,
   requerido: number,
   grammaticalNumber: GrammaticalNumber,
+  unidad?: string,
+  unitDetail?: string,
 ): InventarioItem {
   return {
     id,
@@ -41,6 +43,8 @@ function inventoryItem(
     requerido,
     semaforo: trafficLight(disponible, requerido),
     grammaticalNumber,
+    unidad,
+    unitDetail,
   };
 }
 
@@ -254,18 +258,39 @@ export const MOCK_SOLICITUDES: SolicitudAmbulancia[] = [
  * not stored twice. The traffic-light level is NEVER set here: it comes from the
  * inventory through `trafficLight`, so each center's worst item produces the
  * mockup's level — Suba Norte critical, La Gaitana alert, Tibabuyes stable.
+ *
+ * Suba Norte's inventory is LITERAL from the mockup's c7 card (lines 845-849:
+ * Agua potable 12/60, Kits de higiene 18/40, Medicamentos básicos 32/35, Cobijas
+ * 44/50) so the donation flow reproduces c7/c8/c9 — including the "kits de
+ * higiene" follow-up. Its `direccion` is the mockup's c7 address ("Cl. 145
+ * #91-19"), DEMO data: the other two centers have no mockup address, so it stays
+ * undefined and their card shows only the computed distance. The `unidad` of an
+ * item is written only when the mockup declares one ("Alimentos" has none, so it
+ * is left out rather than invented).
  */
 export const MOCK_CENTROS_AYUDA: CentroAyuda[] = [
   {
     id: 'CA-SUBA-NORTE',
     nombre: 'Acopio Suba Norte',
+    direccion: 'Cl. 145 #91-19',
     ubicacion: { lat: 4.742, lng: -74.09 },
     items: [
-      // Worst item: 20/200 = 10% -> RED (the mockup's "Le falta agua potable").
-      inventoryItem('INV-SN-1', 'CA-SUBA-NORTE', 'Agua potable', 20, 200, 'singular'),
-      inventoryItem('INV-SN-2', 'CA-SUBA-NORTE', 'Alimentos', 180, 200, 'plural'),
-      inventoryItem('INV-SN-3', 'CA-SUBA-NORTE', 'Medicamentos básicos', 50, 100, 'plural'),
-      inventoryItem('INV-SN-4', 'CA-SUBA-NORTE', 'Cobijas', 120, 100, 'plural'),
+      // Worst item: 12/60 = 20% -> RED (the mockup's "Le falta agua potable").
+      // The c8 stepper's more specific unit ("bidones de 5 L") is the mockup's
+      // line 876; the c7 rail keeps the plain "bidones".
+      inventoryItem(
+        'INV-SN-1',
+        'CA-SUBA-NORTE',
+        'Agua potable',
+        12,
+        60,
+        'singular',
+        'bidones',
+        'bidones de 5 L',
+      ),
+      inventoryItem('INV-SN-2', 'CA-SUBA-NORTE', 'Kits de higiene', 18, 40, 'plural', 'kits'),
+      inventoryItem('INV-SN-3', 'CA-SUBA-NORTE', 'Medicamentos básicos', 32, 35, 'plural', 'cajas'),
+      inventoryItem('INV-SN-4', 'CA-SUBA-NORTE', 'Cobijas', 44, 50, 'plural', 'unidades'),
     ],
   },
   {
@@ -275,8 +300,8 @@ export const MOCK_CENTROS_AYUDA: CentroAyuda[] = [
     items: [
       // Worst item: 90/200 = 45% -> AMBER (the mockup's "Le faltan alimentos").
       inventoryItem('INV-LG-1', 'CA-LA-GAITANA', 'Alimentos', 90, 200, 'plural'),
-      inventoryItem('INV-LG-2', 'CA-LA-GAITANA', 'Agua potable', 300, 300, 'singular'),
-      inventoryItem('INV-LG-3', 'CA-LA-GAITANA', 'Cobijas', 40, 0, 'plural'),
+      inventoryItem('INV-LG-2', 'CA-LA-GAITANA', 'Agua potable', 300, 300, 'singular', 'bidones'),
+      inventoryItem('INV-LG-3', 'CA-LA-GAITANA', 'Cobijas', 40, 0, 'plural', 'unidades'),
     ],
   },
   {
@@ -285,9 +310,9 @@ export const MOCK_CENTROS_AYUDA: CentroAyuda[] = [
     ubicacion: { lat: 4.73, lng: -74.1 },
     items: [
       // Every declared item is above 80% -> GREEN ("Inventario suficiente").
-      inventoryItem('INV-TB-1', 'CA-TIBABUYES', 'Agua potable', 500, 500, 'singular'),
+      inventoryItem('INV-TB-1', 'CA-TIBABUYES', 'Agua potable', 500, 500, 'singular', 'bidones'),
       inventoryItem('INV-TB-2', 'CA-TIBABUYES', 'Alimentos', 360, 400, 'plural'),
-      inventoryItem('INV-TB-3', 'CA-TIBABUYES', 'Cobijas', 200, 0, 'plural'),
+      inventoryItem('INV-TB-3', 'CA-TIBABUYES', 'Cobijas', 200, 0, 'plural', 'unidades'),
     ],
   },
 ];

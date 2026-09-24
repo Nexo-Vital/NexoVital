@@ -4,10 +4,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ACCEPTANCE_POPUP_MS } from '@/features/ciudadano/AcceptancePopup';
 import { useCitizenRequestStore } from '@/features/ciudadano/citizen-request-store';
 import { CENTER_LEVEL_STYLE, NOT_DECLARED_CENTER_STYLE } from '@/features/ciudadano/citizen-view';
+import { useDonationStore } from '@/features/donaciones/donation';
 import { useEmergencyStore } from '@/features/emergencias/emergency-store';
 import { useFleetStore } from '@/features/flota/fleet-store';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
-import { MOCK_AMBULANCIAS } from '@/mocks/fixtures';
+import { MOCK_AMBULANCIAS, MOCK_CENTROS_AYUDA } from '@/mocks/fixtures';
 import { DESTINATIONS, type SolicitudCancelPayload } from '@/shared/realtime';
 import { FakeRealtimePort } from '@/test/fake-realtime-port';
 import { GLOBALS_CSS, paletteDeclaration } from '@/test/mockup-palette';
@@ -26,12 +27,16 @@ import CitizenMapPage from './CitizenMapPage';
 vi.mock('@/features/mapa/MapCanvas', () => ({
   MapCanvas: (props: {
     selectedAmbulanceId?: string | null;
+    selectedCentroId?: string | null;
+    changedCentroId?: string | null;
     ambulanceLabels?: Record<string, string>;
     requestConnector?: { dashed?: boolean } | null;
   }) => (
     <div
       data-testid="map-canvas"
       data-selected={props.selectedAmbulanceId ?? ''}
+      data-selected-centro={props.selectedCentroId ?? ''}
+      data-changed-centro={props.changedCentroId ?? ''}
       data-labels={JSON.stringify(props.ambulanceLabels ?? {})}
       data-connector={props.requestConnector ? 'yes' : 'no'}
       data-connector-dashed={props.requestConnector?.dashed === false ? 'no' : 'yes'}
@@ -128,6 +133,7 @@ describe('CitizenMapPage', () => {
     useEmergencyStore.getState().hydrate([]);
     useSolicitudesStore.getState().hydrate([]);
     useCitizenRequestStore.getState().reset();
+    useDonationStore.getState().reset();
   });
 
   it('renders the header, the map, the live legend and the three rail blocks', () => {
@@ -151,12 +157,28 @@ describe('CitizenMapPage', () => {
     expect(within(rail).getByRole('heading', { name: 'Centros de acopio' })).toBeInTheDocument();
   });
 
-  it('enables "Pedir ambulancia" while "Donar suministros" stays disabled with its note', () => {
-    renderPage({ ambulancias: [amb('A-07', 'AVAILABLE')] });
+  it('enables "Pedir ambulancia" and "Donar suministros" when data can back them', () => {
+    renderPage({
+      ambulancias: [amb('A-07', 'AVAILABLE')],
+      // A declared, non-stable requirement: 4/10 = 40% -> AMBER, so a donation
+      // can actually move it. A stable-only center is not a donation target.
+      centrosAyuda: [centro('CA-N', 'AMBER', 4.728, -74.078)],
+    });
 
     expect(screen.getByRole('button', { name: 'Pedir ambulancia' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Donar suministros' })).toBeDisabled();
-    expect(screen.getByText(/Próximamente/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Donar suministros' })).toBeEnabled();
+    expect(screen.queryByText(/Próximamente/)).not.toBeInTheDocument();
+  });
+
+  it('disables "Donar suministros" with its reason when no center declares a requirement', () => {
+    renderPage({ centrosAyuda: [centro('CA-N', null, 4.728, -74.078)] });
+
+    const donate = screen.getByRole('button', { name: 'Donar suministros' });
+    expect(donate).toBeDisabled();
+    expect(donate).toHaveAttribute(
+      'title',
+      'Ningún centro declara insumos que necesiten donación.',
+    );
   });
 
   it('starts the search and alerts the three nearest available units for real', () => {
@@ -901,5 +923,133 @@ describe('CitizenMapPage', () => {
     });
     expect(useCitizenRequestStore.getState().confirmedAt).toBe(confirmedAt);
     expect(useCitizenRequestStore.getState().phase).toBe('closed');
+  });
+
+  it('opens a center detail when its rail row is clicked', () => {
+    renderPage({ centrosAyuda: MOCK_CENTROS_AYUDA });
+
+    const rail = citizenRail();
+    fireEvent.click(within(rail).getByRole('button', { name: /Acopio La Gaitana/ }));
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Centro de acopio' })).toBeInTheDocument();
+    expect(screen.getByText('Seleccionaste Acopio La Gaitana en el mapa')).toBeInTheDocument();
+    expect(screen.getByTestId('map-canvas')).toHaveAttribute(
+      'data-selected-centro',
+      'CA-LA-GAITANA',
+    );
+  });
+
+  it('cancels the donation picker without opening a center or donating', () => {
+    renderPage({ ambulancias: MOCK_AMBULANCIAS, centrosAyuda: MOCK_CENTROS_AYUDA });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Donar suministros' }));
+    const picker = screen.getByRole('complementary', { name: 'Elegir centro de donación' });
+    fireEvent.click(within(picker).getByRole('button', { name: 'Cancelar' }));
+
+    expect(
+      screen.queryByRole('complementary', { name: 'Elegir centro de donación' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { level: 1, name: 'Centro de acopio' }),
+    ).not.toBeInTheDocument();
+    // The citizen rail is back, nothing was chosen and nothing was donated.
+    expect(screen.getByRole('button', { name: 'Donar suministros' })).toBeInTheDocument();
+    expect(useDonationStore.getState().updated).toEqual({});
+  });
+
+  it('walks the mock donation flow c7 -> c8 -> c9 and mutates the front state', () => {
+    renderPage({ ambulancias: MOCK_AMBULANCIAS, centrosAyuda: MOCK_CENTROS_AYUDA });
+
+    // c7: "Donar suministros" does NOT choose a center — it opens the picker and
+    // waits. The mockup's Suba Norte is offered, but nothing is selected yet.
+    fireEvent.click(screen.getByRole('button', { name: 'Donar suministros' }));
+
+    expect(
+      screen.queryByRole('heading', { level: 1, name: 'Centro de acopio' }),
+    ).not.toBeInTheDocument();
+    const picker = screen.getByRole('complementary', { name: 'Elegir centro de donación' });
+    expect(within(picker).getByText('Acopio Suba Norte')).toBeInTheDocument();
+    expect(within(picker).getByText('Acopio La Gaitana')).toBeInTheDocument();
+    // Tibabuyes is entirely stable, so it is not a donation target.
+    expect(within(picker).queryByText('Acopio Tibabuyes')).not.toBeInTheDocument();
+
+    // The citizen chooses Suba Norte; only now does the c7 detail open.
+    fireEvent.click(within(picker).getByRole('button', { name: /Acopio Suba Norte/ }));
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Centro de acopio' })).toBeInTheDocument();
+    expect(screen.getByText('Seleccionaste Acopio Suba Norte en el mapa')).toBeInTheDocument();
+    expect(screen.getByTestId('map-canvas')).toHaveAttribute(
+      'data-selected-centro',
+      'CA-SUBA-NORTE',
+    );
+
+    const detail = citizenRail();
+    expect(within(detail).getByRole('heading', { name: 'Insumos del centro' })).toBeInTheDocument();
+    expect(within(detail).getByText('12 de 60 bidones')).toBeInTheDocument();
+    expect(within(detail).getByText('18 de 40 kits')).toBeInTheDocument();
+    expect(
+      within(detail).getByText(
+        'El color del centro es el de su insumo más escaso. Hoy lo que más necesita es agua potable.',
+      ),
+    ).toBeInTheDocument();
+
+    // c8: the dialog lists only the SCARCE items by scarcity and previews the
+    // result with the mockup's specific unit.
+    fireEvent.click(within(detail).getByRole('button', { name: 'Donar a este centro' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Donar a Acopio Suba Norte' });
+    expect(
+      within(dialog)
+        .getAllByRole('radio')
+        .map((radio) => (radio as HTMLInputElement).value),
+    ).toEqual(['INV-SN-1', 'INV-SN-2']);
+    expect(within(dialog).getByText('12 → 52 de 60')).toBeInTheDocument();
+    expect(within(dialog).getByText('bidones de 5 L')).toBeInTheDocument();
+    expect(
+      within(dialog).getByText('Pasa a alerta: todavía le faltan kits de higiene.'),
+    ).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirmar donación' }));
+
+    // c9: the toast, the updated card and the recalculated counts.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(
+      screen.getByText('El semáforo de Acopio Suba Norte se actualizó para todos'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Donaste 40 bidones de agua potable. Suba Norte pasó de crítico a alerta.'),
+    ).toBeInTheDocument();
+
+    const after = citizenRail();
+    expect(within(after).getByText('Antes estaba en crítico')).toBeInTheDocument();
+    expect(within(after).getByText('+40')).toBeInTheDocument();
+    expect(within(after).getByText('52 de 60 bidones')).toBeInTheDocument();
+    expect(
+      within(after).getByText(
+        'El color del centro es el de su insumo más escaso. Ahora lo que más necesita son kits de higiene.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(after).getByRole('button', { name: 'Donar kits de higiene' }),
+    ).toBeInTheDocument();
+    expect(within(after).getByRole('button', { name: 'Volver al mapa' })).toBeInTheDocument();
+
+    expect(screen.getByTestId('map-canvas')).toHaveAttribute(
+      'data-changed-centro',
+      'CA-SUBA-NORTE',
+    );
+    expect(screen.getByText('1 centro estable')).toBeInTheDocument();
+    expect(screen.getByText('2 en alerta')).toBeInTheDocument();
+    expect(screen.getByText('0 críticos')).toBeInTheDocument();
+    expect(legendValue('En alerta')).toBe('2');
+    expect(legendValue('Crítico')).toBe('0');
+
+    // "Volver al mapa" restores the citizen rail; the donated state persists.
+    fireEvent.click(within(after).getByRole('button', { name: 'Volver al mapa' }));
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Mapa de operación' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('1 centro estable')).toBeInTheDocument();
+    expect(screen.getByText('2 en alerta')).toBeInTheDocument();
   });
 });

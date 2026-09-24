@@ -469,6 +469,13 @@
     outline-offset: 2px;
   }
 
+  /* A center that just moved level wears the mockup's `.cpin.changed` lime
+     halo, so the donated center stands out on the map for everyone. */
+  .nv-marker--changed .nv-marker__shape {
+    outline: 5px solid var(--nv-lime);
+    outline-offset: 5px;
+  }
+
   /* Requester pin glyph; declared before the badge glyph rules so the cascade
      keeps ascending in specificity. */
   .nv-marker--request .nv-marker__glyph {

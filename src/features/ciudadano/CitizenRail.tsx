@@ -17,15 +17,21 @@ const ACTION_BUTTON_CLASS =
  * The two citizen actions the mockup shows. "Pedir ambulancia" is live and calls
  * the request action, but it is disabled while no unit is available: with zero
  * available units the search could never be answered, so the button must not be
- * clickable and inert. "Donar suministros" is a different flow and stays
- * explicitly disabled with its note. Both disabled states say why (L5).
+ * clickable and inert. "Donar suministros" opens the donation center PICKER —
+ * never a pre-chosen center, the citizen selects one (list or map). It is
+ * disabled with its reason only when no center declares a scarce requirement, so
+ * a back-mode map (empty inventory) never offers a dead end.
  */
 function CitizenRoleActions({
   onRequest,
   availableCount,
+  onDonate,
+  donationEnabled,
 }: {
   onRequest: () => void;
   availableCount: number;
+  onDonate: () => void;
+  donationEnabled: boolean;
 }) {
   const noUnitsAvailable = availableCount === 0;
   return (
@@ -51,17 +57,16 @@ function CitizenRoleActions({
 
       <button
         type="button"
-        disabled
-        title="Próximamente"
+        onClick={onDonate}
+        disabled={!donationEnabled}
+        title={
+          donationEnabled ? undefined : 'Ningún centro declara insumos que necesiten donación.'
+        }
         className={cn(ACTION_BUTTON_CLASS, 'bg-nv-lime text-nv-navy')}
       >
         <HandHeart className="size-5" aria-hidden />
         Donar suministros
       </button>
-
-      <p className="text-nv-navy-400 text-xs">
-        Próximamente: Donar suministros se habilitará cuando el flujo esté publicado.
-      </p>
 
       {availableCount === 0 && (
         <p role="status" className="text-critical text-xs">
@@ -97,7 +102,7 @@ function NearbyAmbulanceRow({ item }: { item: NearbyAmbulance }) {
   );
 }
 
-function AidCenterRow({ centro }: { centro: CentroAyuda }) {
+function AidCenterRow({ centro, onSelect }: { centro: CentroAyuda; onSelect: () => void }) {
   const level = centerLevel(centro);
   const meta = level ? CITIZEN_LEVEL_META[level] : null;
   // The level colours come from `CENTER_LEVEL_STYLE`, the same table the pin and
@@ -106,29 +111,37 @@ function AidCenterRow({ centro }: { centro: CentroAyuda }) {
     ? { background: CENTER_LEVEL_STYLE[level].bg, color: CENTER_LEVEL_STYLE[level].fg }
     : undefined;
   return (
-    <li className="flex items-center gap-2.5 rounded-nv-md border border-nv-line p-2.5">
-      <span
-        className={cn(
-          'flex size-9 shrink-0 items-center justify-center rounded-nv-md',
-          !swatchStyle && 'bg-idle/15 text-idle ring-1 ring-idle/40',
-        )}
-        style={swatchStyle}
+    <li>
+      <button
+        type="button"
+        onClick={onSelect}
+        className="flex w-full items-center gap-2.5 rounded-nv-md border border-nv-line p-2.5 text-left"
       >
-        <Warehouse className="size-4" aria-hidden />
-      </span>
-      <span className="min-w-0 flex-1">
-        <b className="block truncate font-semibold text-[13.5px]">{centro.nombre}</b>
-        <small className="block truncate text-nv-navy-400 text-xs">{centerNeedLabel(centro)}</small>
-      </span>
-      <span
-        className={cn(
-          'shrink-0 rounded-nv-pill px-2.5 py-1 font-semibold text-xs',
-          !swatchStyle && 'bg-idle/15 text-idle ring-1 ring-idle/40',
-        )}
-        style={swatchStyle}
-      >
-        {meta ? meta.label : 'Sin declarar'}
-      </span>
+        <span
+          className={cn(
+            'flex size-9 shrink-0 items-center justify-center rounded-nv-md',
+            !swatchStyle && 'bg-idle/15 text-idle ring-1 ring-idle/40',
+          )}
+          style={swatchStyle}
+        >
+          <Warehouse className="size-4" aria-hidden />
+        </span>
+        <span className="min-w-0 flex-1">
+          <b className="block truncate font-semibold text-[13.5px]">{centro.nombre}</b>
+          <small className="block truncate text-nv-navy-400 text-xs">
+            {centerNeedLabel(centro)}
+          </small>
+        </span>
+        <span
+          className={cn(
+            'shrink-0 rounded-nv-pill px-2.5 py-1 font-semibold text-xs',
+            !swatchStyle && 'bg-idle/15 text-idle ring-1 ring-idle/40',
+          )}
+          style={swatchStyle}
+        >
+          {meta ? meta.label : 'Sin declarar'}
+        </span>
+      </button>
     </li>
   );
 }
@@ -140,16 +153,35 @@ interface CitizenRailProps {
   availableCount: number;
   /** Starts the citizen request from the "Pedir ambulancia" action. */
   onRequest: () => void;
+  /** Opens the donation center picker; no center is chosen for the citizen. */
+  onDonate: () => void;
+  /** False only when no center declares a scarce requirement to donate to. */
+  donationEnabled: boolean;
+  /** Opens the selected center's detail (mockup `c7`). */
+  onSelectCentro: (id: string) => void;
 }
 
 /** Citizen rail: role actions, then the units and centers nearest to the map. */
-export function CitizenRail({ nearby, centros, availableCount, onRequest }: CitizenRailProps) {
+export function CitizenRail({
+  nearby,
+  centros,
+  availableCount,
+  onRequest,
+  onDonate,
+  donationEnabled,
+  onSelectCentro,
+}: CitizenRailProps) {
   return (
     <aside
       aria-label="Panel del ciudadano"
       className="flex flex-col gap-4 lg:min-h-0 lg:overflow-y-auto"
     >
-      <CitizenRoleActions onRequest={onRequest} availableCount={availableCount} />
+      <CitizenRoleActions
+        onRequest={onRequest}
+        availableCount={availableCount}
+        onDonate={onDonate}
+        donationEnabled={donationEnabled}
+      />
 
       <section
         aria-label="Ambulancias cerca de ti"
@@ -183,7 +215,11 @@ export function CitizenRail({ nearby, centros, availableCount, onRequest }: Citi
         ) : (
           <ul className="flex list-none flex-col gap-2.5 p-0">
             {centros.map((centro) => (
-              <AidCenterRow key={centro.id} centro={centro} />
+              <AidCenterRow
+                key={centro.id}
+                centro={centro}
+                onSelect={() => onSelectCentro(centro.id)}
+              />
             ))}
           </ul>
         )}

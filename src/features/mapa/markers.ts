@@ -219,15 +219,18 @@ export function zoneIcon(zona: Zona): L.DivIcon {
  *
  * The colours come from `CENTER_LEVEL_STYLE` — the same table the citizen legend
  * reads — written into the `--nv-marker-*` custom properties the CSS consumes.
+ * `changed` adds the mockup's `.cpin.changed` halo, used right after a donation
+ * to show the center that just moved level.
  */
-export function centerIcon(center: CentroAyuda, selected = false): L.DivIcon {
+export function centerIcon(center: CentroAyuda, selected = false, changed = false): L.DivIcon {
   const traffic = centroSemaforo(center);
   const level = citizenCenterLevel(traffic);
   const style = level ? CENTER_LEVEL_STYLE[level] : NOT_DECLARED_CENTER_STYLE;
   const selectedClass = selected ? ' nv-marker--selected' : '';
+  const changedClass = changed ? ' nv-marker--changed' : '';
   const styleAttribute = `--nv-marker-bg: ${style.bg}; --nv-marker-color: ${style.fg}; --nv-marker-badge-color: ${style.badgeFg}`;
   const html =
-    `<div class="nv-marker nv-marker--center${selectedClass}" style="${styleAttribute}">` +
+    `<div class="nv-marker nv-marker--center${selectedClass}${changedClass}" style="${styleAttribute}">` +
     `<span class="nv-marker__shape">${WAREHOUSE_GLYPH}</span>` +
     `<span class="nv-marker__badge">${CENTER_BADGE_GLYPH[traffic]}</span>` +
     `<span class="nv-marker__label">${escapeHtml(centerShortName(center))}</span>` +

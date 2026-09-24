@@ -65,6 +65,8 @@ interface MapCanvasProps {
   zonas?: Zona[];
   selectedAmbulanceId?: string | null;
   selectedCentroId?: string | null;
+  /** Center that just changed level, drawn with the mockup's "changed" halo. */
+  changedCentroId?: string | null;
   /** Latest selection to glide to, or null to stay put. */
   focus?: Ubicacion | null;
   /** Initial map center; defaults to the city center. */
@@ -256,6 +258,7 @@ export function MapCanvas({
   zonas = [],
   selectedAmbulanceId = null,
   selectedCentroId = null,
+  changedCentroId = null,
   focus = null,
   center = BOGOTA_CENTER,
   self = null,
@@ -353,7 +356,7 @@ export function MapCanvas({
           <Marker
             key={center.id}
             position={[center.ubicacion.lat, center.ubicacion.lng]}
-            icon={centerIcon(center, center.id === selectedCentroId)}
+            icon={centerIcon(center, center.id === selectedCentroId, center.id === changedCentroId)}
             eventHandlers={onSelectCentro ? { click: () => onSelectCentro(center.id) } : undefined}
           />
         ))}
