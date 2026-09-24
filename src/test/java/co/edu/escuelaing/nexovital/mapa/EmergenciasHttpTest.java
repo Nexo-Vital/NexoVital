@@ -12,6 +12,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -138,6 +139,83 @@ class EmergenciasHttpTest extends LoginTestBase {
     }
 
     // -----------------------------------------------------------------------
+    // Design T4: a missing required field is rejected with the error envelope
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("POST /emergencias without nivel: 400 DATOS_INVALIDOS")
+    void t5_sinNivel_devuelve400() throws Exception {
+        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+
+        mockMvc.perform(post("/api/v1/emergencias")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpoSin("nivel")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("DATOS_INVALIDOS"));
+    }
+
+    @Test
+    @DisplayName("POST /emergencias without ubicacion: 400 DATOS_INVALIDOS")
+    void t6_sinUbicacion_devuelve400() throws Exception {
+        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+
+        mockMvc.perform(post("/api/v1/emergencias")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpoSin("ubicacion")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("DATOS_INVALIDOS"));
+    }
+
+    /**
+     * {@code descripcion} is not checked by the controller: the use case rejects
+     * a blank one. This pins that the 400 still comes out through the envelope.
+     */
+    @Test
+    @DisplayName("POST /emergencias without descripcion: 400 DATOS_INVALIDOS")
+    void t7_sinDescripcion_devuelve400() throws Exception {
+        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+
+        mockMvc.perform(post("/api/v1/emergencias")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpoSin("descripcion")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("DATOS_INVALIDOS"));
+    }
+
+    @Test
+    @DisplayName("POST /emergencias with an unknown nivel: 400 DATOS_INVALIDOS")
+    void t8_nivelDesconocido_devuelve400() throws Exception {
+        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+
+        mockMvc.perform(post("/api/v1/emergencias")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpo(SUBA_LAT, SUBA_LNG, "EXTREMO", "Nivel fuera del contrato")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("DATOS_INVALIDOS"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Design T5: a latitude outside the range is rejected (AC2)
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("POST /emergencias with lat 200: 400 DATOS_INVALIDOS")
+    void t9_latFueraDeRango_devuelve400() throws Exception {
+        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+
+        mockMvc.perform(post("/api/v1/emergencias")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpo(200.0d, SUBA_LNG, "ALTO", "Latitud imposible")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("DATOS_INVALIDOS"));
+    }
+
+    // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 
@@ -154,5 +232,18 @@ class EmergenciasHttpTest extends LoginTestBase {
                 "ubicacion", Map.of("lat", lat, "lng", lng),
                 "nivel", nivel,
                 "descripcion", descripcion));
+    }
+
+    /**
+     * A well-formed body with ONE required field removed, to prove the missing
+     * field is what triggers the rejection.
+     */
+    private String cuerpoSin(String campoOmitido) throws Exception {
+        Map<String, Object> cuerpo = new HashMap<>();
+        cuerpo.put("ubicacion", Map.of("lat", SUBA_LAT, "lng", SUBA_LNG));
+        cuerpo.put("nivel", "ALTO");
+        cuerpo.put("descripcion", "Reporte con un campo omitido");
+        cuerpo.remove(campoOmitido);
+        return objectMapper.writeValueAsString(cuerpo);
     }
 }
