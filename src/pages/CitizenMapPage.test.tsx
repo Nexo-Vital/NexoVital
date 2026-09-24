@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { useToastStore } from '@/components/ui/toast';
 import { ACCEPTANCE_POPUP_MS } from '@/features/ciudadano/AcceptancePopup';
 import { useCitizenRequestStore } from '@/features/ciudadano/citizen-request-store';
 import { CENTER_LEVEL_STYLE, NOT_DECLARED_CENTER_STYLE } from '@/features/ciudadano/citizen-view';
@@ -146,6 +147,9 @@ describe('CitizenMapPage', () => {
     useSolicitudesStore.getState().hydrate([]);
     useCitizenRequestStore.getState().reset();
     useDonationStore.getState().reset();
+    // The Toaster is mounted in the shells, not in this page, so the toast stack
+    // is asserted through the store: reset it so a case cannot leak into another.
+    useToastStore.setState({ toasts: [] });
   });
 
   it('renders the header, the map, the live legend and the three rail blocks', () => {
@@ -1097,6 +1101,91 @@ describe('CitizenMapPage', () => {
         type: 'emergency.upsert',
         emergency: { estado: 'REPORTED', zonaId: '' },
       });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('confirms the citizen exactly once after the report succeeds in demo mode', async () => {
+    vi.stubEnv('VITE_DEMO_MODE', '1');
+    try {
+      renderPage({ port: new FakeRealtimePort() });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Reportar zona afectada' }));
+      const dialog = screen.getByRole('dialog', { name: 'Reportar zona afectada' });
+      fireEvent.change(within(dialog).getByLabelText('Descripción'), {
+        target: { value: 'Derrumbe en Suba' },
+      });
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Usar el centro del mapa' }));
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Reportar' }));
+
+      await waitFor(() => expect(useEmergencyStore.getState().items).toHaveLength(1));
+
+      // One toast per submit, and it must NOT claim a server round-trip: in demo
+      // mode there is no backend, so it only speaks about registration.
+      const toasts = useToastStore.getState().toasts;
+      expect(toasts).toHaveLength(1);
+      expect(toasts[0].message).toBe(
+        'Reporte registrado. Los centros de ayuda cercanos lo verán en el mapa.',
+      );
+      expect(toasts[0].tone).toBe('ok');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('leaves no toast when the report fails against the backend', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(500, {
+        codigo: 'ERROR_REGISTRO_EMERGENCIA',
+        mensaje: 'No se pudo registrar la emergencia.',
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderPage();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Reportar zona afectada' }));
+      const dialog = screen.getByRole('dialog', { name: 'Reportar zona afectada' });
+      fireEvent.change(within(dialog).getByLabelText('Descripción'), {
+        target: { value: 'Derrumbe en Suba' },
+      });
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Usar el centro del mapa' }));
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Reportar' }));
+
+      await within(dialog).findByText('No se pudo registrar la emergencia.');
+
+      // The dialog owns the error feedback; a failure must raise no toast.
+      expect(useToastStore.getState().toasts).toHaveLength(0);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('generates distinct ids for two demo reports made from the same store', async () => {
+    vi.stubEnv('VITE_DEMO_MODE', '1');
+    try {
+      renderPage({ port: new FakeRealtimePort() });
+
+      const submitReport = async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Reportar zona afectada' }));
+        const dialog = screen.getByRole('dialog', { name: 'Reportar zona afectada' });
+        fireEvent.change(within(dialog).getByLabelText('Descripción'), {
+          target: { value: 'Derrumbe en Suba' },
+        });
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Usar el centro del mapa' }));
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Reportar' }));
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      };
+
+      // Both reports share the same initial store: `nextEmergencyId` used to
+      // return `EMG-001` twice and the store's merge-by-id dropped the first.
+      await submitReport();
+      await submitReport();
+
+      const ids = useEmergencyStore.getState().items.map((item) => item.id);
+      expect(ids).toHaveLength(2);
+      expect(new Set(ids).size).toBe(2);
     } finally {
       vi.unstubAllEnvs();
     }

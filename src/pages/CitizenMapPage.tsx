@@ -1,5 +1,6 @@
 import { Check, HandHeart } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { toast } from '@/components/ui/toast';
 import { AcceptancePopup } from '@/features/ciudadano/AcceptancePopup';
 import { ArrivalPopup } from '@/features/ciudadano/ArrivalPopup';
 import { CitizenMapLegend } from '@/features/ciudadano/CitizenMapLegend';
@@ -34,7 +35,6 @@ import {
   type ReportarEmergenciaInput,
   reportarEmergencia,
 } from '@/features/emergencias/emergency-api';
-import { nextEmergencyId } from '@/features/emergencias/emergency-form';
 import { useEmergencyStore } from '@/features/emergencias/emergency-store';
 import { useEmergencySync } from '@/features/emergencias/use-emergency-sync';
 import { useFleetStore } from '@/features/flota/fleet-store';
@@ -76,6 +76,14 @@ const NO_EMERGENCIES: Emergencia[] = [];
 
 /** Stable empty id list: keeps the MapCanvas memo props stable while idle. */
 const NO_UNIT_IDS: readonly string[] = [];
+
+/**
+ * Confirmation raised once a citizen report succeeds, in both modes. It is
+ * honest with a backend (the emergency was created) and in the demo build (it was
+ * registered and published over the relay): it never claims a server round-trip.
+ */
+const REPORT_SUCCESS_MESSAGE =
+  'Reporte registrado. Los centros de ayuda cercanos lo verán en el mapa.';
 
 interface CitizenMapPageProps {
   ambulancias?: Ambulancia[];
@@ -248,11 +256,19 @@ export default function CitizenMapPage({
   // the port, mirroring `SalaOperacionesPage.handleCreateEmergency`. With a
   // backend, the POST result is upserted for immediate feedback; the follow-up
   // push is idempotent by id.
+  //
+  // On success BOTH branches fall through to a single `toast(...)` at the end:
+  // one confirmation per submit, and the failure path stays untouched (it throws
+  // past the toast, and the dialog alone shows the error).
   const handleReportSubmit = useCallback(
     async (input: ReportarEmergenciaInput) => {
       if (isDemoMode()) {
         const emergency: Emergencia = {
-          id: nextEmergencyId(useEmergencyStore.getState().items),
+          // A UUID, not `nextEmergencyId`: the latter derives the id from the
+          // LOCAL store, so two demo clients on the same relay compute the same
+          // `EMG-00n` and the store's merge-by-id makes the second report
+          // overwrite the first. `randomUUID()` is unique per client.
+          id: crypto.randomUUID(),
           ubicacion: input.ubicacion,
           nivel: input.nivel,
           estado: 'REPORTED',
@@ -265,10 +281,11 @@ export default function CitizenMapPage({
           type: 'emergency.upsert',
           emergency,
         } satisfies EmergencyUpsertPayload);
-        return;
+      } else {
+        const emergency = await reportarEmergencia(input);
+        useEmergencyStore.getState().upsert(emergency);
       }
-      const emergency = await reportarEmergencia(input);
-      useEmergencyStore.getState().upsert(emergency);
+      toast(REPORT_SUCCESS_MESSAGE);
     },
     [port],
   );
