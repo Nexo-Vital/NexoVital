@@ -47,6 +47,29 @@ describe('useEmergencySync', () => {
     expect(items()).toHaveLength(1);
   });
 
+  it('UPSERTS a Spanish wire frame with a null zonaId (the bug this task fixes)', () => {
+    const port = new FakeRealtimePort();
+    renderHook(() => useEmergencySync(port));
+
+    act(() =>
+      port.emit(DESTINATIONS.emergencias, {
+        type: 'emergency.upsert',
+        emergency: {
+          id: 'b3f1c0de-0000-4000-8000-000000000001',
+          ubicacion: { lat: 4.73, lng: -74.08 },
+          nivel: 'ALTO',
+          estado: 'REGISTRADA',
+          descripcion: 'Derrumbe en Suba',
+          zonaId: null,
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      }),
+    );
+
+    expect(items()).toHaveLength(1);
+    expect(items()[0]).toMatchObject({ nivel: 'HIGH', estado: 'REPORTED', zonaId: '' });
+  });
+
   it('merges an update onto an existing emergency', () => {
     useEmergencyStore.setState({ items: [NEW_EMERGENCY] });
     const port = new FakeRealtimePort();
