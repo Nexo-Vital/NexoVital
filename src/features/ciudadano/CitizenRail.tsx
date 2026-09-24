@@ -1,4 +1,4 @@
-﻿import { Ambulance, HandHeart, User, Warehouse } from 'lucide-react';
+﻿import { Ambulance, HandHeart, Siren, User, Warehouse } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { CentroAyuda } from '@/types/domain';
 import {
@@ -14,24 +14,27 @@ const ACTION_BUTTON_CLASS =
   'inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md px-5 font-semibold text-sm disabled:cursor-not-allowed disabled:opacity-60';
 
 /**
- * The two citizen actions the mockup shows. "Pedir ambulancia" is live and calls
- * the request action, but it is disabled while no unit is available: with zero
- * available units the search could never be answered, so the button must not be
- * clickable and inert. "Donar suministros" opens the donation center PICKER —
- * never a pre-chosen center, the citizen selects one (list or map). It is
- * disabled with its reason only when no center declares a scarce requirement, so
- * a back-mode map (empty inventory) never offers a dead end.
+ * The three citizen actions. "Pedir ambulancia" is live and calls the request
+ * action, but it is disabled while no unit is available: with zero available
+ * units the search could never be answered, so the button must not be clickable
+ * and inert. "Donar suministros" opens the donation center PICKER — never a
+ * pre-chosen center, the citizen selects one (list or map). It is disabled with
+ * its reason only when no center declares a scarce requirement, so a back-mode
+ * map (empty inventory) never offers a dead end. "Reportar zona afectada" opens
+ * the citizen report dialog and is always available: reporting needs no data.
  */
 function CitizenRoleActions({
   onRequest,
   availableCount,
   onDonate,
   donationEnabled,
+  onReport,
 }: {
   onRequest: () => void;
   availableCount: number;
   onDonate: () => void;
   donationEnabled: boolean;
+  onReport: () => void;
 }) {
   const noUnitsAvailable = availableCount === 0;
   return (
@@ -66,6 +69,15 @@ function CitizenRoleActions({
       >
         <HandHeart className="size-5" aria-hidden />
         Donar suministros
+      </button>
+
+      <button
+        type="button"
+        onClick={onReport}
+        className={cn(ACTION_BUTTON_CLASS, 'bg-nv-navy text-white')}
+      >
+        <Siren className="size-5" aria-hidden />
+        Reportar zona afectada
       </button>
 
       {availableCount === 0 && (
@@ -157,6 +169,8 @@ interface CitizenRailProps {
   onDonate: () => void;
   /** False only when no center declares a scarce requirement to donate to. */
   donationEnabled: boolean;
+  /** Opens the "report an affected zone" dialog. Always available. */
+  onReport: () => void;
   /** Opens the selected center's detail (mockup `c7`). */
   onSelectCentro: (id: string) => void;
 }
@@ -169,6 +183,7 @@ export function CitizenRail({
   onRequest,
   onDonate,
   donationEnabled,
+  onReport,
   onSelectCentro,
 }: CitizenRailProps) {
   return (
@@ -181,6 +196,7 @@ export function CitizenRail({
         availableCount={availableCount}
         onDonate={onDonate}
         donationEnabled={donationEnabled}
+        onReport={onReport}
       />
 
       <section

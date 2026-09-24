@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ACCEPTANCE_POPUP_MS } from '@/features/ciudadano/AcceptancePopup';
@@ -60,6 +60,16 @@ vi.mock('@/features/mapa/use-map-data', () => ({
 
 /** Origin used by the page when the device gives no position (Suba). */
 const SUBAS = { lat: 4.728, lng: -74.078 };
+
+/** Minimal Response stand-in: apiFetch only reads status, ok, headers.get, json. */
+function mockResponse(status: number, body: unknown): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: { get: () => null },
+    json: async () => body,
+  } as unknown as Response;
+}
 
 function inventory(centroId: string, semaforo: TrafficLight): InventarioItem[] {
   return [
@@ -1057,5 +1067,67 @@ describe('CitizenMapPage', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('1 centro estable')).toBeInTheDocument();
     expect(screen.getByText('2 en alerta')).toBeInTheDocument();
+  });
+
+  it('reports an affected zone from the rail and publishes it in demo mode', async () => {
+    vi.stubEnv('VITE_DEMO_MODE', '1');
+    try {
+      const port = new FakeRealtimePort();
+      renderPage({ port });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Reportar zona afectada' }));
+      const dialog = screen.getByRole('dialog', { name: 'Reportar zona afectada' });
+      fireEvent.change(within(dialog).getByLabelText('Descripción'), {
+        target: { value: 'Derrumbe en Suba' },
+      });
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Usar el centro del mapa' }));
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Reportar' }));
+
+      await waitFor(() => expect(useEmergencyStore.getState().items).toHaveLength(1));
+      expect(useEmergencyStore.getState().items[0]).toMatchObject({
+        nivel: 'MEDIUM',
+        estado: 'REPORTED',
+        descripcion: 'Derrumbe en Suba',
+        zonaId: '',
+      });
+
+      // FW-5: the demo build publishes through the port, like the CRUE does.
+      const frame = port.published.find((entry) => entry.destination === DESTINATIONS.emergencias);
+      expect(frame?.payload).toMatchObject({
+        type: 'emergency.upsert',
+        emergency: { estado: 'REPORTED', zonaId: '' },
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('shows the backend error message without closing the report dialog', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(500, {
+        codigo: 'ERROR_REGISTRO_EMERGENCIA',
+        mensaje: 'No se pudo registrar la emergencia.',
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderPage();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Reportar zona afectada' }));
+      const dialog = screen.getByRole('dialog', { name: 'Reportar zona afectada' });
+      fireEvent.change(within(dialog).getByLabelText('Descripción'), {
+        target: { value: 'Derrumbe en Suba' },
+      });
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Usar el centro del mapa' }));
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Reportar' }));
+
+      expect(
+        await within(dialog).findByText('No se pudo registrar la emergencia.'),
+      ).toBeInTheDocument();
+      expect(screen.getByRole('dialog', { name: 'Reportar zona afectada' })).toBeInTheDocument();
+      expect(useEmergencyStore.getState().items).toHaveLength(0);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

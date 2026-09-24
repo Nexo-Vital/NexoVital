@@ -29,6 +29,12 @@ import {
   useDonationStore,
   withDonations,
 } from '@/features/donaciones/donation';
+import { CitizenReportDialog } from '@/features/emergencias/CitizenReportDialog';
+import {
+  type ReportarEmergenciaInput,
+  reportarEmergencia,
+} from '@/features/emergencias/emergency-api';
+import { nextEmergencyId } from '@/features/emergencias/emergency-form';
 import { useEmergencyStore } from '@/features/emergencias/emergency-store';
 import { useEmergencySync } from '@/features/emergencias/use-emergency-sync';
 import { useFleetStore } from '@/features/flota/fleet-store';
@@ -46,8 +52,20 @@ import {
   MOCK_EMERGENCIAS,
   MOCK_SOLICITUDES,
 } from '@/mocks/fixtures';
-import { getRealtimePort, type RealtimePort } from '@/shared/realtime';
-import type { Ambulancia, CentroAyuda, Emergencia, SolicitudAmbulancia } from '@/types/domain';
+import { isDemoMode } from '@/services/apiClient';
+import {
+  DESTINATIONS,
+  type EmergencyUpsertPayload,
+  getRealtimePort,
+  type RealtimePort,
+} from '@/shared/realtime';
+import type {
+  Ambulancia,
+  CentroAyuda,
+  Emergencia,
+  SolicitudAmbulancia,
+  Ubicacion,
+} from '@/types/domain';
 
 /**
  * Stable empty list: the citizen map deliberately draws no emergency pins (the
@@ -170,6 +188,15 @@ export default function CitizenMapPage({
   const selfPosition = location.position ?? CITIZEN_FALLBACK_POSITION;
   const usingFallbackPosition = location.position === null;
 
+  // "Reportar zona afectada" (task 250): the report dialog and the point it takes
+  // as the map center. The center tracks MapCanvas pans and resets to the citizen
+  // whenever the device position changes, so "usar el centro del mapa" is honest.
+  const [reportOpen, setReportOpen] = useState(false);
+  const [mapCenter, setMapCenter] = useState<Ubicacion>(selfPosition);
+  useEffect(() => {
+    setMapCenter(selfPosition);
+  }, [selfPosition]);
+
   const counts = useMemo(() => countCentersByLevel(centros), [centros]);
   const nearby = useMemo(() => nearbyAmbulances(fleet, selfPosition), [fleet, selfPosition]);
   const availableCount = useMemo(() => countAvailableUnits(fleet), [fleet]);
@@ -215,6 +242,36 @@ export default function CitizenMapPage({
   const handleBackToMap = useCallback(() => {
     useCitizenRequestStore.getState().reset();
   }, []);
+
+  // FR-6: the citizen report submit branch (FW-5). `apiFetch` always hits the
+  // network, so demo mode builds the emergency locally and publishes it through
+  // the port, mirroring `SalaOperacionesPage.handleCreateEmergency`. With a
+  // backend, the POST result is upserted for immediate feedback; the follow-up
+  // push is idempotent by id.
+  const handleReportSubmit = useCallback(
+    async (input: ReportarEmergenciaInput) => {
+      if (isDemoMode()) {
+        const emergency: Emergencia = {
+          id: nextEmergencyId(useEmergencyStore.getState().items),
+          ubicacion: input.ubicacion,
+          nivel: input.nivel,
+          estado: 'REPORTED',
+          descripcion: input.descripcion,
+          zonaId: '',
+          createdAt: new Date().toISOString(),
+        };
+        useEmergencyStore.getState().upsert(emergency);
+        port?.publish(DESTINATIONS.emergencias, {
+          type: 'emergency.upsert',
+          emergency,
+        } satisfies EmergencyUpsertPayload);
+        return;
+      }
+      const emergency = await reportarEmergencia(input);
+      useEmergencyStore.getState().upsert(emergency);
+    },
+    [port],
+  );
 
   // --- Donation flow (mockup c7/c8/c9) ---------------------------------------
 
@@ -349,6 +406,7 @@ export default function CitizenMapPage({
           dimmedAmbulanceIds={dimmedIds}
           requestConnector={acceptanceConnector}
           ambulanceLabels={ambulanceLabels}
+          onCenterChange={setMapCenter}
           onSelectAmbulance={() => undefined}
           onSelectEmergency={() => undefined}
           onSelectCentro={requestPhase === 'idle' ? openCenterDetail : undefined}
@@ -416,6 +474,7 @@ export default function CitizenMapPage({
           onRequest={handleRequest}
           onDonate={handleDonate}
           donationEnabled={donable.length > 0}
+          onReport={() => setReportOpen(true)}
           onSelectCentro={openCenterDetail}
         />
       )}
@@ -446,6 +505,14 @@ export default function CitizenMapPage({
           onClose={closeArrival}
         />
       )}
+
+      {/* Task 250: "Reportar zona afectada" — the report dialog and its POST. */}
+      <CitizenReportDialog
+        open={reportOpen}
+        onOpenChange={setReportOpen}
+        mapCenter={mapCenter}
+        onSubmit={handleReportSubmit}
+      />
     </div>
   );
 }

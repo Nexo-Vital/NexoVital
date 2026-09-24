@@ -1,0 +1,48 @@
+import { describe, expect, it } from 'vitest';
+import { buildCitizenReportInput, validateCitizenReport } from './citizen-report-form';
+
+const VALID = {
+  nivel: 'HIGH' as const,
+  descripcion: 'Derrumbe en Suba',
+  lat: '4.73',
+  lng: '-74.08',
+};
+
+describe('validateCitizenReport', () => {
+  it('requires the description and valid coordinates', () => {
+    const errors = validateCitizenReport({ ...VALID, descripcion: '  ', lat: 'nope', lng: '' });
+
+    expect(errors).toEqual({
+      descripcion: expect.any(String),
+      lat: expect.any(String),
+      lng: expect.any(String),
+    });
+  });
+
+  it('accepts a complete report', () => {
+    expect(validateCitizenReport(VALID)).toEqual({});
+  });
+});
+
+describe('buildCitizenReportInput', () => {
+  it('builds the input with parsed coordinates and a trimmed description', () => {
+    expect(buildCitizenReportInput({ ...VALID, descripcion: '  Derrumbe  ' })).toEqual({
+      ubicacion: { lat: 4.73, lng: -74.08 },
+      nivel: 'HIGH',
+      descripcion: 'Derrumbe',
+    });
+  });
+
+  it('never includes an id, estado or zonaId', () => {
+    const input = buildCitizenReportInput(VALID);
+
+    expect(input).not.toBeNull();
+    expect(input).not.toHaveProperty('id');
+    expect(input).not.toHaveProperty('estado');
+    expect(input).not.toHaveProperty('zonaId');
+  });
+
+  it('returns null for invalid coordinates', () => {
+    expect(buildCitizenReportInput({ ...VALID, lng: 'x' })).toBeNull();
+  });
+});
