@@ -1,9 +1,11 @@
 package co.edu.escuelaing.nexovital.mapa;
 
 import co.edu.escuelaing.nexovital.infrastructure.config.DataSeeder;
+import co.edu.escuelaing.nexovital.mapa.domain.model.Zona;
 import co.edu.escuelaing.nexovital.mapa.infrastructure.adapter.out.ZonaJpaRepository;
 import co.edu.escuelaing.nexovital.support.LoginTestBase;
 import co.edu.escuelaing.nexovital.support.TestClockConfig;
+import co.edu.escuelaing.nexovital.usuarios.domain.model.Ubicacion;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -14,13 +16,16 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -49,6 +54,9 @@ class MapaHttpTest extends LoginTestBase {
     private static final int CENTROS_SEMBRADOS = 3;
 
     private static final double DELTA = 0.0000001d;
+
+    /** Vertices of the seeded Suba contour (see {@code DataSeeder.CATALOGO_ZONAS}). */
+    private static final int VERTICES_SUBA = 8;
 
     @Autowired
     private DataSeeder dataSeeder;
@@ -84,6 +92,13 @@ class MapaHttpTest extends LoginTestBase {
                 "the Suba zone lat must match the seed");
         assertEquals(-74.08d, suba.get("ubicacion").get("lng").asDouble(), DELTA,
                 "the Suba zone lng must match the seed");
+
+        // A zone is an AREA: it must publish its contour, not only a point.
+        assertEquals(VERTICES_SUBA, suba.get("contorno").size(),
+                "the Suba zone must carry its polygon vertices");
+        zonas.forEach(nodo -> assertTrue(nodo.get("contorno").size() >= 3,
+                "every published zone must enclose an area, not a single point: "
+                        + nodo.get("id").asText()));
 
         JsonNode centros = cuerpo.get("centros");
         assertEquals(CENTROS_SEMBRADOS, centros.size(), "the response must carry the 3 seeded centers");
@@ -139,6 +154,53 @@ class MapaHttpTest extends LoginTestBase {
         assertDoesNotThrow(() -> dataSeeder.run(), "a third seeder run must not fail");
         assertEquals(ZONAS_SEMBRADAS, zonaJpaRepository.count(),
                 "the third seeder run must still insert 0 zones");
+    }
+
+    // -----------------------------------------------------------------------
+    // Every seeded center falls INSIDE the polygon of the zone it declares
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Every seeded center falls inside the polygon of the zone it declares")
+    void t5_cadaCentroCaeDentroDeSuZona() throws Exception {
+        String token = tokenDe(RANGEL, RANGEL_PASSWORD);
+
+        MvcResult resultado = mockMvc.perform(get("/api/v1/mapa")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode cuerpo = objectMapper.readTree(resultado.getResponse().getContentAsString());
+
+        // Rebuild each published zone (contour included) through the domain model,
+        // so the check runs the same point-in-polygon the production code owns.
+        Map<String, Zona> zonas = new HashMap<>();
+        cuerpo.get("zonas").forEach(nodo -> {
+            List<Ubicacion> contorno = new ArrayList<>();
+            nodo.get("contorno").forEach(vertice -> contorno.add(new Ubicacion(
+                    vertice.get("lat").asDouble(), vertice.get("lng").asDouble())));
+            zonas.put(nodo.get("id").asText(), new Zona(
+                    nodo.get("id").asText(),
+                    nodo.get("nombre").asText(),
+                    new Ubicacion(
+                            nodo.get("ubicacion").get("lat").asDouble(),
+                            nodo.get("ubicacion").get("lng").asDouble()),
+                    contorno));
+        });
+
+        assertTrue(cuerpo.get("centros").size() > 0, "the seed must publish centers to check");
+
+        for (JsonNode centro : cuerpo.get("centros")) {
+            String nombre = centro.get("nombre").asText();
+            Zona zona = zonas.get(centro.get("zonaId").asText());
+            assertNotNull(zona, "the center must declare a published zone: " + nombre);
+
+            Ubicacion ubicacion = new Ubicacion(
+                    centro.get("ubicacion").get("lat").asDouble(),
+                    centro.get("ubicacion").get("lng").asDouble());
+            assertTrue(zona.contiene(ubicacion),
+                    "the center " + nombre + " must fall INSIDE the polygon of " + zona.getId());
+        }
     }
 
     // -----------------------------------------------------------------------

@@ -55,7 +55,12 @@ public class DataSeeder implements CommandLineRunner {
     private record OrganizacionSemilla(String nombre, TipoOrganizacion tipo, String zonaId, double lat, double lng) {
     }
 
-    private record ZonaSemilla(String id, String nombre, double lat, double lng) {
+    private record ZonaSemilla(String id, String nombre, double lat, double lng, List<Ubicacion> contorno) {
+    }
+
+    /** Vértice del contorno de una zona, para leer el catálogo sin ruido. */
+    private static Ubicacion vertice(double lat, double lng) {
+        return new Ubicacion(lat, lng);
     }
 
     /**
@@ -81,6 +86,13 @@ public class DataSeeder implements CommandLineRunner {
      * para que la versión con backend pinte los mismos centros. {@code zonaId}
      * es la localidad de Bogotá donde están los tres (Suba); la zona es
      * propiedad del módulo {@code mapa}, aquí es una referencia simple.
+     *
+     * <p>La Gaitana conserva su coordenada real ({@code 4.72, -74.05}): es un
+     * sector de Suba y cae DENTRO del contorno sembrado de Suba, a ~700 m del
+     * borde con Usaquén. El bug que se veía en el mapa no era el {@code zonaId}
+     * sino que la zona se dibujaba como un punto: la etiqueta de Usaquén quedaba
+     * cerca y parecía que el centro le pertenecía. Lo verifica
+     * {@code MapaHttpTest.t5_cadaCentroCaeDentroDeSuZona}.
      */
     private static final List<OrganizacionSemilla> CATALOGO_ORGANIZACIONES = List.of(
             new OrganizacionSemilla("Acopio Suba Norte", TipoOrganizacion.CENTRO_ACOPIO, "Suba", 4.742d, -74.09d),
@@ -92,17 +104,64 @@ public class DataSeeder implements CommandLineRunner {
      * fixtures ({@code Front_NexoVital/src/mocks/fixtures.ts}: ambulancias y
      * emergencias). Los ids coinciden literalmente con esos {@code zonaId};
      * {@code Suba} es la zona que referencia la semilla de organizaciones, así
-     * que el mapa siempre tiene la zona de sus centros. Las coordenadas son el
-     * punto representativo de la zona, reutilizado de los mismos fixtures (la
-     * zona se modela como un punto, no un polígono: H2 sin PostGIS).
+     * que el mapa siempre tiene la zona de sus centros.
+     *
+     * <p><b>Origen del contorno — HONESTO:</b> estos polígonos son
+     * SIMPLIFICADOS y APROXIMADOS para la demo. NO son el límite oficial de la
+     * localidad ni salen de una fuente geográfica: se dibujaron a mano a partir
+     * de referencias conocidas (Autopista Norte, Río Juan Amarillo, Cerros
+     * Orientales, etc.) con los vértices suficientes para que la forma sea
+     * reconocible. Es dato de demostración, igual que los usuarios y centros
+     * sembrados; para un contorno real haría falta el geodato oficial. Las
+     * coordenadas ({@code lat}, {@code lng}) siguen siendo el punto de
+     * referencia de la zona, reutilizado de los mismos fixtures.
      */
     private static final List<ZonaSemilla> CATALOGO_ZONAS = List.of(
-            new ZonaSemilla("Suba", "Suba", 4.73d, -74.08d),
-            new ZonaSemilla("Usaquén", "Usaquén", 4.701d, -74.041d),
-            new ZonaSemilla("Engativá", "Engativá", 4.692d, -74.112d),
-            new ZonaSemilla("Kennedy", "Kennedy", 4.628d, -74.144d),
-            new ZonaSemilla("Bosa", "Bosa", 4.608d, -74.186d),
-            new ZonaSemilla("Centro", "Centro", 4.598d, -74.075d));
+            new ZonaSemilla("Suba", "Suba", 4.73d, -74.08d, List.of(
+                    vertice(4.790d, -74.100d),
+                    vertice(4.795d, -74.050d),
+                    vertice(4.755d, -74.032d),
+                    vertice(4.700d, -74.050d),
+                    vertice(4.685d, -74.075d),
+                    vertice(4.690d, -74.115d),
+                    vertice(4.735d, -74.135d),
+                    vertice(4.775d, -74.125d))),
+            new ZonaSemilla("Usaquén", "Usaquén", 4.701d, -74.041d, List.of(
+                    vertice(4.830d, -74.020d),
+                    vertice(4.840d, -73.990d),
+                    vertice(4.720d, -73.985d),
+                    vertice(4.675d, -74.015d),
+                    vertice(4.678d, -74.050d),
+                    vertice(4.735d, -74.038d),
+                    vertice(4.800d, -74.035d))),
+            new ZonaSemilla("Engativá", "Engativá", 4.692d, -74.112d, List.of(
+                    vertice(4.720d, -74.130d),
+                    vertice(4.715d, -74.085d),
+                    vertice(4.665d, -74.075d),
+                    vertice(4.640d, -74.100d),
+                    vertice(4.655d, -74.155d),
+                    vertice(4.700d, -74.165d))),
+            new ZonaSemilla("Kennedy", "Kennedy", 4.628d, -74.144d, List.of(
+                    vertice(4.665d, -74.160d),
+                    vertice(4.660d, -74.115d),
+                    vertice(4.600d, -74.105d),
+                    vertice(4.575d, -74.135d),
+                    vertice(4.585d, -74.185d),
+                    vertice(4.650d, -74.190d))),
+            new ZonaSemilla("Bosa", "Bosa", 4.608d, -74.186d, List.of(
+                    vertice(4.640d, -74.200d),
+                    vertice(4.635d, -74.155d),
+                    vertice(4.585d, -74.150d),
+                    vertice(4.560d, -74.180d),
+                    vertice(4.580d, -74.225d),
+                    vertice(4.625d, -74.225d))),
+            new ZonaSemilla("Centro", "Centro", 4.598d, -74.075d, List.of(
+                    vertice(4.620d, -74.095d),
+                    vertice(4.615d, -74.060d),
+                    vertice(4.575d, -74.060d),
+                    vertice(4.565d, -74.090d),
+                    vertice(4.585d, -74.105d),
+                    vertice(4.610d, -74.100d))));
 
     private final UsuarioRepository usuarioRepository;
     private final OrganizacionRepository organizacionRepository;
@@ -183,7 +242,8 @@ public class DataSeeder implements CommandLineRunner {
             zonaRepository.guardar(new Zona(
                     semilla.id(),
                     semilla.nombre(),
-                    new Ubicacion(semilla.lat(), semilla.lng())));
+                    new Ubicacion(semilla.lat(), semilla.lng()),
+                    semilla.contorno()));
             sembradas++;
             LOG.info("Zona demo sembrada: {}", semilla.id());
         }

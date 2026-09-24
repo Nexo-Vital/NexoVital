@@ -34,7 +34,10 @@ public class ZonaRepositoryAdapter implements ZonaRepository {
                 zona.getId(),
                 zona.getNombre(),
                 zona.getUbicacion().lat(),
-                zona.getUbicacion().lng());
+                zona.getUbicacion().lng(),
+                zona.getContorno().stream()
+                        .map(vertice -> new VerticeZonaJpa(vertice.lat(), vertice.lng()))
+                        .toList());
         return toDomain(jpaRepository.save(entity));
     }
 
@@ -42,6 +45,9 @@ public class ZonaRepositoryAdapter implements ZonaRepository {
         return new Zona(
                 entity.getId(),
                 entity.getNombre(),
-                new Ubicacion(entity.getLat(), entity.getLng()));
+                new Ubicacion(entity.getLat(), entity.getLng()),
+                entity.getContorno().stream()
+                        .map(vertice -> new Ubicacion(vertice.getLat(), vertice.getLng()))
+                        .toList());
     }
 }
