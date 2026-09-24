@@ -64,8 +64,11 @@ public class SecurityConfig {
                         // Bearer (the token travels in the STOMP CONNECT frame) and SockJS
                         // issues GET /ws/info over HTTP, so the handshake is permitted. This
                         // does NOT authenticate: StompAuthChannelInterceptor validates the
-                        // CONNECT. Both "/ws" (native WebSocket) and "/ws/**" (SockJS) are
-                        // declared because the endpoint registers both paths.
+                        // CONNECT. The endpoint is registered with .withSockJS(), so it
+                        // answers on the SockJS routes: "/ws/**" is what actually serves the
+                        // handshake. "/ws" is declared too because the SockJS mapping also
+                        // matches the bare path, and leaving it declared keeps this rule
+                        // honest about every path the endpoint owns.
                         .requestMatchers("/ws", "/ws/**").permitAll()
                         // The caller's own session: every authenticated role may read it.
                         .requestMatchers(HttpMethod.GET, "/api/v1/sesiones/actual").authenticated()
