@@ -60,6 +60,13 @@ public class SecurityConfig {
                         // dispatch passes through this chain: without permission here, a
                         // validation 400 would turn into a 401.
                         .requestMatchers("/error").permitAll()
+                        // WebSocket/STOMP handshake (US2 D7): the HTTP handshake carries no
+                        // Bearer (the token travels in the STOMP CONNECT frame) and SockJS
+                        // issues GET /ws/info over HTTP, so the handshake is permitted. This
+                        // does NOT authenticate: StompAuthChannelInterceptor validates the
+                        // CONNECT. Both "/ws" (native WebSocket) and "/ws/**" (SockJS) are
+                        // declared because the endpoint registers both paths.
+                        .requestMatchers("/ws", "/ws/**").permitAll()
                         // The caller's own session: every authenticated role may read it.
                         .requestMatchers(HttpMethod.GET, "/api/v1/sesiones/actual").authenticated()
                         // Read model of aid/acopio centers: the operations room consumes
@@ -69,6 +76,11 @@ public class SecurityConfig {
                         // Read model of the map (zones + centers): same audience as the
                         // organizations list, every authenticated role may read it.
                         .requestMatchers(HttpMethod.GET, "/api/v1/mapa").authenticated()
+                        // Report an emergency (US3): the citizen reports the affected
+                        // zone. Azure fixes the role as CIUDADANO, so the matcher names
+                        // only that authority. Declared explicitly because the chain is
+                        // fail-closed; without it, POST /emergencias would be denied.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/emergencias").hasAuthority("ROLE_CIUDADANO")
                         // Fail-closed standard: an operation that is not declared here is
                         // denied, never silently open to every authenticated role. A new
                         // operation must add its own declaration (matcher or
