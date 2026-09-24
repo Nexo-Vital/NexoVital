@@ -152,20 +152,30 @@ export interface CentroAyuda {
    * simply omits the line when the data has no address.
    */
   direccion?: string;
+  /**
+   * The backend map read-model groups each center under a zone by id (`zonaId`),
+   * and the same response carries the zones with that id. The map uses it to show
+   * the opened center's zone. Optional: the demo fixtures declare no zone, so a
+   * center without one simply draws none.
+   */
+  zonaId?: string;
 }
 
 /**
  * Active zone as returned by `GET /api/v1/mapa` (the backend `mapa` read-model).
  *
- * The endpoint gives a zone a SINGLE point (`ubicacion`), not a boundary, so the
- * front can only pin it. A genuinely affected zone would need a polygon to be
- * drawn as an area, which requires extending the contract: never draw an area
- * the data does not have (see `zoneIcon`).
+ * `ubicacion` is the zone's reference point; `contorno` is the ordered list of
+ * vertices that draws the zone as an AREA. The map paints that contour as a
+ * Leaflet polygon — never as a point. `contorno` stays optional so a zone that
+ * arrives without geometry paints nothing instead of an invented footprint (see
+ * `zoneAreaPositions`).
  */
 export interface Zona {
   id: string;
   nombre: string;
   ubicacion: Ubicacion;
+  /** Ordered polygon vertices; at least three enclose an area. */
+  contorno?: Ubicacion[];
 }
 
 export interface BitacoraEvento {

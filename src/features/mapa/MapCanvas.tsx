@@ -3,7 +3,15 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import type {} from '@maplibre/maplibre-gl-leaflet';
 import L from 'leaflet';
 import { useEffect, useMemo, useState } from 'react';
-import { MapContainer, Marker, Polyline, useMap, useMapEvents, ZoomControl } from 'react-leaflet';
+import {
+  MapContainer,
+  Marker,
+  Polygon,
+  Polyline,
+  useMap,
+  useMapEvents,
+  ZoomControl,
+} from 'react-leaflet';
 import { filterByLevel, useLayersStore } from '@/features/mapa/layers-store';
 import { cn } from '@/lib/utils';
 import type { Ambulancia, CentroAyuda, Emergencia, Ubicacion, Zona } from '@/types/domain';
@@ -21,9 +29,9 @@ import {
   emergencyIcon,
   requestIcon,
   selfIcon,
-  zoneIcon,
 } from './markers';
 import { outerRingRadiusKm, radarRingsPixelDiameter } from './radar-rings';
+import { zoneAreaPositions, zoneForCentro } from './zone-selection';
 
 /** The viewer's own unit, rendered apart from the fleet markers. */
 export interface SelfMarker {
@@ -59,8 +67,10 @@ interface MapCanvasProps {
   emergencias: Emergencia[];
   centros?: CentroAyuda[];
   /**
-   * Active zones (`GET /api/v1/mapa`). Each carries a single point, so it is
-   * drawn as a named marker, never as an area — see `zoneIcon`.
+   * Active zones (`GET /api/v1/mapa`). They are NEVER all painted: only the zone
+   * of the center whose detail is open is drawn, and only while it is open (see
+   * `selectedZoneArea`). The zone is painted as its real footprint — a Leaflet
+   * polygon built from the zone's `contorno` — never as a bare point.
    */
   zonas?: Zona[];
   selectedAmbulanceId?: string | null;
@@ -284,6 +294,25 @@ export function MapCanvas({
     [emergencias, overlays.emergencias, visibleLevels],
   );
 
+  /** The center whose detail is open, if any: it is the only one that reveals a zone. */
+  const selectedCentro = useMemo(
+    () => centros.find((centro) => centro.id === selectedCentroId) ?? null,
+    [centros, selectedCentroId],
+  );
+
+  /**
+   * The selected center's zone, resolved through its `zonaId`. Nothing is drawn
+   * by default — the mockup's map has no zones — so an idle map stays clean.
+   */
+  const selectedZone = useMemo(() => zoneForCentro(zonas, selectedCentro), [zonas, selectedCentro]);
+
+  /**
+   * The selected zone's contour as Leaflet positions, or null when the zone has
+   * no polygon to draw. `/api/v1/mapa` publishes each zone's `contorno`, so the
+   * opened center's zone is painted as an AREA and not as a point.
+   */
+  const selectedZoneArea = useMemo(() => zoneAreaPositions(selectedZone), [selectedZone]);
+
   /**
    * Citizen search radar: only while a search is open AND at least one alerted
    * unit is on the map. The outer radius is the real distance to the farthest
@@ -312,19 +341,21 @@ export function MapCanvas({
       <MapClickHandler onMapClick={onMapClick} />
 
       {/*
-        Active zones first and below everything: each is a single point, so it is
-        a labelled marker, not a boundary. A real affected-zone footprint would
-        need a polygon in the contract (see `zoneIcon`).
+        The OPENED center's zone ONLY, painted as an AREA. Zones are not drawn by
+        default (the mockup's map has none): an idle map stays clean. When a
+        center is selected, its own zone appears as a Leaflet polygon built from
+        its contour — `/api/v1/mapa` publishes the ordered vertices that enclose
+        the zone. A zone with no usable contour paints nothing (`zoneAreaPositions`):
+        never draw an area the data does not have.
       */}
-      {zonas.map((zona) => (
-        <Marker
-          key={zona.id}
-          position={[zona.ubicacion.lat, zona.ubicacion.lng]}
-          icon={zoneIcon(zona)}
-          zIndexOffset={-200}
+      {selectedZoneArea && (
+        <Polygon
+          key={selectedZone?.id}
+          positions={selectedZoneArea}
+          className="nv-zone-area"
           interactive={false}
         />
-      ))}
+      )}
 
       {visibleEmergencies.map((emergency) => (
         <Marker

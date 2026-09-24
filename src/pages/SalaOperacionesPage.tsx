@@ -136,8 +136,12 @@ export default function SalaOperacionesPage({
         emergencyItems.find((item) => item.id === selectedRequest.emergenciaId)?.ubicacion ?? null
       );
     }
+    // Selecting a center focuses it too, so its zone (shown on the map) is in view.
+    if (selectedCentro) {
+      return selectedCentro.ubicacion;
+    }
     return null;
-  }, [selectedAmbulance, selectedEmergency, selectedRequest, emergencyItems]);
+  }, [selectedAmbulance, selectedEmergency, selectedRequest, selectedCentro, emergencyItems]);
 
   const selectAmbulance = (id: string) => {
     setSelectedAmbulanceId(id);

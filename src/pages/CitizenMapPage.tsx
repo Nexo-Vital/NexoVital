@@ -339,6 +339,7 @@ export default function CitizenMapPage({
           centros={centros}
           zonas={mapa.zonas}
           center={selfPosition}
+          focus={showDetail && detailCentro ? detailCentro.ubicacion : null}
           self={self}
           selectedAmbulanceId={assigned ? acceptedBy : null}
           selectedCentroId={detailCentro?.id ?? null}

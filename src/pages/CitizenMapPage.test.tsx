@@ -29,6 +29,7 @@ vi.mock('@/features/mapa/MapCanvas', () => ({
     selectedAmbulanceId?: string | null;
     selectedCentroId?: string | null;
     changedCentroId?: string | null;
+    focus?: { lat: number; lng: number } | null;
     ambulanceLabels?: Record<string, string>;
     requestConnector?: { dashed?: boolean } | null;
   }) => (
@@ -37,6 +38,7 @@ vi.mock('@/features/mapa/MapCanvas', () => ({
       data-selected={props.selectedAmbulanceId ?? ''}
       data-selected-centro={props.selectedCentroId ?? ''}
       data-changed-centro={props.changedCentroId ?? ''}
+      data-focus={props.focus ? `${props.focus.lat},${props.focus.lng}` : ''}
       data-labels={JSON.stringify(props.ambulanceLabels ?? {})}
       data-connector={props.requestConnector ? 'yes' : 'no'}
       data-connector-dashed={props.requestConnector?.dashed === false ? 'no' : 'yes'}
@@ -147,6 +149,8 @@ describe('CitizenMapPage', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('Suba, Bogotá · en vivo')).toBeInTheDocument();
     expect(screen.getByTestId('map-canvas')).toBeInTheDocument();
+    // Idle map: no center detail is open, so the map is not told to look anywhere.
+    expect(screen.getByTestId('map-canvas')).toHaveAttribute('data-focus', '');
     expect(screen.getByRole('complementary', { name: 'Leyenda del mapa' })).toBeInTheDocument();
 
     const rail = screen.getByRole('complementary', { name: 'Panel del ciudadano' });
@@ -937,6 +941,8 @@ describe('CitizenMapPage', () => {
       'data-selected-centro',
       'CA-LA-GAITANA',
     );
+    // The detail looks at ITS center: the map focus is the opened center's point.
+    expect(screen.getByTestId('map-canvas')).toHaveAttribute('data-focus', '4.72,-74.05');
   });
 
   it('cancels the donation picker without opening a center or donating', () => {

@@ -7,7 +7,19 @@ import { useMapData } from './use-map-data';
 
 /** A live-shaped response: zones + centers, with NO inventory. */
 const RESPONSE: MapaResponse = {
-  zonas: [{ id: 'Z-SUBA', nombre: 'Suba', ubicacion: { lat: 4.742, lng: -74.09 } }],
+  zonas: [
+    {
+      id: 'Z-SUBA',
+      nombre: 'Suba',
+      ubicacion: { lat: 4.742, lng: -74.09 },
+      contorno: [
+        { lat: 4.79, lng: -74.1 },
+        { lat: 4.795, lng: -74.05 },
+        { lat: 4.755, lng: -74.032 },
+        { lat: 4.7, lng: -74.05 },
+      ],
+    },
+  ],
   centros: [
     {
       id: 'ORG-SUBA',

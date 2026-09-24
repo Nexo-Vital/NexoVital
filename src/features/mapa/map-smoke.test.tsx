@@ -15,6 +15,17 @@ function resetLayers() {
   });
 }
 
+/** The Suba contour the backend publishes: a closed polygon, not a single point. */
+const SUBA_CONTOUR = [
+  { lat: 4.79, lng: -74.1 },
+  { lat: 4.795, lng: -74.05 },
+  { lat: 4.755, lng: -74.032 },
+  { lat: 4.7, lng: -74.05 },
+  { lat: 4.685, lng: -74.075 },
+  { lat: 4.735, lng: -74.135 },
+  { lat: 4.775, lng: -74.125 },
+];
+
 function markerLabels(container: HTMLElement): string[] {
   return Array.from(container.querySelectorAll('.nv-marker__label')).map(
     (element) => element.textContent ?? '',
@@ -50,7 +61,67 @@ function renderMapWithZones() {
     <MapCanvas
       ambulancias={[]}
       emergencias={[]}
+      zonas={[
+        {
+          id: 'Z-SUBA',
+          nombre: 'Suba',
+          ubicacion: { lat: 4.742, lng: -74.09 },
+          contorno: SUBA_CONTOUR,
+        },
+      ]}
+      onSelectAmbulance={() => undefined}
+      onSelectEmergency={() => undefined}
+    />,
+  );
+}
+
+/** The same zones, but with the center that owns one of them selected. */
+function renderMapWithSelectedZone() {
+  return render(
+    <MapCanvas
+      ambulancias={[]}
+      emergencias={[]}
+      centros={[
+        {
+          id: 'ORG-SUBA',
+          nombre: 'Acopio Suba Norte',
+          zonaId: 'Z-SUBA',
+          ubicacion: { lat: 4.742, lng: -74.09 },
+          items: [],
+        },
+      ]}
+      zonas={[
+        {
+          id: 'Z-SUBA',
+          nombre: 'Suba',
+          ubicacion: { lat: 4.742, lng: -74.09 },
+          contorno: SUBA_CONTOUR,
+        },
+      ]}
+      selectedCentroId="ORG-SUBA"
+      onSelectAmbulance={() => undefined}
+      onSelectEmergency={() => undefined}
+    />,
+  );
+}
+
+/** An opened center whose zone declares no contour: there is no area to paint. */
+function renderMapWithSelectedZoneWithoutContour() {
+  return render(
+    <MapCanvas
+      ambulancias={[]}
+      emergencias={[]}
+      centros={[
+        {
+          id: 'ORG-SUBA',
+          nombre: 'Acopio Suba Norte',
+          zonaId: 'Z-SUBA',
+          ubicacion: { lat: 4.742, lng: -74.09 },
+          items: [],
+        },
+      ]}
       zonas={[{ id: 'Z-SUBA', nombre: 'Suba', ubicacion: { lat: 4.742, lng: -74.09 } }]}
+      selectedCentroId="ORG-SUBA"
       onSelectAmbulance={() => undefined}
       onSelectEmergency={() => undefined}
     />,
@@ -254,14 +325,29 @@ describe('MapCanvas smoke', () => {
     expect(onSelectCentro).toHaveBeenCalledWith('CA-SUBA-NORTE');
   });
 
-  it('draws each active zone as a named point marker, never an area', () => {
+  it('draws no zone by default, even when the map data carries zones', () => {
     const { container } = renderMapWithZones();
 
-    const zone = markerByLabel(container, 'Suba');
-    expect(zone.classList.contains('nv-marker--zone')).toBe(true);
-    // The contract gives a zone a single point, so nothing draws its footprint:
-    // no polygon/area is emitted for data that has no geometry.
-    expect(container.querySelector('.leaflet-overlay-pane path')).toBeNull();
+    // The mockup's map has no zones: an idle map must stay clean. The contour is
+    // available, but nothing is painted until a center is actually opened.
+    expect(container.querySelector('path.nv-zone-area')).toBeNull();
+  });
+
+  it('paints the opened center zone as an area polygon from its contour', () => {
+    const { container } = renderMapWithSelectedZone();
+
+    // The zone is an AREA now: a Leaflet polygon in the overlay pane, styled with
+    // the shared palette class, drawn from the contour the contract publishes.
+    const area = container.querySelector('path.nv-zone-area');
+    expect(area).not.toBeNull();
+    expect(area?.getAttribute('d')).toBeTruthy();
+  });
+
+  it('paints no area when the opened center zone carries no contour', () => {
+    const { container } = renderMapWithSelectedZoneWithoutContour();
+
+    // No geometry in the data: nothing is painted, never an invented footprint.
+    expect(container.querySelector('path.nv-zone-area')).toBeNull();
   });
 
   it('draws the citizen radar rings anchored on the self marker', () => {

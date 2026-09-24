@@ -7,8 +7,28 @@ import { fetchMapa, type MapaResponse, mapaToCentros } from './map-api';
 /** A live-shaped response: 2 zones and 3 Bogotá centers, with NO inventory. */
 const RESPONSE: MapaResponse = {
   zonas: [
-    { id: 'Z-SUBA', nombre: 'Suba', ubicacion: { lat: 4.742, lng: -74.09 } },
-    { id: 'Z-KENNEDY', nombre: 'Kennedy', ubicacion: { lat: 4.628, lng: -74.148 } },
+    {
+      id: 'Z-SUBA',
+      nombre: 'Suba',
+      ubicacion: { lat: 4.742, lng: -74.09 },
+      contorno: [
+        { lat: 4.79, lng: -74.1 },
+        { lat: 4.795, lng: -74.05 },
+        { lat: 4.755, lng: -74.032 },
+        { lat: 4.7, lng: -74.05 },
+      ],
+    },
+    {
+      id: 'Z-KENNEDY',
+      nombre: 'Kennedy',
+      ubicacion: { lat: 4.628, lng: -74.148 },
+      contorno: [
+        { lat: 4.665, lng: -74.16 },
+        { lat: 4.66, lng: -74.115 },
+        { lat: 4.6, lng: -74.105 },
+        { lat: 4.575, lng: -74.135 },
+      ],
+    },
   ],
   centros: [
     {
@@ -53,9 +73,17 @@ describe('mapaToCentros', () => {
     expect(centros[0]).toEqual({
       id: 'ORG-SUBA',
       nombre: 'Acopio Suba Norte',
+      zonaId: 'Z-SUBA',
       ubicacion: { lat: 4.742, lng: -74.09 },
       items: [],
     });
+  });
+
+  it('keeps the backend zonaId so the map can resolve the center zone', () => {
+    const centros = mapaToCentros(RESPONSE);
+
+    // Dropping it was the bug: the map needs it to show the opened center's zone.
+    expect(centros.map((centro) => centro.zonaId)).toEqual(['Z-SUBA', 'Z-SUBA', 'Z-SUBA']);
   });
 
   it('declares no inventory: every backend center is NOT_DECLARED, never a faked light', () => {
