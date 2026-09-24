@@ -5,6 +5,8 @@ import co.edu.escuelaing.nexovital.mapa.domain.port.out.EmergenciaRepository;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.Ubicacion;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+
 /**
  * Adaptador de persistencia de emergencias. Traduce entre el agregado de dominio
  * {@link Emergencia} y la entidad JPA; el dominio nunca ve JPA.
@@ -30,6 +32,13 @@ public class EmergenciaRepositoryAdapter implements EmergenciaRepository {
                 emergencia.getZonaId(),
                 emergencia.getCreatedAt());
         return toDomain(jpaRepository.save(entity));
+    }
+
+    @Override
+    public List<Emergencia> listar() {
+        return jpaRepository.findAllByOrderByCreatedAtDesc().stream()
+                .map(EmergenciaRepositoryAdapter::toDomain)
+                .toList();
     }
 
     private static Emergencia toDomain(EmergenciaJpaEntity entity) {

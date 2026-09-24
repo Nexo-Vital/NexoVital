@@ -81,6 +81,13 @@ public class SecurityConfig {
                         // only that authority. Declared explicitly because the chain is
                         // fail-closed; without it, POST /emergencias would be denied.
                         .requestMatchers(HttpMethod.POST, "/api/v1/emergencias").hasAuthority("ROLE_CIUDADANO")
+                        // Read model of reported emergencies (US3 D7): a client that
+                        // connects late reads the current state instead of relying on the
+                        // realtime push, which does not replay. Same audience as GET
+                        // /api/v1/mapa, so every authenticated role may read it. Declared
+                        // explicitly because the chain is fail-closed; without it, GET
+                        // /emergencias would be denied.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/emergencias").authenticated()
                         // Fail-closed standard: an operation that is not declared here is
                         // denied, never silently open to every authenticated role. A new
                         // operation must add its own declaration (matcher or

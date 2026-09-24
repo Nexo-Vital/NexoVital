@@ -19,6 +19,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -213,6 +214,49 @@ class EmergenciasHttpTest extends LoginTestBase {
                         .content(cuerpo(200.0d, SUBA_LNG, "ALTO", "Latitud imposible")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.codigo").value("DATOS_INVALIDOS"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Design T8: the report stays visible over REST, and the route is declared
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("GET /emergencias after a POST: 200 and the list contains the report; without token 401")
+    void t10_listarEmergenciasIncluyeElReporteYExigeToken() throws Exception {
+        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+
+        MvcResult alta = mockMvc.perform(post("/api/v1/emergencias")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpo(SUBA_LAT, SUBA_LNG, "ALTO", "Reporte visible por REST")))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String id = objectMapper.readTree(alta.getResponse().getContentAsString()).get("id").asText();
+
+        MvcResult listado = mockMvc.perform(get("/api/v1/emergencias")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode emergencias = objectMapper.readTree(listado.getResponse().getContentAsString());
+        assertTrue(emergencias.isArray(), "the GET must return a JSON list");
+
+        // Membership, not position: other tests may have left reports in the
+        // shared H2 database, so the new one is searched for by id.
+        boolean contieneElReporte = false;
+        for (JsonNode emergencia : emergencias) {
+            if (id.equals(emergencia.get("id").asText())) {
+                contieneElReporte = true;
+                break;
+            }
+        }
+        assertTrue(contieneElReporte, "the list must contain the report just created: " + id);
+
+        // The route is declared, not denied by default: without a token it must
+        // be 401 (NOT_AUTHENTICATED), not 403 (ACCESS_DENIED).
+        mockMvc.perform(get("/api/v1/emergencias"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.codigo").value("NO_AUTENTICADO"));
     }
 
     // -----------------------------------------------------------------------

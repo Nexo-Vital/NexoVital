@@ -2,6 +2,7 @@ package co.edu.escuelaing.nexovital.mapa.infrastructure.adapter.in;
 
 import co.edu.escuelaing.nexovital.mapa.domain.model.Emergencia;
 import co.edu.escuelaing.nexovital.mapa.domain.model.NivelEmergencia;
+import co.edu.escuelaing.nexovital.mapa.domain.port.in.ListarEmergenciasUseCase;
 import co.edu.escuelaing.nexovital.mapa.domain.port.in.ReportarEmergenciaUseCase;
 import co.edu.escuelaing.nexovital.mapa.infrastructure.adapter.in.dto.EmergenciaDto;
 import co.edu.escuelaing.nexovital.mapa.infrastructure.adapter.in.dto.EmergenciaRequest;
@@ -9,17 +10,21 @@ import co.edu.escuelaing.nexovital.shared.infrastructure.dto.ErrorResponse;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.Ubicacion;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.Locale;
 
 /**
  * Adaptador de entrada de emergencias. El recurso es {@code emergencias}
  * (sustantivo plural): {@code POST /api/v1/emergencias}, la ruta que ya fija el
- * contrato OpenAPI para reportar una emergencia (US3).
+ * contrato OpenAPI para reportar una emergencia (US3), y {@code GET
+ * /api/v1/emergencias}, la lectura del registro que el diseño D7 contempla para
+ * que un cliente que llega tarde vea el estado vigente.
  *
  * <p>El manejo de errores vive aquí, dentro del módulo {@code mapa}, con
  * {@code try/catch} y el envelope {@code ErrorResponse}: el repositorio no tiene
@@ -32,11 +37,15 @@ public class EmergenciaController {
     private static final String MENSAJE_DATOS_INVALIDOS =
             "El reporte no es válido: revise la ubicación, el nivel y la descripción.";
     private static final String MENSAJE_ERROR_REGISTRO = "No fue posible registrar la emergencia.";
+    private static final String MENSAJE_ERROR_CONSULTA = "No fue posible consultar las emergencias.";
 
     private final ReportarEmergenciaUseCase reportarEmergenciaUseCase;
+    private final ListarEmergenciasUseCase listarEmergenciasUseCase;
 
-    public EmergenciaController(ReportarEmergenciaUseCase reportarEmergenciaUseCase) {
+    public EmergenciaController(ReportarEmergenciaUseCase reportarEmergenciaUseCase,
+                                ListarEmergenciasUseCase listarEmergenciasUseCase) {
         this.reportarEmergenciaUseCase = reportarEmergenciaUseCase;
+        this.listarEmergenciasUseCase = listarEmergenciasUseCase;
     }
 
     /**
@@ -59,6 +68,28 @@ public class EmergenciaController {
         } catch (RuntimeException e) {
             return ResponseEntity.internalServerError()
                     .body(ErrorResponse.of("ERROR_REGISTRO_EMERGENCIA", MENSAJE_ERROR_REGISTRO));
+        }
+    }
+
+    /**
+     * Devuelve el registro de emergencias para que un cliente que se conecta
+     * tarde vea el estado vigente. La lista vacía es un 200 válido: no hay
+     * emergencias no es un recurso ausente, es una lista sin elementos.
+     *
+     * @return 200 con la lista de {@code EmergenciaDto} (vacía si no hay
+     *         ninguna); 500 {@code ERROR_CONSULTA_EMERGENCIA} si la consulta
+     *         falla
+     */
+    @GetMapping
+    public ResponseEntity<Object> listar() {
+        try {
+            List<EmergenciaDto> emergencias = listarEmergenciasUseCase.listar().stream()
+                    .map(EmergenciaDto::fromDomain)
+                    .toList();
+            return ResponseEntity.ok(emergencias);
+        } catch (RuntimeException e) {
+            return ResponseEntity.internalServerError()
+                    .body(ErrorResponse.of("ERROR_CONSULTA_EMERGENCIA", MENSAJE_ERROR_CONSULTA));
         }
     }
 
