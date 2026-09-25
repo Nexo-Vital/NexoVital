@@ -1,7 +1,7 @@
-package co.edu.escuelaing.nexovital.mapa.infrastructure.adapter.out;
+package co.edu.escuelaing.nexovital.shared.infrastructure.adapter.out;
 
-import co.edu.escuelaing.nexovital.mapa.domain.port.out.PushPort;
 import co.edu.escuelaing.nexovital.shared.domain.model.PushMessage;
+import co.edu.escuelaing.nexovital.shared.domain.port.out.PushPort;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
@@ -11,6 +11,10 @@ import org.springframework.stereotype.Component;
  * evento de aplicación en proceso. El componente del gateway
  * ({@code gateway/infrastructure/adapter/out/PushFanOutAdapter}) lo reenvía a las
  * sesiones STOMP.
+ *
+ * <p>Vive en {@code shared} junto al puerto que implementa: hay dos módulos que
+ * publican ({@code mapa} y {@code usuarios}), así que el adaptador no pertenece a
+ * ninguno de los dos.
  *
  * <p>Aquí NO se conoce el broker ni STOMP: el fan-out es del gateway (Modelo Y
  * del ADR-0003). Reemplaza al adaptador diferido de la tarea 249, que solo

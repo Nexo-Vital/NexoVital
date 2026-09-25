@@ -1,6 +1,6 @@
 package co.edu.escuelaing.nexovital.realtime;
 
-import co.edu.escuelaing.nexovital.mapa.domain.port.out.PushPort;
+import co.edu.escuelaing.nexovital.shared.domain.port.out.PushPort;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;

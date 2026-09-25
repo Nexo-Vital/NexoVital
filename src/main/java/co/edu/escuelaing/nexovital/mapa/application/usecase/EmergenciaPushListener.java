@@ -1,6 +1,6 @@
 package co.edu.escuelaing.nexovital.mapa.application.usecase;
 
-import co.edu.escuelaing.nexovital.mapa.domain.port.out.PushPort;
+import co.edu.escuelaing.nexovital.shared.domain.port.out.PushPort;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
