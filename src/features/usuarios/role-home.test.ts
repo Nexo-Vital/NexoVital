@@ -22,9 +22,13 @@ describe('role destinations', () => {
     expect(Object.keys(ROLE_LABEL).sort()).toEqual([...ROLES].sort());
   });
 
-  it('maps only the three operations roles to the CRUE room', () => {
-    const operations = ROLES.filter((role) => ROLE_HOME[role] === 'OPERATIONS');
-    expect(operations.sort()).toEqual(['ADMIN_ACOPIO', 'ADMIN_CENTRO_AYUDA', 'ADMIN_PLATAFORMA']);
+  it('declares no screen for the three administrative roles', () => {
+    const admins: RolUsuario[] = ['ADMIN_ACOPIO', 'ADMIN_CENTRO_AYUDA', 'ADMIN_PLATAFORMA'];
+    for (const role of admins) {
+      expect(ROLE_HOME[role]).toBeNull();
+      expect(resolveRoleHome(role)).toBeNull();
+      expect(hasRoleHome(role)).toBe(false);
+    }
   });
 
   it('maps the citizen to the citizen map', () => {
@@ -37,7 +41,7 @@ describe('role destinations', () => {
     expect(resolveRoleHome(null)).toBeNull();
     expect(hasRoleHome(null)).toBe(false);
     // A role outside the current contract (e.g. a future backend role) must not
-    // inherit the operations room by default.
+    // inherit a screen by default.
     expect(resolveRoleHome('INSPECTOR' as RolUsuario)).toBeNull();
   });
 

@@ -23,6 +23,14 @@ const CIUDADANO = {
   rol: 'CIUDADANO',
 };
 
+/** Driver account, whose role lands on the driver console. */
+const CONDUCTOR = {
+  id: 'usr-conductor',
+  nombre: 'Conductor Uno',
+  email: 'conductor1@nexovital.co',
+  rol: 'CONDUCTOR',
+};
+
 /** Seeded profile of a role, or a loud failure when the seed changed shape. */
 function seededProfile(rol: 'CIUDADANO' | 'CONDUCTOR') {
   const profile = DEMO_USERS.find((candidate) => candidate.rol === rol);
@@ -114,8 +122,8 @@ function renderLogin() {
 }
 
 async function fillCredentials(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(screen.getByLabelText('Usuario o correo'), ADMIN.email);
-  await user.type(screen.getByLabelText('Contraseña'), 'rangel123');
+  await user.type(screen.getByLabelText('Usuario o correo'), CONDUCTOR.email);
+  await user.type(screen.getByLabelText('Contraseña'), 'conductor123');
 }
 
 describe('LoginPage', () => {
@@ -140,7 +148,7 @@ describe('LoginPage', () => {
   });
 
   it('logs in against the backend, stores the session and redirects', async () => {
-    fetchMock.mockResolvedValue(mockResponse(200, { token: 'jwt.real', usuario: ADMIN }));
+    fetchMock.mockResolvedValue(mockResponse(200, { token: 'jwt.real', usuario: CONDUCTOR }));
     const user = userEvent.setup();
     renderLogin();
 
@@ -152,17 +160,32 @@ describe('LoginPage', () => {
       '/api/v1/sesiones',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ email: ADMIN.email, password: 'rangel123' }),
+        body: JSON.stringify({ email: CONDUCTOR.email, password: 'conductor123' }),
       }),
     );
     expect(useSessionStore.getState()).toMatchObject({
       token: 'jwt.real',
-      role: 'ADMIN_CENTRO_AYUDA',
+      role: 'CONDUCTOR',
     });
     expect(localStorage.getItem(TOKEN_KEY)).toBe('jwt.real');
     expect(JSON.parse(localStorage.getItem(SESSION_KEY) ?? 'null')).toMatchObject({
-      email: ADMIN.email,
+      email: CONDUCTOR.email,
     });
+  });
+
+  it('blocks an administrator whose role has no screen and explains why', async () => {
+    fetchMock.mockResolvedValue(mockResponse(200, { token: 'jwt.admin', usuario: ADMIN }));
+    const user = userEvent.setup();
+    renderLogin();
+
+    await fillCredentials(user);
+    await user.click(screen.getByRole('button', { name: 'Iniciar sesión' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'El perfil Administrador de centro de ayuda todavía no tiene una pantalla en esta versión.',
+    );
+    expect(screen.queryByTestId('home')).not.toBeInTheDocument();
+    expect(useSessionStore.getState().token).toBeNull();
   });
 
   it('lets a citizen in and keeps the session, now that the role has a screen', async () => {
@@ -261,7 +284,7 @@ describe('LoginPage', () => {
 
   it('types the selected profile credentials and posts them to the login endpoint once', async () => {
     vi.useFakeTimers();
-    fetchMock.mockResolvedValue(mockResponse(200, { token: 'jwt.real', usuario: ADMIN }));
+    fetchMock.mockResolvedValue(mockResponse(200, { token: 'jwt.real', usuario: CONDUCTOR }));
     renderLogin();
 
     fireEvent.click(profileRow(DEMO_PROFILE.email));
@@ -299,13 +322,13 @@ describe('LoginPage', () => {
       }),
     );
     // The role comes from the mocked backend response, never from the panel.
-    expect(useSessionStore.getState()).toMatchObject({ token: 'jwt.real', role: ADMIN.rol });
+    expect(useSessionStore.getState()).toMatchObject({ token: 'jwt.real', role: CONDUCTOR.rol });
     expect(screen.getByTestId('home')).toBeInTheDocument();
   });
 
   it('ignores a second profile click while the typewriter is running', async () => {
     vi.useFakeTimers();
-    fetchMock.mockResolvedValue(mockResponse(200, { token: 'jwt.real', usuario: ADMIN }));
+    fetchMock.mockResolvedValue(mockResponse(200, { token: 'jwt.real', usuario: CONDUCTOR }));
     renderLogin();
 
     // The driver role is grouped, so its rows exist only after expanding it.
@@ -337,7 +360,7 @@ describe('LoginPage', () => {
 
   it('fills both fields instantly when the OS asks to reduce motion', async () => {
     mockReducedMotion();
-    fetchMock.mockResolvedValue(mockResponse(200, { token: 'jwt.real', usuario: ADMIN }));
+    fetchMock.mockResolvedValue(mockResponse(200, { token: 'jwt.real', usuario: CONDUCTOR }));
     renderLogin();
 
     fireEvent.click(profileRow(DEMO_PROFILE.email));

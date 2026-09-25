@@ -6,23 +6,20 @@ import { useSessionStore } from '@/features/usuarios/session';
 import type { RolUsuario } from '@/types/domain';
 import { AppRouter, RoleHome } from './AppRouter';
 
-vi.mock('@/pages/SalaOperacionesPage', () => ({
-  default: () => <div data-testid="operations-room" />,
-}));
 vi.mock('@/pages/DriverConsolePage', () => ({
   default: () => <div data-testid="driver-console" />,
 }));
 vi.mock('@/pages/CitizenMapPage', () => ({
   default: () => <div data-testid="citizen-map" />,
 }));
+vi.mock('@/pages/LoginPage', () => ({
+  default: () => <div data-testid="login-screen" />,
+}));
 
-// AppShell (the compact chrome for non-citizen roles) owns the realtime
-// connection and the channel badge; both are irrelevant to shell selection.
+// AppFrame (the chrome for every role that has a screen) owns the realtime
+// connection; it is irrelevant to shell selection.
 vi.mock('@/shared/realtime/use-realtime-connection', () => ({
   useRealtimeConnection: () => undefined,
-}));
-vi.mock('@/features/observabilidad/use-channel-status', () => ({
-  useChannelStatus: () => ({ state: 'CONNECTED', latencyMs: null }),
 }));
 // Token revalidation is not under test: RequireAuth just passes through.
 vi.mock('@/features/usuarios/guards', async () => {
@@ -57,13 +54,14 @@ describe('RoleHome', () => {
   });
 
   it.each(['ADMIN_PLATAFORMA', 'ADMIN_CENTRO_AYUDA', 'ADMIN_ACOPIO'] as const)(
-    'routes %s to the operations room',
+    'sends %s to the login screen because it has no home',
     (role) => {
       signInAs(role);
       renderHome();
 
-      expect(screen.getByTestId('operations-room')).toBeInTheDocument();
+      expect(screen.getByTestId('login-screen')).toBeInTheDocument();
       expect(screen.queryByTestId('driver-console')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('citizen-map')).not.toBeInTheDocument();
     },
   );
 
@@ -72,7 +70,7 @@ describe('RoleHome', () => {
     renderHome();
 
     expect(screen.getByTestId('driver-console')).toBeInTheDocument();
-    expect(screen.queryByTestId('operations-room')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('login-screen')).not.toBeInTheDocument();
   });
 
   it('routes CIUDADANO to the citizen map, never to another role screen', () => {
@@ -80,7 +78,6 @@ describe('RoleHome', () => {
     renderHome();
 
     expect(screen.getByTestId('citizen-map')).toBeInTheDocument();
-    expect(screen.queryByTestId('operations-room')).not.toBeInTheDocument();
     expect(screen.queryByTestId('driver-console')).not.toBeInTheDocument();
   });
 });
@@ -107,14 +104,14 @@ describe('AppRouter shell selection', () => {
     renderApp();
 
     expect(screen.getAllByText('NexoVital').length).toBeGreaterThan(0);
-    expect(screen.queryByText('CRUE Operations')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('login-screen')).not.toBeInTheDocument();
   });
 
-  it('keeps the compact shell for the CRUE roles', () => {
+  it('sends a role without home to the login screen instead of rendering a chrome', () => {
     signInAs('ADMIN_CENTRO_AYUDA');
     renderApp();
 
-    expect(screen.getByText('CRUE Operations')).toBeInTheDocument();
+    expect(screen.getByTestId('login-screen')).toBeInTheDocument();
     expect(screen.queryByText('NexoVital')).not.toBeInTheDocument();
   });
 
@@ -123,7 +120,7 @@ describe('AppRouter shell selection', () => {
     renderApp();
 
     expect(screen.getAllByText('NexoVital').length).toBeGreaterThan(0);
-    expect(screen.queryByText('CRUE Operations')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('login-screen')).not.toBeInTheDocument();
     expect(screen.getByText('Conductor de ambulancia · A-07')).toBeInTheDocument();
 
     const bar = screen.getByRole('complementary', { name: 'Barra lateral' });

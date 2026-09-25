@@ -23,12 +23,14 @@ function usuario(rol: RolUsuario, email = 'test@nexovital.co'): Usuario {
   return { id: `usr-${rol}`, nombre: 'Test', email, rol };
 }
 
-/** A destination for every role the build can render, keyed by the role home. */
+/**
+ * A destination for every role the build can render. The administrative roles
+ * are absent on purpose: they have no home, so the guard must never route them
+ * into a protected screen.
+ */
 const DESTINATION: Partial<Record<RolUsuario, string>> = {
-  ADMIN_PLATAFORMA: 'operations-room',
-  ADMIN_CENTRO_AYUDA: 'operations-room',
-  ADMIN_ACOPIO: 'operations-room',
   CONDUCTOR: 'driver-console',
+  CIUDADANO: 'citizen-map',
 };
 
 function renderGuarded() {
@@ -121,9 +123,9 @@ describe('RequireAuth', () => {
   });
 
   it('lets the server role decide the destination over the stale stored role', async () => {
-    // localStorage says CONDUCTOR, the server says ADMIN_CENTRO_AYUDA: server wins.
-    signInAs('CONDUCTOR', 'jwt.reassigned');
-    fetchMock.mockResolvedValue(mockResponse(200, usuario('ADMIN_CENTRO_AYUDA')));
+    // localStorage says CIUDADANO, the server says CONDUCTOR: server wins.
+    signInAs('CIUDADANO', 'jwt.reassigned');
+    fetchMock.mockResolvedValue(mockResponse(200, usuario('CONDUCTOR')));
 
     render(
       <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
@@ -141,21 +143,32 @@ describe('RequireAuth', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByTestId('operations-room')).toBeInTheDocument();
-    expect(screen.queryByTestId('driver-console')).not.toBeInTheDocument();
-    expect(useSessionStore.getState().role).toBe('ADMIN_CENTRO_AYUDA');
+    expect(await screen.findByTestId('driver-console')).toBeInTheDocument();
+    expect(screen.queryByTestId('citizen-map')).not.toBeInTheDocument();
+    expect(useSessionStore.getState().role).toBe('CONDUCTOR');
   });
 
   it('blocks a server role outside the contract, same as at login', async () => {
     signInAs('CONDUCTOR', 'jwt.downgraded');
-    // Every contract role now has a screen, so the blocked case is a role the
-    // contract does not know (e.g. a future backend role).
+    // The blocked cases are a role the contract does not know (e.g. a future
+    // backend role) and the administrative roles, which have no home.
     fetchMock.mockResolvedValue(mockResponse(200, usuario('INSPECTOR' as RolUsuario)));
 
     renderGuarded();
 
     expect(await screen.findByTestId('login-screen')).toBeInTheDocument();
     expect(screen.queryByTestId('protected')).not.toBeInTheDocument();
+  });
+
+  it('blocks an administrative server role that has no home', async () => {
+    signInAs('CONDUCTOR', 'jwt.admin');
+    fetchMock.mockResolvedValue(mockResponse(200, usuario('ADMIN_CENTRO_AYUDA')));
+
+    renderGuarded();
+
+    expect(await screen.findByTestId('login-screen')).toBeInTheDocument();
+    expect(screen.queryByTestId('protected')).not.toBeInTheDocument();
+    expect(useSessionStore.getState().role).toBe('ADMIN_CENTRO_AYUDA');
   });
 
   it('redirects with no token and never calls the session endpoint', async () => {

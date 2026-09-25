@@ -8,9 +8,7 @@ import { useSessionStore } from '@/features/usuarios/session';
 import CitizenMapPage from '@/pages/CitizenMapPage';
 import DriverConsolePage from '@/pages/DriverConsolePage';
 import LoginPage from '@/pages/LoginPage';
-import SalaOperacionesPage from '@/pages/SalaOperacionesPage';
 import { AppFrame, type AppFrameNavItem } from './AppFrame';
-import { AppShell } from './AppShell';
 
 /**
  * Sidebar navigation for the citizen shell. "Mis solicitudes" and "Mis
@@ -36,8 +34,8 @@ export const DRIVER_NAV: AppFrameNavItem[] = [
 
 /**
  * Picks the chrome for the signed-in role. The citizen and the driver get the
- * v2 AppFrame; every other role (the CRUE included) keeps the compact AppShell,
- * unchanged. The driver's topbar carries its unit id as the role suffix.
+ * v2 AppFrame; a role with no home renders no chrome at all and is sent back to
+ * the login screen. The driver's topbar carries its unit id as the role suffix.
  */
 function RoleChrome() {
   const role = useSessionStore((state) => state.role);
@@ -59,7 +57,9 @@ function RoleChrome() {
       />
     );
   }
-  return <AppShell />;
+  // A role with no home must never get a chrome: redirect to login instead of
+  // rendering a shell around a screen that is not its own.
+  return <Navigate to="/login" replace />;
 }
 
 /**
@@ -75,14 +75,12 @@ export function RoleHome() {
       return <DriverConsolePage />;
     case 'CITIZEN_MAP':
       return <CitizenMapPage />;
-    case 'OPERATIONS':
-      return <SalaOperacionesPage />;
     default:
       return <Navigate to="/login" replace />;
   }
 }
 
-/** Route table for this unit: login + the CRUE screen. */
+/** Route table for this unit: login + the citizen and driver screens. */
 export function AppRouter() {
   return (
     <Routes>

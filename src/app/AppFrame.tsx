@@ -54,7 +54,7 @@ function initialsOf(name: string): string {
  *     `#fff` are used, never semantic tokens (`bg-card`, `bg-background`, ...),
  *     so dark mode does not flip this chrome.
  *   - It is parametrised by `nav` and reads the signed-in user from the session
- *     store, so wiring the CRUE or driver shells later is config, not a rewrite.
+ *     store, so adding or changing a role's navigation is config, not a rewrite.
  */
 export function AppFrame({ nav, activeKey, roleDetail, bellCount }: AppFrameProps) {
   const navigate = useNavigate();
@@ -66,7 +66,7 @@ export function AppFrame({ nav, activeKey, roleDetail, bellCount }: AppFrameProp
   // connected.
   useRealtimeConnection();
 
-  // Defence in depth, mirroring AppShell: never render a role without a screen.
+  // Defence in depth: never render a role without a screen.
   if (!hasRoleHome(role)) {
     return <Navigate to="/login" replace />;
   }

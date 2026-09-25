@@ -2,14 +2,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SESSION_KEY, TOKEN_KEY } from '@/services/apiClient';
 
 /**
- * Role the contract does not know. Every contract role now has a screen, so a
- * stale session with an unknown role is what hydration has to drop.
+ * Role the contract does not know. Hydration has to drop any stored session
+ * whose role has no screen, whether the role is unknown or a contract role this
+ * build does not ship.
  */
 const UNKNOWN_ROLE = {
   id: 'usr-unknown',
   nombre: 'Unknown Role',
   email: 'unknown@nexovital.co',
   rol: 'INSPECTOR',
+};
+
+const CITIZEN = {
+  id: 'usr-citizen',
+  nombre: 'Ciudadano Demo',
+  email: 'ciudadano@nexovital.co',
+  rol: 'CIUDADANO',
 };
 
 const ADMIN = {
@@ -45,16 +53,27 @@ describe('session hydration', () => {
     expect(localStorage.getItem(SESSION_KEY)).toBeNull();
   });
 
+  it('drops a stored administrative session that has no screen', async () => {
+    localStorage.setItem(TOKEN_KEY, 'jwt.admin');
+    localStorage.setItem(SESSION_KEY, JSON.stringify(ADMIN));
+
+    const { useSessionStore } = await import('./session');
+
+    expect(useSessionStore.getState()).toMatchObject({ user: null, role: null, token: null });
+    expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
+    expect(localStorage.getItem(SESSION_KEY)).toBeNull();
+  });
+
   it('restores a stored session whose role has a screen', async () => {
     localStorage.setItem(TOKEN_KEY, 'jwt.ok');
-    localStorage.setItem(SESSION_KEY, JSON.stringify(ADMIN));
+    localStorage.setItem(SESSION_KEY, JSON.stringify(CITIZEN));
 
     const { useSessionStore } = await import('./session');
 
     expect(useSessionStore.getState()).toMatchObject({
       token: 'jwt.ok',
-      role: 'ADMIN_CENTRO_AYUDA',
-      user: { email: ADMIN.email },
+      role: 'CIUDADANO',
+      user: { email: CITIZEN.email },
     });
   });
 });

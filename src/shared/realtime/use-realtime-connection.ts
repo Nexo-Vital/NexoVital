@@ -3,7 +3,7 @@ import { getRealtimePort } from './index';
 
 /**
  * Owns the realtime port lifecycle for the signed-in shell. Mounted once by
- * AppShell so every feature can just subscribe. The relay is available in dev
+ * Mounted once by the role chrome so every feature can just subscribe. The relay is available in dev
  * and in production, so this always connects.
  */
 export function useRealtimeConnection(): void {

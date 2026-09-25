@@ -87,8 +87,7 @@ export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => 
     if (!payload) {
       return false;
     }
-    // Same path as the CRUE room (`SalaOperacionesPage.handleCreateRequest`):
-    // mirror the request into the registry, then publish it on the topic.
+    // Mirror the request into the registry, then publish it on the topic.
     useSolicitudesStore.getState().upsert(toSolicitud(payload, startedAt));
     port?.publish(DESTINATIONS.solicitudes, payload);
     set({
