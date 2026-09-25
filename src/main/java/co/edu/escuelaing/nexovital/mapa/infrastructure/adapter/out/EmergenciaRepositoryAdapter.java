@@ -6,6 +6,8 @@ import co.edu.escuelaing.nexovital.usuarios.domain.model.Ubicacion;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Adaptador de persistencia de emergencias. Traduce entre el agregado de dominio
@@ -32,6 +34,11 @@ public class EmergenciaRepositoryAdapter implements EmergenciaRepository {
                 emergencia.getZonaId(),
                 emergencia.getCreatedAt());
         return toDomain(jpaRepository.save(entity));
+    }
+
+    @Override
+    public Optional<Emergencia> buscarPorId(UUID id) {
+        return jpaRepository.findById(id).map(EmergenciaRepositoryAdapter::toDomain);
     }
 
     @Override

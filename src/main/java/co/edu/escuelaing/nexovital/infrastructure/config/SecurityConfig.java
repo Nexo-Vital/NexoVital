@@ -91,6 +91,13 @@ public class SecurityConfig {
                         // explicitly because the chain is fail-closed; without it, GET
                         // /emergencias would be denied.
                         .requestMatchers(HttpMethod.GET, "/api/v1/emergencias").authenticated()
+                        // Update an emergency (US4): the help-center administrator, the
+                        // role the story fixes (D3). The matcher names only that
+                        // authority. Declared explicitly because the chain is fail-closed;
+                        // without it, PATCH /emergencias/{id} would be denied. The path
+                        // carries the {id}, so the pattern covers the sub-paths.
+                        .requestMatchers(HttpMethod.PATCH, "/api/v1/emergencias/**")
+                                .hasAuthority("ROLE_ADMIN_CENTRO_AYUDA")
                         // Register an organization/center (EP-01.F2.US1): the platform
                         // administrator creates it. Azure fixes the role as the platform
                         // administrator, so the matcher names only that authority. Declared

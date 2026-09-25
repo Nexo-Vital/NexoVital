@@ -36,4 +36,16 @@ public class EmergenciaPushListener {
     public void alRegistrarEmergencia(EmergenciaRegistradaEvento evento) {
         pushPort.publicar(DESTINO_EMERGENCIAS, evento.emergencia());
     }
+
+    /**
+     * Entrega al {@link PushPort} el payload de una emergencia ACTUALIZADA,
+     * también después del commit. Va al mismo destino que el reporte
+     * ({@value #DESTINO_EMERGENCIAS}) y con la misma forma de payload: el front
+     * hace UPSERT por {@code id}, así que una emergencia conocida se fusiona sin
+     * mappers nuevos (decisiones D5/D6 del ODD).
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void alActualizarEmergencia(EmergenciaActualizadaEvento evento) {
+        pushPort.publicar(DESTINO_EMERGENCIAS, evento.emergencia());
+    }
 }

@@ -85,6 +85,53 @@ public final class Emergencia {
         return createdAt;
     }
 
+    /**
+     * Devuelve una instancia NUEVA con el estado cambiado y el resto de los
+     * campos intactos. La emergencia original no se toca: el agregado es
+     * inmutable (decisión D4 del ODD).
+     *
+     * @param nuevoEstado estado del contrato; no puede ser {@code null}
+     * @return una emergencia nueva con el estado indicado
+     */
+    public Emergencia conEstado(EstadoEmergencia nuevoEstado) {
+        return con(nuevoEstado, this.nivel);
+    }
+
+    /**
+     * Devuelve una instancia NUEVA con el nivel cambiado y el resto de los
+     * campos intactos. La emergencia original no se toca: el agregado es
+     * inmutable (decisión D4 del ODD).
+     *
+     * @param nuevoNivel severidad del contrato; no puede ser {@code null}
+     * @return una emergencia nueva con el nivel indicado
+     */
+    public Emergencia conNivel(NivelEmergencia nuevoNivel) {
+        return con(this.estado, nuevoNivel);
+    }
+
+    /**
+     * Devuelve una instancia NUEVA con estado y nivel cambiados <b>a la vez</b>.
+     * Es la forma que el caso de uso usa cuando el PATCH trae los dos campos:
+     * se construye UNA sola instancia, no una intermedia por campo (el resto de
+     * los campos — {@code id}, {@code ubicacion}, {@code descripcion},
+     * {@code zonaId}, {@code createdAt} — se conserva tal cual, porque mover una
+     * emergencia cambiaría su zona y está fuera de alcance).
+     *
+     * @param nuevoEstado estado del contrato; no puede ser {@code null}
+     * @param nuevoNivel  severidad del contrato; no puede ser {@code null}
+     * @return una emergencia nueva con el estado y el nivel indicados
+     */
+    public Emergencia con(EstadoEmergencia nuevoEstado, NivelEmergencia nuevoNivel) {
+        return new Emergencia(
+                id,
+                ubicacion,
+                nuevoNivel,
+                nuevoEstado,
+                descripcion,
+                zonaId,
+                createdAt);
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
