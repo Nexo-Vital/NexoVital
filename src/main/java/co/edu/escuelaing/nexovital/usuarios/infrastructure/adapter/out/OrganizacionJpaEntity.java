@@ -33,7 +33,7 @@ public class OrganizacionJpaEntity {
     @Column(nullable = false, length = 40)
     private TipoOrganizacion tipo;
 
-    @Column(name = "zona_id", nullable = false, length = 80)
+    @Column(name = "zona_id", nullable = true, length = 80)
     private String zonaId;
 
     @Column(nullable = false)

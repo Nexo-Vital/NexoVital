@@ -23,7 +23,7 @@ public final class Organizacion {
         this.id = Objects.requireNonNull(id, "id es obligatorio");
         this.nombre = Objects.requireNonNull(nombre, "nombre es obligatorio");
         this.tipo = Objects.requireNonNull(tipo, "tipo es obligatorio");
-        this.zonaId = Objects.requireNonNull(zonaId, "zonaId es obligatorio");
+        this.zonaId = zonaId;
         this.ubicacion = Objects.requireNonNull(ubicacion, "ubicacion es obligatoria");
     }
 
@@ -43,6 +43,10 @@ public final class Organizacion {
      * Identificador de la zona a la que pertenece la organización. La zona es
      * propiedad del módulo {@code mapa}; aquí se guarda como referencia simple
      * (no hay clave foránea entre módulos).
+     *
+     * <p><b>Es opcional</b> (decisión D2 de la tarea): el contrato OpenAPI no
+     * exige {@code zonaId} al registrar una organización, así que un centro
+     * puede quedar sin zona asignada. Puede devolver {@code null}.
      */
     public String getZonaId() {
         return zonaId;

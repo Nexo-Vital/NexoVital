@@ -91,6 +91,13 @@ public class SecurityConfig {
                         // explicitly because the chain is fail-closed; without it, GET
                         // /emergencias would be denied.
                         .requestMatchers(HttpMethod.GET, "/api/v1/emergencias").authenticated()
+                        // Register an organization/center (EP-01.F2.US1): the platform
+                        // administrator creates it. Azure fixes the role as the platform
+                        // administrator, so the matcher names only that authority. Declared
+                        // explicitly because the chain is fail-closed; without it, POST
+                        // /organizaciones would be denied.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/organizaciones")
+                                .hasAuthority("ROLE_ADMIN_PLATAFORMA")
                         // Fail-closed standard: an operation that is not declared here is
                         // denied, never silently open to every authenticated role. A new
                         // operation must add its own declaration (matcher or
