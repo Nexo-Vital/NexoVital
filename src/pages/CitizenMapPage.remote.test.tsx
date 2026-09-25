@@ -93,7 +93,13 @@ describe('CitizenMapPage against /api/v1/mapa', () => {
     localStorage.clear();
     fetchMock.mockReset();
     vi.stubGlobal('fetch', fetchMock);
-    fetchMock.mockResolvedValue(mockResponse(200, RESPONSE));
+    // The map snapshot answers `/mapa`; each center's inventory read (EP-03)
+    // answers an empty list, so this case keeps asserting the map source only.
+    fetchMock.mockImplementation((input: RequestInfo | URL) =>
+      Promise.resolve(
+        String(input).includes('/inventario') ? mockResponse(200, []) : mockResponse(200, RESPONSE),
+      ),
+    );
     setToken('jwt.test');
   });
 

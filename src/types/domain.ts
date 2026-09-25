@@ -122,8 +122,12 @@ export interface InventarioItem {
    * verb — "Le falta agua potable" vs "Le faltan alimentos". The text alone
    * cannot tell them apart ("gas" is singular and ends in "s", while "casas" is
    * plural and also ends in "s"), so this is declared, never inferred.
+   *
+   * Optional: the inventory API does NOT expose it (nor `unidad`/`unitDetail`),
+   * so an item read from the backend leaves it absent and the UI falls back to
+   * the singular form instead of inventing a number.
    */
-  grammaticalNumber: GrammaticalNumber;
+  grammaticalNumber?: GrammaticalNumber;
   /**
    * UI-only convenience (not part of the OpenAPI schema): the unit the stock is
    * counted in, written literally from the mockup ("bidones", "kits", "cajas",

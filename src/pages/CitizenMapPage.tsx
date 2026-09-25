@@ -51,7 +51,10 @@ import {
   writePersistedMapFilter,
 } from '@/features/mapa/map-filter';
 import { useMapData } from '@/features/mapa/use-map-data';
+import { registrarDonacion } from '@/features/recursos/inventory-api';
+import { useInventarioStore, withInventario } from '@/features/recursos/inventory-store';
 import { centroSemaforo } from '@/features/recursos/traffic-light';
+import { useInventario } from '@/features/recursos/use-inventario';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
 import { useSolicitudRegistrySync } from '@/features/solicitudes/use-solicitud-registry-sync';
 import { etaMinutes } from '@/lib/geo';
@@ -141,14 +144,20 @@ export default function CitizenMapPage({
   // demo flag on, `GET /api/v1/mapa` with it off (never a silent fallback).
   const mapa = useMapData(centrosAyuda);
 
-  // Donations MUTATE the front state on top of that base: `updated` holds the
-  // centers whose inventory changed, and the merged list is what the map, the
-  // rail, the header chips and the legend all read. With the demo flag off the
-  // backend centers carry no inventory, so this overlay is simply never used.
+  // Inventory (EP-03): with the demo flag off the items come from the backend
+  // (REST snapshot + `/topic/suministros` upserts); with it on the fixtures
+  // already carry them, so the store stays empty and the merge is a no-op.
+  useInventario(mapa.centros, port);
+  const inventario = useInventarioStore((state) => state.itemsByCentro);
+
+  // Donations MUTATE the front state on top of that inventory-backed base:
+  // `updated` holds the centers whose inventory changed locally (demo mode).
+  // In backend mode the items already come from the server, so that overlay is
+  // empty and a real donation lands in the inventory store instead.
   const updatedCentros = useDonationStore((state) => state.updated);
   const centros = useMemo(
-    () => withDonations(mapa.centros, updatedCentros),
-    [mapa.centros, updatedCentros],
+    () => withDonations(withInventario(mapa.centros, inventario), updatedCentros),
+    [mapa.centros, inventario, updatedCentros],
   );
 
   // Map layer filter (FD-1/FD-2/FD-4). The choice lives HERE, is applied ONLY to
@@ -346,17 +355,36 @@ export default function CitizenMapPage({
     setLastDonation(null);
   }, []);
 
-  // Confirming applies the donation to the front state and remembers the level
-  // the center moved from, so the c9 card can say "Antes estaba en crítico".
+  // Confirming applies the donation and remembers the level the center moved
+  // from, so the c9 card can say "Antes estaba en crítico". With the demo flag on
+  // it mutates the front state; with it off it calls the real endpoint and the
+  // resulting item comes from the response (the realtime upsert repeats it
+  // idempotently by id).
   const handleConfirmDonation = useCallback(
-    (itemId: string, amount: number) => {
+    async (itemId: string, amount: number) => {
       if (!detailCentro) {
         return;
       }
       const beforeCenterLevel = centroSemaforo(detailCentro);
-      const next = useDonationStore.getState().donate(detailCentro, itemId, amount);
-      setLastDonation({ centroId: next.id, itemId, amount, beforeCenterLevel });
-      setDonationOpen(false);
+      if (isDemoMode()) {
+        const next = useDonationStore.getState().donate(detailCentro, itemId, amount);
+        setLastDonation({ centroId: next.id, itemId, amount, beforeCenterLevel });
+        setDonationOpen(false);
+        return;
+      }
+      try {
+        const item = await registrarDonacion(detailCentro.id, itemId, amount);
+        useInventarioStore.getState().upsert(item);
+        setLastDonation({ centroId: detailCentro.id, itemId, amount, beforeCenterLevel });
+        setDonationOpen(false);
+      } catch (error) {
+        // The dialog stays open so the citizen can retry; the backend's Spanish
+        // `mensaje` is surfaced instead of a silent failure.
+        toast(
+          error instanceof Error ? error.message : 'No se pudo registrar la donación.',
+          'error',
+        );
+      }
     },
     [detailCentro],
   );

@@ -9,6 +9,7 @@ import { useDonationStore } from '@/features/donaciones/donation';
 import { useEmergencyStore } from '@/features/emergencias/emergency-store';
 import { useFleetStore } from '@/features/flota/fleet-store';
 import { MAP_FILTER_STORAGE_KEY } from '@/features/mapa/map-filter';
+import { useInventarioStore } from '@/features/recursos/inventory-store';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
 import { MOCK_AMBULANCIAS, MOCK_CENTROS_AYUDA } from '@/mocks/fixtures';
 import { DESTINATIONS, type SolicitudCancelPayload } from '@/shared/realtime';
@@ -70,6 +71,12 @@ vi.mock('@/features/mapa/use-map-data', () => ({
     loading: false,
     error: null,
   }),
+}));
+
+// Inventory is loaded by its own hook (backend only); stub it so these page
+// cases keep rendering the injected fixtures without touching the backend.
+vi.mock('@/features/recursos/use-inventario', () => ({
+  useInventario: () => undefined,
 }));
 
 /** Origin used by the page when the device gives no position (Suba). */
@@ -174,6 +181,9 @@ describe('CitizenMapPage', () => {
     useSolicitudesStore.getState().hydrate([]);
     useCitizenRequestStore.getState().reset();
     useDonationStore.getState().reset();
+    useInventarioStore.getState().reset();
+    // A case that flips the build-time demo flag never leaks into another one.
+    vi.unstubAllEnvs();
     // The Toaster is mounted in the shells, not in this page, so the toast stack
     // is asserted through the store: reset it so a case cannot leak into another.
     useToastStore.setState({ toasts: [] });
@@ -1008,6 +1018,9 @@ describe('CitizenMapPage', () => {
   });
 
   it('walks the mock donation flow c7 -> c8 -> c9 and mutates the front state', () => {
+    // The local mutation is the DEMO branch: pin it so the case keeps asserting
+    // fixtures instead of the backend write.
+    vi.stubEnv('VITE_DEMO_MODE', '1');
     renderPage({ ambulancias: MOCK_AMBULANCIAS, centrosAyuda: MOCK_CENTROS_AYUDA });
 
     // c7: "Donar suministros" does NOT choose a center — it opens the picker and

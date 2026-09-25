@@ -127,6 +127,31 @@ export interface MapaElementoDeletePayload {
 export type MapaPayload = MapaElementoUpsertPayload | MapaElementoDeletePayload;
 
 /**
+ * Traffic-light literal as the backend speaks it (Spanish). `types/domain.ts`
+ * normalizes the VALUES to English, so this is the translation edge shared by
+ * the REST read (`GET .../inventario`) and the realtime push.
+ */
+export type SemaforoWire = 'ROJO' | 'AMARILLO' | 'VERDE';
+
+/**
+ * Inventory item published on /topic/suministros. It is the SAME projection the
+ * backend returns over REST (`ItemInventarioDto`): identity, name, available and
+ * required stock, and the traffic light. Consumers UPSERT by `id`; an unknown id
+ * is created, a known one is merged in place.
+ *
+ * There is no envelope: the backend publishes the bare projection
+ * (`InventarioPushListener` calls `pushPort.publicar(DESTINO_SUMINISTROS, item)`).
+ */
+export interface ItemInventarioPayload {
+  id: string;
+  centroAcopioId: string;
+  nombre: string;
+  disponible: number;
+  requerido: number;
+  semaforo: SemaforoWire;
+}
+
+/**
  * Request lifecycle on /queue/solicitudes.
  *
  * C2 (domain rule): a request is BROADCAST to N units and the FIRST accept wins,
