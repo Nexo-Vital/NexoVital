@@ -8,6 +8,7 @@ import { CENTER_LEVEL_STYLE, NOT_DECLARED_CENTER_STYLE } from '@/features/ciudad
 import { useDonationStore } from '@/features/donaciones/donation';
 import { useEmergencyStore } from '@/features/emergencias/emergency-store';
 import { useFleetStore } from '@/features/flota/fleet-store';
+import { MAP_FILTER_STORAGE_KEY } from '@/features/mapa/map-filter';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
 import { MOCK_AMBULANCIAS, MOCK_CENTROS_AYUDA } from '@/mocks/fixtures';
 import { DESTINATIONS, type SolicitudCancelPayload } from '@/shared/realtime';
@@ -19,12 +20,14 @@ import type {
   CentroAyuda,
   InventarioItem,
   TrafficLight,
+  Zona,
 } from '@/types/domain';
 import CitizenMapPage from './CitizenMapPage';
 
 // Leaflet needs a real layout engine; stub the map so the citizen chrome is
 // tested in isolation. The stub echoes the props this unit wires (the selected
-// unit, its label override and the connector) so the c4 map path stays asserted.
+// unit, its label override, the connector AND the three filtered layers) so both
+// the c4 map path and the layer filter stay asserted.
 vi.mock('@/features/mapa/MapCanvas', () => ({
   MapCanvas: (props: {
     selectedAmbulanceId?: string | null;
@@ -33,6 +36,9 @@ vi.mock('@/features/mapa/MapCanvas', () => ({
     focus?: { lat: number; lng: number } | null;
     ambulanceLabels?: Record<string, string>;
     requestConnector?: { dashed?: boolean } | null;
+    ambulancias?: { id: string }[];
+    centros?: { id: string }[];
+    zonas?: { id: string }[];
   }) => (
     <div
       data-testid="map-canvas"
@@ -43,9 +49,16 @@ vi.mock('@/features/mapa/MapCanvas', () => ({
       data-labels={JSON.stringify(props.ambulanceLabels ?? {})}
       data-connector={props.requestConnector ? 'yes' : 'no'}
       data-connector-dashed={props.requestConnector?.dashed === false ? 'no' : 'yes'}
+      data-ambulancias={JSON.stringify((props.ambulancias ?? []).map((item) => item.id))}
+      data-centros={JSON.stringify((props.centros ?? []).map((item) => item.id))}
+      data-zonas={JSON.stringify((props.zonas ?? []).map((item) => item.id))}
     />
   ),
 }));
+
+// Zones are served by the map-data source (mocked below). A `vi.hoisted` holder
+// lets a case push a zone in before rendering without re-mocking the module.
+const { mockMapZonas } = vi.hoisted(() => ({ mockMapZonas: [] as Zona[] }));
 
 // The map data source is the only network path in these screens; it is stubbed
 // to the injected fixtures so the mocked suite keeps testing the pages without
@@ -53,7 +66,7 @@ vi.mock('@/features/mapa/MapCanvas', () => ({
 vi.mock('@/features/mapa/use-map-data', () => ({
   useMapData: (fallbackCentros: unknown[]) => ({
     centros: fallbackCentros,
-    zonas: [],
+    zonas: mockMapZonas,
     loading: false,
     error: null,
   }),
@@ -107,6 +120,20 @@ function amb(id: string, estado: AmbulanceState, latOffset = 0.01): Ambulancia {
   };
 }
 
+/** A zone served by the map-data source (needs a contour to be paint-ready). */
+function zona(id: string, lat: number, lng: number): Zona {
+  return {
+    id,
+    nombre: `Zona ${id}`,
+    ubicacion: { lat, lng },
+    contorno: [
+      { lat, lng },
+      { lat: lat + 0.01, lng },
+      { lat, lng: lng + 0.01 },
+    ],
+  };
+}
+
 /** Three available units nearest to Suba, plus the two occupied ones. */
 const SEARCH_FLEET = [
   amb('A-07', 'AVAILABLE', 0.002),
@@ -150,6 +177,9 @@ describe('CitizenMapPage', () => {
     // The Toaster is mounted in the shells, not in this page, so the toast stack
     // is asserted through the store: reset it so a case cannot leak into another.
     useToastStore.setState({ toasts: [] });
+    // The map layer filter is persisted; clear it so a case cannot leak either.
+    window.localStorage.removeItem(MAP_FILTER_STORAGE_KEY);
+    mockMapZonas.length = 0;
   });
 
   it('renders the header, the map, the live legend and the three rail blocks', () => {
@@ -1239,5 +1269,113 @@ describe('CitizenMapPage', () => {
         configurable: true,
       });
     }
+  });
+
+  /** Layer ids as the MapCanvas mock received them (`data-<layer>` attribute). */
+  function mapLayerIds(attribute: 'data-zonas' | 'data-centros' | 'data-ambulancias'): string[] {
+    const raw = screen.getByTestId('map-canvas').getAttribute(attribute);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  }
+
+  it('draws the three map layers by default and shows every toggle pressed', () => {
+    mockMapZonas.push(zona('Z-1', 4.72, -74.05));
+    renderPage({
+      ambulancias: [amb('AMB-1', 'AVAILABLE')],
+      centrosAyuda: [centro('CA-1', 'GREEN', 4.728, -74.078)],
+    });
+
+    // The current behaviour is preserved: nothing is filtered out of the box.
+    expect(mapLayerIds('data-ambulancias')).toEqual(['AMB-1']);
+    expect(mapLayerIds('data-centros')).toEqual(['CA-1']);
+    expect(mapLayerIds('data-zonas')).toEqual(['Z-1']);
+
+    expect(screen.getByRole('button', { name: 'Zonas (1)' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Centros (1)' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Ambulancias (1)' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  it('AC1: isolates the ambulances on the map when the other two layers are off', () => {
+    mockMapZonas.push(zona('Z-1', 4.72, -74.05));
+    renderPage({
+      ambulancias: [amb('AMB-1', 'AVAILABLE')],
+      centrosAyuda: [centro('CA-1', 'GREEN', 4.728, -74.078)],
+    });
+
+    // "Solo ambulancias": centers and zones are turned off, one toggle each.
+    fireEvent.click(screen.getByRole('button', { name: 'Zonas (1)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Centros (1)' }));
+
+    expect(screen.getByRole('button', { name: 'Zonas (1)' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    expect(screen.getByRole('button', { name: 'Centros (1)' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    // The map receives the ambulances and NEITHER zone nor center.
+    expect(mapLayerIds('data-ambulancias')).toEqual(['AMB-1']);
+    expect(mapLayerIds('data-centros')).toEqual([]);
+    expect(mapLayerIds('data-zonas')).toEqual([]);
+  });
+
+  it('AC2: keeps a hidden layer event in the store and paints it once the filter is lifted', () => {
+    const port = new FakeRealtimePort();
+    renderPage({ port, ambulancias: [amb('AMB-1', 'AVAILABLE')] });
+
+    // Hide the ambulance layer: the map is handed no unit at all...
+    fireEvent.click(screen.getByRole('button', { name: 'Ambulancias (1)' }));
+    expect(mapLayerIds('data-ambulancias')).toEqual([]);
+
+    // ...but a realtime event for that hidden layer still reaches the store.
+    act(() => {
+      port.emit(DESTINATIONS.flota, {
+        type: 'fleet.upsert',
+        unit: amb('AMB-9', 'AVAILABLE', 0.02),
+      });
+    });
+
+    // The alert is NOT lost: the store kept it (count grew to 2) while the map
+    // still draws nothing for the hidden layer.
+    expect(useFleetStore.getState().units.map((unit) => unit.id)).toContain('AMB-9');
+    expect(screen.getByRole('button', { name: 'Ambulancias (2)' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    expect(mapLayerIds('data-ambulancias')).toEqual([]);
+
+    // Lifting the filter reveals the unit that arrived while it was hidden.
+    fireEvent.click(screen.getByRole('button', { name: 'Ambulancias (2)' }));
+    expect(mapLayerIds('data-ambulancias')).toEqual(['AMB-1', 'AMB-9']);
+  });
+
+  it('persists the filter choice so a remount re-reads it', () => {
+    const view = renderPage({ ambulancias: [amb('AMB-1', 'AVAILABLE')] });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ambulancias (1)' }));
+    expect(screen.getByRole('button', { name: 'Ambulancias (1)' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    expect(mapLayerIds('data-ambulancias')).toEqual([]);
+
+    view.unmount();
+    renderPage({ ambulancias: [amb('AMB-1', 'AVAILABLE')] });
+
+    // The choice survived the remount: still off, still nothing drawn.
+    expect(screen.getByRole('button', { name: 'Ambulancias (1)' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    expect(mapLayerIds('data-ambulancias')).toEqual([]);
   });
 });

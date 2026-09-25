@@ -41,6 +41,15 @@ import { useFleetStore } from '@/features/flota/fleet-store';
 import { useFleetSync } from '@/features/flota/use-fleet-sync';
 import { useDeviceLocation } from '@/features/geolocalizacion/use-device-location';
 import { MapCanvas, type RequestConnector, type SelfMarker } from '@/features/mapa/MapCanvas';
+import {
+  applyMapFilter,
+  countMapLayers,
+  type MapFilterLayer,
+  type MapFilterState,
+  readPersistedMapFilter,
+  toggleMapFilter,
+  writePersistedMapFilter,
+} from '@/features/mapa/map-filter';
 import { useMapData } from '@/features/mapa/use-map-data';
 import { centroSemaforo } from '@/features/recursos/traffic-light';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
@@ -140,6 +149,31 @@ export default function CitizenMapPage({
   const centros = useMemo(
     () => withDonations(mapa.centros, updatedCentros),
     [mapa.centros, updatedCentros],
+  );
+
+  // Map layer filter (FD-1/FD-2/FD-4). The choice lives HERE, is applied ONLY to
+  // the props MapCanvas receives, and never touches a store: an event that lands
+  // while its layer is hidden stays in the store and paints as soon as the layer
+  // is toggled back on (AC2). It is persisted so a refresh does not reset it,
+  // following the same plain-localStorage pattern `layers-store` already uses.
+  const [mapFilter, setMapFilter] = useState<MapFilterState>(readPersistedMapFilter);
+  const mapLayers = useMemo(
+    () => ({ zonas: mapa.zonas, centros, ambulancias: fleet }),
+    [mapa.zonas, centros, fleet],
+  );
+  // What the map is allowed to paint: hidden layers arrive as empty lists.
+  const visibleMapLayers = useMemo(
+    () => applyMapFilter(mapFilter, mapLayers),
+    [mapFilter, mapLayers],
+  );
+  const mapFilterCounts = useMemo(() => countMapLayers(mapLayers), [mapLayers]);
+  const handleToggleFilter = useCallback(
+    (layer: MapFilterLayer) => {
+      const next = toggleMapFilter(mapFilter, layer);
+      writePersistedMapFilter(next);
+      setMapFilter(next);
+    },
+    [mapFilter],
   );
 
   // Center detail (mockup c7/c8/c9). It only takes over while no ambulance
@@ -408,10 +442,10 @@ export default function CitizenMapPage({
         className="relative h-[52dvh] min-h-[300px] shrink-0 overflow-hidden rounded-nv-lg shadow-nv-card lg:h-auto lg:min-h-0"
       >
         <MapCanvas
-          ambulancias={fleet}
+          ambulancias={visibleMapLayers.ambulancias}
           emergencias={NO_EMERGENCIES}
-          centros={centros}
-          zonas={mapa.zonas}
+          centros={visibleMapLayers.centros}
+          zonas={visibleMapLayers.zonas}
           center={selfPosition}
           focus={showDetail && detailCentro ? detailCentro.ubicacion : null}
           self={self}
@@ -493,6 +527,9 @@ export default function CitizenMapPage({
           donationEnabled={donable.length > 0}
           onReport={() => setReportOpen(true)}
           onSelectCentro={openCenterDetail}
+          filter={mapFilter}
+          filterCounts={mapFilterCounts}
+          onToggleFilter={handleToggleFilter}
         />
       )}
 

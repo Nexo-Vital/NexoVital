@@ -1,4 +1,10 @@
-﻿import { Ambulance, HandHeart, Siren, User, Warehouse } from 'lucide-react';
+﻿import { Ambulance, HandHeart, Layers, Siren, User, Warehouse } from 'lucide-react';
+import {
+  MAP_FILTER_LAYERS,
+  type MapFilterCounts,
+  type MapFilterLayer,
+  type MapFilterState,
+} from '@/features/mapa/map-filter';
 import { cn } from '@/lib/utils';
 import type { CentroAyuda } from '@/types/domain';
 import {
@@ -158,6 +164,70 @@ function AidCenterRow({ centro, onSelect }: { centro: CentroAyuda; onSelect: () 
   );
 }
 
+/** Spanish labels for the map layer toggles (the rail is a citizen surface). */
+const MAP_FILTER_LABELS: Record<MapFilterLayer, string> = {
+  ZONA: 'Zonas',
+  CENTRO: 'Centros',
+  AMBULANCIA: 'Ambulancias',
+};
+
+/**
+ * Map layer filter control (FD-2). Three INDEPENDENT toggles, so the citizen can
+ * isolate a kind ("solo ambulancias" = the other two off) or combine them.
+ *
+ * The control only reports the choice; the page applies it to what the map
+ * paints, so no filtering logic lives here. The controls are never hidden, and
+ * `aria-pressed` carries each toggle's state. The count is the layer's item
+ * total (not the currently painted subset), so the filter is never opaque even
+ * while a layer is off.
+ */
+function MapFilterControl({
+  filter,
+  counts,
+  onToggle,
+}: {
+  filter: MapFilterState;
+  counts: MapFilterCounts;
+  onToggle: (layer: MapFilterLayer) => void;
+}) {
+  return (
+    <section
+      aria-label="Capas del mapa"
+      className="flex flex-col gap-2.5 rounded-nv-lg bg-white p-4 shadow-nv-card"
+    >
+      <p className="flex items-center gap-1.5 font-bold text-[11px] text-nv-navy-400 uppercase tracking-[0.1em]">
+        <Layers className="size-3.5" aria-hidden />
+        Capas del mapa
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {MAP_FILTER_LAYERS.map((layer) => {
+          const visible = filter[layer];
+          return (
+            <button
+              key={layer}
+              type="button"
+              aria-pressed={visible}
+              aria-label={`${MAP_FILTER_LABELS[layer]} (${counts[layer]})`}
+              onClick={() => onToggle(layer)}
+              className={cn(
+                'inline-flex items-center gap-2 rounded-nv-pill border px-3 py-1.5 font-semibold text-xs',
+                visible
+                  ? 'border-nv-teal bg-nv-teal/15 text-nv-navy'
+                  : 'border-nv-line bg-white text-nv-navy-400',
+              )}
+            >
+              {MAP_FILTER_LABELS[layer]}
+              <span className="tabular-nums" aria-hidden>
+                {counts[layer]}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 interface CitizenRailProps {
   nearby: NearbyAmbulance[];
   centros: CentroAyuda[];
@@ -173,6 +243,12 @@ interface CitizenRailProps {
   onReport: () => void;
   /** Opens the selected center's detail (mockup `c7`). */
   onSelectCentro: (id: string) => void;
+  /** Current map layer filter; owned by the page, shown by the control. */
+  filter: MapFilterState;
+  /** Per-layer item counts rendered next to each toggle. */
+  filterCounts: MapFilterCounts;
+  /** Flips one map layer; the page applies it to what the map paints. */
+  onToggleFilter: (layer: MapFilterLayer) => void;
 }
 
 /** Citizen rail: role actions, then the units and centers nearest to the map. */
@@ -185,6 +261,9 @@ export function CitizenRail({
   donationEnabled,
   onReport,
   onSelectCentro,
+  filter,
+  filterCounts,
+  onToggleFilter,
 }: CitizenRailProps) {
   return (
     <aside
@@ -198,6 +277,8 @@ export function CitizenRail({
         donationEnabled={donationEnabled}
         onReport={onReport}
       />
+
+      <MapFilterControl filter={filter} counts={filterCounts} onToggle={onToggleFilter} />
 
       <section
         aria-label="Ambulancias cerca de ti"
