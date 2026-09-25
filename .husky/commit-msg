@@ -7,4 +7,4 @@ case "$msg" in
   /*|[A-Za-z]:*) ;;
   *) msg="$(git rev-parse --show-toplevel)/$msg" ;;
 esac
-npx commitlint --edit "$msg"
+commitlint --edit "$msg"

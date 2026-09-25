@@ -4,7 +4,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Toaster } from '@/components/ui/toast';
 import { useChannelStatus } from '@/features/observabilidad/use-channel-status';
-import { ThemeToggle } from '@/features/tema/ThemeToggle';
 import { hasRoleHome } from '@/features/usuarios/role-home';
 import { useSessionStore } from '@/features/usuarios/session';
 import { useClock } from '@/hooks/use-clock';
@@ -115,7 +114,6 @@ export function AppShell() {
           <span className="tabular whitespace-nowrap text-muted-foreground text-xs">
             {formatClock(now)}
           </span>
-          <ThemeToggle />
           <Button
             type="button"
             variant="ghost"

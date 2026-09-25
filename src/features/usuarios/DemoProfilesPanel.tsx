@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight, Users } from 'lucide-react';
-import { type ReactNode, useId, useState } from 'react';
+import { useId, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { DEMO_USERS, type DemoUser } from './session';
 
@@ -37,10 +37,10 @@ const MVP_ROLES: ReadonlySet<DemoUser['rol']> = new Set(['CIUDADANO', 'CONDUCTOR
 const PROFILE_GROUPS = groupByRole(DEMO_USERS.filter((profile) => MVP_ROLES.has(profile.rol)));
 
 const ROW_CLASS =
-  'flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50';
+  'flex w-full flex-col gap-0.5 rounded-nv-md px-2 py-1.5 text-left transition-colors hover:bg-nv-mint focus-visible:ring-2 focus-visible:ring-nv-teal disabled:pointer-events-none disabled:opacity-50';
 
 const TOGGLE_CLASS =
-  'flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50';
+  'flex min-w-0 flex-1 items-center gap-1.5 rounded-nv-md px-2 py-1.5 text-left transition-colors hover:bg-nv-mint focus-visible:ring-2 focus-visible:ring-nv-teal disabled:pointer-events-none disabled:opacity-50';
 
 /** One selectable profile: role, email and what the account does. */
 function ProfileRow({
@@ -60,9 +60,9 @@ function ProfileRow({
       onClick={() => onSelect(profile)}
       className={ROW_CLASS}
     >
-      <span className="font-medium text-xs">{profile.label}</span>
-      <span className="tabular text-[11px] text-muted-foreground">{profile.email}</span>
-      <span className="text-[11px] text-muted-foreground">{profile.descripcion}</span>
+      <span className="font-medium text-xs text-nv-navy">{profile.label}</span>
+      <span className="tabular text-[11px] text-nv-navy-400">{profile.email}</span>
+      <span className="text-[11px] text-nv-navy-400">{profile.descripcion}</span>
     </button>
   );
 }
@@ -72,8 +72,6 @@ interface DemoProfilesPanelProps {
   disabled?: boolean;
   /** True while the typewriter is filling the form for the selected profile. */
   busy?: boolean;
-  /** Extra control rendered next to the collapse button (the theme toggle). */
-  headerAction?: ReactNode;
   /** Selecting a profile only fills the form; the caller still posts /api/v1/sesiones. */
   onSelect: (profile: DemoUser) => void;
 }
@@ -86,7 +84,6 @@ interface DemoProfilesPanelProps {
 export function DemoProfilesPanel({
   disabled = false,
   busy = false,
-  headerAction,
   onSelect,
 }: DemoProfilesPanelProps) {
   const [open, setOpen] = useState(true);
@@ -100,7 +97,7 @@ export function DemoProfilesPanel({
   return (
     <div
       aria-busy={busy}
-      className="w-[19rem] max-w-[calc(100vw-1.5rem)] rounded-lg border border-border bg-card text-card-foreground shadow-sm"
+      className="w-[19rem] max-w-[calc(100vw-1.5rem)] rounded-nv-lg border border-nv-line bg-white text-nv-navy shadow-nv-card"
     >
       <div className="flex items-center gap-0.5 p-1">
         <button
@@ -110,28 +107,27 @@ export function DemoProfilesPanel({
           onClick={() => setOpen((current) => !current)}
           className={TOGGLE_CLASS}
         >
-          <Users className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-          <span className="nv-label truncate text-muted-foreground">Perfiles demo</span>
+          <Users className="size-3.5 shrink-0 text-nv-navy-400" aria-hidden />
+          <span className="nv-label truncate text-nv-navy-400">Perfiles demo</span>
           {busy && (
-            <span role="status" className="truncate text-[10px] text-muted-foreground">
+            <span role="status" className="truncate text-[10px] text-nv-navy-400">
               Rellenando…
             </span>
           )}
           <ChevronDown
             aria-hidden
             className={cn(
-              'ml-auto size-3.5 shrink-0 text-muted-foreground transition-transform',
+              'ml-auto size-3.5 shrink-0 text-nv-navy-400 transition-transform',
               open && 'rotate-180',
             )}
           />
         </button>
-        {headerAction}
       </div>
 
       {open && (
         <div
           id={bodyId}
-          className="flex max-h-[min(62dvh,28rem)] flex-col gap-0.5 overflow-y-auto border-border border-t p-1"
+          className="flex max-h-[min(62dvh,28rem)] flex-col gap-0.5 overflow-y-auto border-nv-line border-t p-1"
         >
           {PROFILE_GROUPS.map((group) => {
             const [first] = group.profiles;
@@ -161,12 +157,14 @@ export function DemoProfilesPanel({
                     <ChevronRight
                       aria-hidden
                       className={cn(
-                        'size-3.5 shrink-0 text-muted-foreground transition-transform',
+                        'size-3.5 shrink-0 text-nv-navy-400 transition-transform',
                         groupOpen && 'rotate-90',
                       )}
                     />
-                    <span className="font-medium text-xs">{first.groupLabel ?? first.label}</span>
-                    <span className="tabular text-[11px] text-muted-foreground">
+                    <span className="font-medium text-xs text-nv-navy">
+                      {first.groupLabel ?? first.label}
+                    </span>
+                    <span className="tabular text-[11px] text-nv-navy-400">
                       ({group.profiles.length})
                     </span>
                   </span>

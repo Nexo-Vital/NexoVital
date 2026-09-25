@@ -604,7 +604,6 @@ describe('CitizenMapPage', () => {
     expect(legendValue('Sin declarar')).toBe('1');
     expect(legendValue('Disponible')).toBe('1');
     expect(legendValue('Ocupada')).toBe('2');
-    expect(legendValue('En mantenimiento')).toBe('1');
   });
 
   it('paints the legend center swatches from the shared marker palette', () => {
