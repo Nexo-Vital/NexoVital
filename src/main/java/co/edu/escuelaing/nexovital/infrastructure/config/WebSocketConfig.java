@@ -38,6 +38,14 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
         registry.enableSimpleBroker("/topic", "/queue");
+        // Preserve the PUBLISH order when delivering to every session. Without this
+        // the simple broker keeps the default `false` and its outbound channel is
+        // asynchronous per thread, so two events published in order can reach a
+        // client INVERTED. Con actualizaciones concurrentes el cliente se queda con
+        // el estado PERDEDOR mientras la base tiene el GANADOR, que es justo lo que
+        // prohibe "un unico estado final para todos" (EP-02.F1.US4, AC2).
+        // Reproducido por EmergenciaConvergenciaTest antes de este cambio.
+        registry.setPreservePublishOrder(true);
         registry.setApplicationDestinationPrefixes("/app");
     }
 
