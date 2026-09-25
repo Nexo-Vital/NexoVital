@@ -2,6 +2,8 @@ package co.edu.escuelaing.nexovital.infrastructure.config;
 
 import co.edu.escuelaing.nexovital.mapa.domain.model.Zona;
 import co.edu.escuelaing.nexovital.mapa.domain.port.out.ZonaRepository;
+import co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.out.ItemInventarioJpaEntity;
+import co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.out.ItemInventarioJpaRepository;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.Organizacion;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.RolUsuario;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.TipoOrganizacion;
@@ -17,8 +19,11 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Siembra el catálogo de usuarios y organizaciones precargados de demostración
@@ -53,6 +58,12 @@ public class DataSeeder implements CommandLineRunner {
     }
 
     private record OrganizacionSemilla(String nombre, TipoOrganizacion tipo, String zonaId, double lat, double lng) {
+    }
+
+    private record ItemInventarioSemilla(String nombre, int disponible, int requerido, String unidad, String unitDetail) {
+    }
+
+    private record InventarioSemilla(String centroNombre, List<ItemInventarioSemilla> items) {
     }
 
     private record ZonaSemilla(String id, String nombre, double lat, double lng, List<Ubicacion> contorno) {
@@ -98,6 +109,33 @@ public class DataSeeder implements CommandLineRunner {
             new OrganizacionSemilla("Acopio Suba Norte", TipoOrganizacion.CENTRO_ACOPIO, "Suba", 4.742d, -74.09d),
             new OrganizacionSemilla("Acopio La Gaitana", TipoOrganizacion.CENTRO_ACOPIO, "Suba", 4.72d, -74.05d),
             new OrganizacionSemilla("Acopio Tibabuyes", TipoOrganizacion.CENTRO_ACOPIO, "Suba", 4.73d, -74.1d));
+
+    /**
+     * Inventario de demostración de los 3 centros de acopio, LITERAL de los
+     * fixtures del front ({@code Front_NexoVital/src/mocks/fixtures.ts},
+     * {@code MOCK_CENTROS_AYUDA}): mismas cantidades que el mockup para que
+     * c7/c8 pinten el mismo semáforo contra el back real. El techo del 80 % es
+     * inclusivo en el dominio ({@code ItemInventario.semaforo()}), a diferencia
+     * del front, que usa {@code > 0.8}; es el borde conocido y no se cambia acá.
+     *
+     * <p>Los ids de item son deterministas (derivados del centro y el nombre, ver
+     * {@link #idDeItem}) para poder sembrar de forma idempotente sin una clave
+     * natural en la tabla.
+     */
+    private static final List<InventarioSemilla> CATALOGO_INVENTARIO = List.of(
+            new InventarioSemilla("Acopio Suba Norte", List.of(
+                    new ItemInventarioSemilla("Agua potable", 12, 60, "bidones", "bidones de 5 L"),
+                    new ItemInventarioSemilla("Kits de higiene", 18, 40, "kits", null),
+                    new ItemInventarioSemilla("Medicamentos básicos", 32, 35, "cajas", null),
+                    new ItemInventarioSemilla("Cobijas", 44, 50, "unidades", null))),
+            new InventarioSemilla("Acopio La Gaitana", List.of(
+                    new ItemInventarioSemilla("Alimentos", 90, 200, null, null),
+                    new ItemInventarioSemilla("Agua potable", 300, 300, "bidones", null),
+                    new ItemInventarioSemilla("Cobijas", 40, 0, "unidades", null))),
+            new InventarioSemilla("Acopio Tibabuyes", List.of(
+                    new ItemInventarioSemilla("Agua potable", 500, 500, "bidones", null),
+                    new ItemInventarioSemilla("Alimentos", 360, 400, null, null),
+                    new ItemInventarioSemilla("Cobijas", 200, 0, "unidades", null))));
 
     /**
      * Las zonas de Bogotá que el front ya usa como {@code zonaId} en sus
@@ -167,15 +205,18 @@ public class DataSeeder implements CommandLineRunner {
     private final OrganizacionRepository organizacionRepository;
     private final ZonaRepository zonaRepository;
     private final PasswordEncoderPort passwordEncoderPort;
+    private final ItemInventarioJpaRepository itemInventarioJpaRepository;
 
     public DataSeeder(UsuarioRepository usuarioRepository,
                       OrganizacionRepository organizacionRepository,
                       ZonaRepository zonaRepository,
-                      PasswordEncoderPort passwordEncoderPort) {
+                      PasswordEncoderPort passwordEncoderPort,
+                      ItemInventarioJpaRepository itemInventarioJpaRepository) {
         this.usuarioRepository = usuarioRepository;
         this.organizacionRepository = organizacionRepository;
         this.zonaRepository = zonaRepository;
         this.passwordEncoderPort = passwordEncoderPort;
+        this.itemInventarioJpaRepository = itemInventarioJpaRepository;
     }
 
     @Override
@@ -183,6 +224,7 @@ public class DataSeeder implements CommandLineRunner {
         sembrarUsuarios();
         sembrarOrganizaciones();
         sembrarZonas();
+        sembrarInventario();
     }
 
     private void sembrarUsuarios() {
@@ -249,5 +291,47 @@ public class DataSeeder implements CommandLineRunner {
         }
         LOG.info("Seed de zonas demo finalizado: {} nuevas de {} en el catálogo",
                 sembradas, CATALOGO_ZONAS.size());
+    }
+
+    /**
+     * Idempotente por id de item: el id se deriva del centro y el nombre, así
+     * que reiniciar la aplicación no duplica filas ni falla. Los centros se
+     * resuelven por nombre contra las organizaciones ya sembradas.
+     */
+    private void sembrarInventario() {
+        Map<String, UUID> centroPorNombre = organizacionRepository.listar(TipoOrganizacion.CENTRO_ACOPIO).stream()
+                .collect(Collectors.toMap(Organizacion::getNombre, Organizacion::getId));
+
+        int sembrados = 0;
+        for (InventarioSemilla semilla : CATALOGO_INVENTARIO) {
+            UUID centroId = centroPorNombre.get(semilla.centroNombre());
+            if (centroId == null) {
+                LOG.warn("Centro demo no encontrado, seed de inventario omitido: {}", semilla.centroNombre());
+                continue;
+            }
+            for (ItemInventarioSemilla item : semilla.items()) {
+                UUID itemId = idDeItem(centroId, item.nombre());
+                if (itemInventarioJpaRepository.existsById(itemId)) {
+                    continue;
+                }
+                itemInventarioJpaRepository.save(new ItemInventarioJpaEntity(
+                        itemId,
+                        centroId,
+                        item.nombre(),
+                        item.disponible(),
+                        item.requerido(),
+                        item.unidad(),
+                        item.unitDetail()));
+                sembrados++;
+                LOG.info("Item de inventario demo sembrado: {} / {}", item.nombre(), semilla.centroNombre());
+            }
+        }
+        LOG.info("Seed de inventario demo finalizado: {} nuevos de {} centros en el catálogo",
+                sembrados, CATALOGO_INVENTARIO.size());
+    }
+
+    /** Id determinista del item, para que el seed sea idempotente sin clave natural. */
+    private static UUID idDeItem(UUID centroId, String nombre) {
+        return UUID.nameUUIDFromBytes((centroId + ":" + nombre).getBytes(StandardCharsets.UTF_8));
     }
 }

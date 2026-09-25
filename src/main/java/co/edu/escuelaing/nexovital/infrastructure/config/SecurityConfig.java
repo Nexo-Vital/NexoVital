@@ -105,6 +105,19 @@ public class SecurityConfig {
                         // /organizaciones would be denied.
                         .requestMatchers(HttpMethod.POST, "/api/v1/organizaciones")
                                 .hasAuthority("ROLE_ADMIN_PLATAFORMA")
+                        // Inventory of an aid center (EP-03.F1): the citizen sees
+                        // the supplies of the center with their traffic light, so
+                        // every authenticated role may read it. Declared explicitly
+                        // because the chain is fail-closed; without it, GET
+                        // /centros-acopio/{id}/inventario would be denied.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/centros-acopio/*/inventario").authenticated()
+                        // Donación de un insumo (EP-03.F3): el ciudadano acredita
+                        // stock al centro. Cualquier rol autenticado puede donar,
+                        // sin restricción adicional. Declarado explícitamente
+                        // porque la cadena es fail-closed; sin él, POST
+                        // /centros-acopio/{id}/inventario/donacion se denegaría.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/centros-acopio/*/inventario/donacion")
+                                .authenticated()
                         // Fail-closed standard: an operation that is not declared here is
                         // denied, never silently open to every authenticated role. A new
                         // operation must add its own declaration (matcher or
