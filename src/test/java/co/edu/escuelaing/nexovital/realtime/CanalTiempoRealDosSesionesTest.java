@@ -1,6 +1,8 @@
 package co.edu.escuelaing.nexovital.realtime;
 
 import co.edu.escuelaing.nexovital.shared.domain.port.out.PushPort;
+import co.edu.escuelaing.nexovital.usuarios.infrastructure.adapter.out.OrganizacionJpaEntity;
+import co.edu.escuelaing.nexovital.usuarios.infrastructure.adapter.out.OrganizacionJpaRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
@@ -71,9 +73,11 @@ import static org.junit.jupiter.api.Assertions.fail;
  * <p>Cubre los casos que hoy tienen productor real: S1 (dos sesiones reciben un
  * reporte de emergencia real y su latencia es &lt; 1 s), S2/S3 (el CONNECT sin
  * token o con token inválido es rechazado), S4 (un cliente tardío ve el estado
- * por REST) y S5 (el canal entrega a {@code /topic/map.events} usando el
- * {@link PushPort} nuestro). Los casos T2/T3/T7/T8 dependen de productores de
- * elementos de mapa que no existen (riesgo R1) y quedan bloqueados en el ODD.
+ * por REST), S5 (el canal entrega a {@code /topic/map.events} usando el
+ * {@link PushPort} nuestro) y S6 (un productor real, {@code POST
+ * /organizaciones}, entrega el evento de centro a dos sesiones reales: T8). Los
+ * casos T2/T3/T7 dependen de productores de elementos de mapa que no existen
+ * (riesgo R1) y quedan bloqueados en el ODD.
  *
  * <p>Todo timeout es explícito y acotado, y cada cliente se cierra en
  * {@link #cerrarTodo()}: un cliente STOMP sin cerrar cuelga la suite.
@@ -86,11 +90,21 @@ class CanalTiempoRealDosSesionesTest {
     private static final String CIUDADANO_PASSWORD = "ciudadano123";
     private static final String RANGEL = "rangel@nexovital.co";
     private static final String RANGEL_PASSWORD = "rangel123";
+    /** Único rol autorizado a registrar organizaciones (EP-01.F2.US1). */
+    private static final String ADMIN_PLATAFORMA = "admin@nexovital.co";
+    private static final String ADMIN_PLATAFORMA_PASSWORD = "admin123";
 
     /** Destino ya declarado en el contrato para una emergencia nueva. */
     private static final String DESTINO_EMERGENCIAS = "/topic/emergencias";
     /** Destino del mapa declarado en el system-design (diseño US2 D3). */
     private static final String DESTINO_MAPA = "/topic/map.events";
+
+    /**
+     * Prefijo exclusivo de las organizaciones que crea S6. La H2 de test se
+     * comparte entre todos los contextos del JVM ({@code DB_CLOSE_DELAY=-1}), así
+     * que la limpieza borra solo las filas de este test.
+     */
+    private static final String PREFIJO_ORGANIZACION_S6 = "Prueba S6 dos sesiones ";
 
     /** Tope de espera para conexión, suscripción y frames: acotado en segundos. */
     private static final long TIMEOUT_SEGUNDOS = 10;
@@ -112,6 +126,10 @@ class CanalTiempoRealDosSesionesTest {
 
     @Autowired
     private PushPort pushPort;
+
+    /** Repositorio real del módulo usuarios, solo para limpiar la fila de S6. */
+    @Autowired
+    private OrganizacionJpaRepository organizacionJpaRepository;
 
     /**
      * Planificador del cliente STOMP (heartbeats y timeouts de receipt). Es
@@ -137,6 +155,19 @@ class CanalTiempoRealDosSesionesTest {
         }
         sesiones.clear();
         planificador.shutdown();
+    }
+
+    /**
+     * Borra las organizaciones que S6 creó por el POST real. Sin esto, la fila
+     * quedaría en la H2 compartida y rompería las aserciones de conteo de otros
+     * tests (p. ej. {@code OrganizacionesHttpTest.t6}).
+     */
+    @AfterEach
+    void limpiarOrganizacionesDeS6() {
+        List<OrganizacionJpaEntity> aBorrar = organizacionJpaRepository.findAll().stream()
+                .filter(entidad -> entidad.getNombre().startsWith(PREFIJO_ORGANIZACION_S6))
+                .toList();
+        organizacionJpaRepository.deleteAll(aBorrar);
     }
 
     // -----------------------------------------------------------------------
@@ -267,6 +298,41 @@ class CanalTiempoRealDosSesionesTest {
     }
 
     // -----------------------------------------------------------------------
+    // S6 — Un productor real entrega el evento de centro a dos sesiones (T8)
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("S6: el POST real de una organización llega a /topic/map.events como CENTRO a las dos sesiones (T8)")
+    void s6_elEventoDeCentroRealLlegaALasDosSesiones() throws Exception {
+        // A diferencia de S5, acá el evento NO lo fabrica la prueba: nace en el
+        // endpoint real POST /organizaciones (EP-01.F2.US1), que publica por el
+        // PushPort DESPUÉS del commit. Es el camino de punta a punta de un
+        // elemento del mapa: producción + serialización + broker + dos clientes.
+        // Dos usuarios distintos, como pide la historia ("dos usuarios A y B"):
+        // el admin de plataforma que produce y rangel como segundo receptor.
+        String tokenAdmin = iniciarSesion(ADMIN_PLATAFORMA, ADMIN_PLATAFORMA_PASSWORD);
+        String tokenRangel = iniciarSesion(RANGEL, RANGEL_PASSWORD);
+
+        SesionStomp sesionAdmin = abrirSesion(tokenAdmin, DESTINO_MAPA);
+        SesionStomp sesionRangel = abrirSesion(tokenRangel, DESTINO_MAPA);
+        confirmarSuscripciones(DESTINO_MAPA, sesionAdmin, sesionRangel);
+
+        String nombre = PREFIJO_ORGANIZACION_S6 + UUID.randomUUID();
+
+        // El disparo: el endpoint real (transacción real + AFTER_COMMIT real).
+        ResponseEntity<String> respuesta = registrarOrganizacion(tokenAdmin, nombre);
+        assertEquals(HttpStatus.CREATED, respuesta.getStatusCode(),
+                "el POST real de la organización debe responder 201");
+        String idCentro = objectMapper.readTree(respuesta.getBody()).get("id").asText();
+
+        // AMBAS sesiones reciben el evento del centro recién creado.
+        JsonNode frameAdmin = frameConElementoId(sesionAdmin, idCentro, "la sesión del admin");
+        JsonNode frameRangel = frameConElementoId(sesionRangel, idCentro, "la sesión de rangel");
+        assertElementoDeCentro(frameAdmin, idCentro, nombre, "la sesión del admin");
+        assertElementoDeCentro(frameRangel, idCentro, nombre, "la sesión de rangel");
+    }
+
+    // -----------------------------------------------------------------------
     // Infraestructura de prueba
     // -----------------------------------------------------------------------
 
@@ -365,6 +431,20 @@ class CanalTiempoRealDosSesionesTest {
                 "/api/v1/emergencias", new HttpEntity<>(cuerpo, headers), String.class);
     }
 
+    /** POST real de una organización: el productor de S6 (EP-01.F2.US1). */
+    private ResponseEntity<String> registrarOrganizacion(String token, String nombre) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setBearerAuth(token);
+        Map<String, Object> cuerpo = Map.of(
+                "nombre", nombre,
+                "tipo", "CENTRO_ACOPIO",
+                "ubicacion", Map.of("lat", SUBA_LAT, "lng", SUBA_LNG),
+                "zonaId", "Suba");
+        return restTemplate.postForEntity(
+                "/api/v1/organizaciones", new HttpEntity<>(cuerpo, headers), String.class);
+    }
+
     /**
      * Espera y devuelve el frame cuyo {@code id} coincide; descarta cualquier
      * otro frame que hubiera quedado en la cola. Es determinista porque en S1 el
@@ -383,6 +463,48 @@ class CanalTiempoRealDosSesionesTest {
             }
         }
         return null;
+    }
+
+    /**
+     * Espera el frame cuyo {@code elemento.id} sea el del centro creado; descarta
+     * cualquier otro frame (por ejemplo, una marca de calentamiento). Es
+     * determinista porque el id es único por corrida.
+     */
+    private JsonNode frameConElementoId(SesionStomp sesion, String id, String descripcionSesion)
+            throws Exception {
+        long limite = System.nanoTime() + TimeUnit.SECONDS.toNanos(TIMEOUT_SEGUNDOS);
+        while (System.nanoTime() < limite) {
+            JsonNode frame = frameDe(sesion, descripcionSesion);
+            if (frame == null) {
+                return null;
+            }
+            if (frame.hasNonNull("elemento") && id.equals(frame.get("elemento").path("id").asText())) {
+                return frame;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Afirma el sobre de D4 que emite el productor real: {@code {type, elemento}}
+     * con la clase y la identidad del centro. Si el payload viajara plano (sin
+     * {@code elemento}) o el destino no fuera {@code /topic/map.events}, esto no
+     * pasaría.
+     */
+    private static void assertElementoDeCentro(JsonNode frame, String id, String nombre,
+                                               String descripcionSesion) {
+        assertNotNull(frame, "la " + descripcionSesion + " debe recibir el evento del centro");
+        assertEquals("mapa.elemento.upsert", frame.path("type").asText(),
+                "el sobre debe declarar el tipo del evento (D4): " + descripcionSesion);
+        JsonNode elemento = frame.get("elemento");
+        assertNotNull(elemento,
+                "el payload envuelve al elemento en 'elemento' (D4): " + descripcionSesion);
+        assertEquals("CENTRO", elemento.path("clase").asText(),
+                "el elemento debe ser de clase CENTRO: " + descripcionSesion);
+        assertEquals(id, elemento.path("id").asText(),
+                "el id del centro debe ser el que devolvió el 201: " + descripcionSesion);
+        assertEquals(nombre, elemento.path("nombre").asText(),
+                "el nombre debe ser el enviado: " + descripcionSesion);
     }
 
     /** Espera un frame ya deserializado; falla si el timeout vence. */
