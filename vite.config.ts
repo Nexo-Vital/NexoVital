@@ -85,6 +85,17 @@ export default defineConfig({
     maplibreWorkerAssets(),
     ...(useDevHttps ? [basicSsl()] : []),
   ],
+  // sockjs-client resolves to its Node entry (`lib/entry.js`), which reads the
+  // Node-only `global` object at module load:
+  //   if ('_sockjs_onload' in global) { ... }
+  // The browser has no `global`, so the module threw
+  // `ReferenceError: global is not defined` while being evaluated, which killed
+  // the whole module graph and left #root empty (blank page). Vite does not
+  // polyfill Node globals, so we alias the identifier to the browser's
+  // `globalThis`. Applies to dev and to the build.
+  define: {
+    global: 'globalThis',
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
