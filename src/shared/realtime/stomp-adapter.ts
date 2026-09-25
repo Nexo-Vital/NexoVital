@@ -13,12 +13,13 @@ const RECONNECT_DELAY_MS = 5000;
  * never in the handshake URL: the backend `StompAuthChannelInterceptor`
  * validates it there. Lifecycle callbacks are wired by the adapter constructor
  * so an injected client (tests) follows the same path as the real one.
+ *
+ * The token is deliberately NOT captured here: this module is evaluated with
+ * the bundle, before login, so a module-level snapshot would be frozen empty.
+ * The adapter reads it in `beforeConnect`, once per connect attempt.
  */
 const STOMP_CONFIG = {
   webSocketFactory: () => new SockJS(STOMP_ENDPOINT),
-  connectHeaders: {
-    Authorization: `Bearer ${getToken() ?? ''}`,
-  },
   heartbeatIncoming: 10000,
   heartbeatOutgoing: 10000,
   reconnectDelay: RECONNECT_DELAY_MS,
@@ -49,6 +50,13 @@ export class StompRealtimeAdapter implements RealtimePort {
 
   constructor(client?: Client) {
     this.client = client ?? new Client(STOMP_CONFIG);
+    // Se ejecuta en cada intento de conexion y de reconexion: el token se lee
+    // aqui, vigente en ese instante, y no al cargar el modulo. Si no hay token
+    // se omite la cabecera Authorization en lugar de enviar un `Bearer` vacio.
+    this.client.beforeConnect = () => {
+      const token = getToken();
+      this.client.connectHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+    };
     this.client.onConnect = () => {
       this.setState('CONNECTED');
       this.resubscribeAll();

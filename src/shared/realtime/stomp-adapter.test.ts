@@ -15,13 +15,16 @@ class FakeStompClient {
   readonly subscriptions: { destination: string; callback: (message: { body: string }) => void }[] =
     [];
   readonly unsubscribed: string[] = [];
+  connectHeaders: Record<string, string> = {};
   onConnect: (() => void) | undefined;
   onWebSocketClose: (() => void) | undefined;
+  beforeConnect: (() => void) | undefined;
 
   activate(): void {
     this.active = true;
-    // Real `Client.activate()` performs the handshake and fires `onConnect`; the
-    // double fires it synchronously so the adapter's wiring is exercised.
+    // Real `Client.activate()` runs `beforeConnect` then the handshake and
+    // fires `onConnect`; the double mirrors that order synchronously.
+    this.beforeConnect?.();
     this.connected = true;
     this.onConnect?.();
   }
@@ -74,6 +77,30 @@ describe('StompRealtimeAdapter', () => {
   afterEach(() => {
     adapter?.disconnect();
     adapter = null;
+    localStorage.clear();
+  });
+
+  it('reads the token on every connect attempt, never at module load', () => {
+    const { client, adapter: a } = buildAdapter();
+    adapter = a;
+
+    localStorage.setItem('nexovital.token', 'token-uno');
+    a.connect();
+    expect(client.connectHeaders).toEqual({ Authorization: 'Bearer token-uno' });
+
+    a.disconnect();
+    localStorage.setItem('nexovital.token', 'token-dos');
+    a.connect();
+    expect(client.connectHeaders).toEqual({ Authorization: 'Bearer token-dos' });
+  });
+
+  it('omits the Authorization header instead of sending an empty bearer', () => {
+    const { client, adapter: a } = buildAdapter();
+    adapter = a;
+
+    localStorage.removeItem('nexovital.token');
+    a.connect();
+    expect(client.connectHeaders).toEqual({});
   });
 
   it('reports STALE while connecting and CONNECTED once the handshake completes', () => {
