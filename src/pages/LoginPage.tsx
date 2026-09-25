@@ -12,7 +12,6 @@ import {
 } from 'lucide-react';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ThemeToggle, type ThemeToggleLabels } from '@/features/tema/ThemeToggle';
 import { DemoProfilesPanel } from '@/features/usuarios/DemoProfilesPanel';
 import { hasRoleHome, roleWithoutHomeMessage } from '@/features/usuarios/role-home';
 import { type DemoUser, useSessionStore } from '@/features/usuarios/session';
@@ -24,12 +23,6 @@ import { ApiError } from '@/services/apiClient';
  * ~0.5 s, so it reads as someone typing very fast instead of a slow script.
  */
 const TYPE_DELAY_MS = 20;
-
-/** Spanish copy for the shared theme toggle: the login page is in Spanish. */
-const THEME_LABELS: ThemeToggleLabels = {
-  aria: (theme, nextTheme) => `Tema: ${theme}. Cambiar a ${nextTheme}.`,
-  tooltip: (theme, nextTheme) => `Tema ${theme} — cambiar a ${nextTheme}`,
-};
 
 /**
  * Brand-panel copy for the citizen persona, transcribed verbatim from the
@@ -181,12 +174,7 @@ export default function LoginPage() {
         limited to 62dvh, which keeps it scrollable rather than covering the form.
       */}
       <div className="absolute inset-x-0 top-0 z-20 flex justify-end p-3">
-        <DemoProfilesPanel
-          disabled={disabled}
-          busy={filling}
-          headerAction={<ThemeToggle labels={THEME_LABELS} />}
-          onSelect={handleProfileSelect}
-        />
+        <DemoProfilesPanel disabled={disabled} busy={filling} onSelect={handleProfileSelect} />
       </div>
 
       {/*

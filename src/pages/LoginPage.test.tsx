@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { THEME_STORAGE_KEY, useThemeStore } from '@/features/tema/theme-store';
+import { useThemeStore } from '@/features/tema/theme-store';
 import { DEMO_USERS, useSessionStore } from '@/features/usuarios/session';
 import { SESSION_KEY, TOKEN_KEY } from '@/services/apiClient';
 import LoginPage from './LoginPage';
@@ -384,21 +384,6 @@ describe('LoginPage', () => {
     expect(screen.getByLabelText('Usuario o correo')).toHaveValue(DEMO_PROFILE.email);
     expect(screen.getByLabelText('Contraseña')).toHaveValue(DEMO_PROFILE.password);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('switches the login theme through the shared theme store', async () => {
-    useThemeStore.setState({ theme: 'light', resolvedTheme: 'light' });
-    const user = userEvent.setup();
-    renderLogin();
-
-    const toggle = screen.getByRole('button', { name: /Tema: light\. Cambiar a dark\./ });
-    expect(toggle).toHaveAttribute('aria-pressed', 'false');
-
-    await user.click(toggle);
-
-    expect(useThemeStore.getState().theme).toBe('dark');
-    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('dark');
-    expect(document.documentElement.classList.contains('dark')).toBe(true);
   });
 
   it('toggles the password visibility with a Spanish-labeled eye button', async () => {
