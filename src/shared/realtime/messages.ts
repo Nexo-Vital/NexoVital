@@ -100,8 +100,8 @@ export interface MapaElementoPayload {
   ubicacion: Ubicacion;
   /** ZONA only: ordered polygon vertices that draw the zone as an area. */
   contorno?: Ubicacion[];
-  /** CENTRO only: id of the zone the center belongs to. */
-  zonaId?: string;
+  /** CENTRO only: id of the zone the center belongs to. JSON `null` when it has none. */
+  zonaId?: string | null;
   /** CENTRO only: center type as the backend returns it. */
   tipo?: string;
 }

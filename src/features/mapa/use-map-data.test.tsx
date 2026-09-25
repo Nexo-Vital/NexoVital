@@ -274,6 +274,38 @@ describe('useMapData', () => {
     expect(centro?.zonaId).toBe('Z-SUBA');
   });
 
+  /**
+   * The backend can register an organization with no zone (the OpenAPI request
+   * does not require one) and the column is nullable, so the frame carries JSON
+   * `null`, NOT `undefined`. Guarding only `undefined` would let the merge erase
+   * the zone the center already had.
+   */
+  it('keeps the zone of a center when a later upsert sends zonaId null', async () => {
+    fetchMock.mockResolvedValue(mockResponse(200, RESPONSE));
+    const port = new FakeRealtimePort();
+
+    const { result } = renderHook(() => useMapData([], port));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.centros.find((centro) => centro.id === 'ORG-SUBA')?.zonaId).toBe(
+      'Z-SUBA',
+    );
+
+    act(() =>
+      port.emit(DESTINATIONS.mapa, {
+        type: 'mapa.elemento.upsert',
+        elemento: {
+          clase: 'CENTRO',
+          id: 'ORG-SUBA',
+          nombre: 'Acopio Suba Norte',
+          ubicacion: NUEVA_UBICACION,
+          zonaId: null,
+        },
+      }),
+    );
+
+    expect(result.current.centros.find((item) => item.id === 'ORG-SUBA')?.zonaId).toBe('Z-SUBA');
+  });
+
   it('adds a zone from a mapa.elemento.upsert with its contour', async () => {
     fetchMock.mockResolvedValue(mockResponse(200, RESPONSE));
     const port = new FakeRealtimePort();
