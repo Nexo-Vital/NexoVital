@@ -150,6 +150,8 @@ describe('CitizenMapPage against /api/v1/mapa', () => {
     // its markers one tick after the summary chips, so wait for the pin first.
     const subaNorte = await waitFor(() => markerByLabel(container, 'Suba Norte'));
     fireEvent.click(subaNorte);
-    expect(zoneAreas(container)).toHaveLength(1);
+    // The zone polygon lands on the NEXT commit too, so asserting synchronously
+    // made this case flaky under full-suite load (it always passed in isolation).
+    await waitFor(() => expect(zoneAreas(container)).toHaveLength(1));
   });
 });
