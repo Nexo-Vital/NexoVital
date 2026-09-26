@@ -40,6 +40,7 @@ vi.mock('@/features/mapa/MapCanvas', () => ({
     ambulancias?: { id: string }[];
     centros?: { id: string }[];
     zonas?: { id: string }[];
+    emergencias?: { id: string }[];
   }) => (
     <div
       data-testid="map-canvas"
@@ -53,6 +54,7 @@ vi.mock('@/features/mapa/MapCanvas', () => ({
       data-ambulancias={JSON.stringify((props.ambulancias ?? []).map((item) => item.id))}
       data-centros={JSON.stringify((props.centros ?? []).map((item) => item.id))}
       data-zonas={JSON.stringify((props.zonas ?? []).map((item) => item.id))}
+      data-emergencias={JSON.stringify((props.emergencias ?? []).map((item) => item.id))}
     />
   ),
 }));
@@ -1284,10 +1286,59 @@ describe('CitizenMapPage', () => {
   });
 
   /** Layer ids as the MapCanvas mock received them (`data-<layer>` attribute). */
-  function mapLayerIds(attribute: 'data-zonas' | 'data-centros' | 'data-ambulancias'): string[] {
+  function mapLayerIds(
+    attribute: 'data-zonas' | 'data-centros' | 'data-ambulancias' | 'data-emergencias',
+  ): string[] {
     const raw = screen.getByTestId('map-canvas').getAttribute(attribute);
     return raw ? (JSON.parse(raw) as string[]) : [];
   }
+
+  it('AC1: draws an emergency that arrives over the realtime channel on the citizen map', () => {
+    const port = new FakeRealtimePort();
+    renderPage({ port });
+
+    act(() => {
+      port.emit(DESTINATIONS.emergencias, {
+        type: 'emergency.upsert',
+        emergency: {
+          id: 'EMG-RT-1',
+          ubicacion: { lat: 4.73, lng: -74.08 },
+          nivel: 'ALTO',
+          estado: 'REGISTRADA',
+          descripcion: 'Incendio en Suba',
+          zonaId: null,
+          createdAt: '2026-01-01T09:40:00.000Z',
+        },
+      });
+    });
+
+    // The store kept the live alert...
+    expect(useEmergencyStore.getState().items.map((item) => item.id)).toEqual(['EMG-RT-1']);
+    // ...and the citizen map is now handed that same emergency to paint.
+    expect(mapLayerIds('data-emergencias')).toEqual(['EMG-RT-1']);
+  });
+
+  it('AC2: draws the citizen own report on their map right after submitting', async () => {
+    vi.stubEnv('VITE_DEMO_MODE', '1');
+    try {
+      renderPage({ port: new FakeRealtimePort() });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Reportar zona afectada' }));
+      const dialog = screen.getByRole('dialog', { name: 'Reportar zona afectada' });
+      fireEvent.change(within(dialog).getByLabelText('Descripción'), {
+        target: { value: 'Derrumbe en Suba' },
+      });
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Usar el centro del mapa' }));
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Reportar' }));
+
+      // The local upsert lands before publishing, so the report is painted at once.
+      await waitFor(() => expect(useEmergencyStore.getState().items).toHaveLength(1));
+      const reportedId = useEmergencyStore.getState().items[0].id;
+      expect(mapLayerIds('data-emergencias')).toEqual([reportedId]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 
   it('draws the three map layers by default and shows every toggle pressed', () => {
     mockMapZonas.push(zona('Z-1', 4.72, -74.05));

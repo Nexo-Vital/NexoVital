@@ -81,11 +81,12 @@ import type {
 } from '@/types/domain';
 
 /**
- * Stable empty list: the citizen map deliberately draws no emergency pins (the
- * mockup's C.c2 shows only centers, units and "Tú"), and a module-level constant
- * keeps the MapCanvas memo from invalidating on every render.
+ * Emergencies are LIVE ALERTS, not a decorative map layer, so the citizen map
+ * paints them from the store and deliberately keeps them OUTSIDE the layer
+ * filter: `applyMapFilter` only knows `{zonas, centros, ambulancias}` and would
+ * drop them. Hiding an active alert is a safety anti-pattern ("la alerta no se
+ * pierde"), so there is no empty-constant short-circuit here.
  */
-const NO_EMERGENCIES: Emergencia[] = [];
 
 /** Stable empty id list: keeps the MapCanvas memo props stable while idle. */
 const NO_UNIT_IDS: readonly string[] = [];
@@ -140,6 +141,7 @@ export default function CitizenMapPage({
   useCitizenRequestSync(port);
 
   const fleet = useFleetStore((state) => state.units);
+  const emergencies = useEmergencyStore((state) => state.items);
   const location = useDeviceLocation();
   // Zones and centers come from the shared map source: the fixtures with the
   // demo flag on, `GET /api/v1/mapa` with it off (never a silent fallback).
@@ -472,7 +474,7 @@ export default function CitizenMapPage({
       >
         <MapCanvas
           ambulancias={visibleMapLayers.ambulancias}
-          emergencias={NO_EMERGENCIES}
+          emergencias={emergencies}
           centros={visibleMapLayers.centros}
           zonas={visibleMapLayers.zonas}
           center={selfPosition}
