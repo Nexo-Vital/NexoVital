@@ -417,15 +417,22 @@ export function CitizenRequestRail({
       className="flex flex-col gap-4 lg:min-h-0 lg:overflow-y-auto"
     >
       <SearchingPanel notifiedCount={notifiedIds.length} startedAt={startedAt ?? Date.now()} />
-      <NotifiedPanel rows={rows} occupiedIds={occupiedIds} />
+      {/*
+        Cancel sits right under the search status, NOT last. It used to be the
+        final element, so on a phone it fell below the fold and looked missing:
+        the citizen had to scroll past the whole notified list to find the way
+        out of a search they could not stop. The action that ends the wait has
+        to be reachable without scrolling.
+      */}
       <button
         type="button"
         onClick={onCancel}
-        className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md border-[1.5px] border-nv-line bg-white px-5 font-semibold text-nv-navy text-sm"
+        className="inline-flex h-12 w-full shrink-0 items-center justify-center gap-2 rounded-nv-md border-[1.5px] border-nv-line bg-white px-5 font-semibold text-nv-navy text-sm"
       >
         <X className="size-5" aria-hidden />
         Cancelar solicitud
       </button>
+      <NotifiedPanel rows={rows} occupiedIds={occupiedIds} />
     </aside>
   );
 }
