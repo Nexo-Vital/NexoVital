@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CENTER_LEVEL_STYLE } from '@/features/ciudadano/citizen-view';
 import { ALL_LEVELS, DEFAULT_OVERLAYS, useLayersStore } from '@/features/mapa/layers-store';
 import { MapCanvas } from '@/features/mapa/MapCanvas';
+import type { Ruta } from '@/features/mapa/routing-api';
 import { MOCK_AMBULANCIAS, MOCK_CENTROS_AYUDA, MOCK_EMERGENCIAS } from '@/mocks/fixtures';
 import { GLOBALS_CSS, paletteDeclaration } from '@/test/mockup-palette';
 
@@ -295,6 +296,64 @@ describe('MapCanvas smoke', () => {
     expect(markerByLabel(container, 'A-07 · 5 min')).not.toBeNull();
   });
 
+  /** A real OSRM-shaped route, already in Leaflet `[lat, lng]` order. */
+  const RUTA_FIXTURE: Ruta = {
+    geometria: [
+      [4.65, -74.06],
+      [4.64, -74.065],
+      [4.63, -74.07],
+    ],
+    distanciaKm: 4.512,
+    duracionMin: 8.0667,
+  };
+
+  it('AC1: draws the real route layers and drops the straight connector', () => {
+    const { container } = render(
+      <MapCanvas
+        ambulancias={MOCK_AMBULANCIAS}
+        emergencias={MOCK_EMERGENCIAS}
+        requestConnector={{
+          from: { lat: 4.65, lng: -74.06 },
+          to: { lat: 4.63, lng: -74.07 },
+          dashed: false,
+        }}
+        ruta={RUTA_FIXTURE}
+        onSelectAmbulance={() => undefined}
+        onSelectEmergency={() => undefined}
+      />,
+    );
+
+    // The real geometry is painted with its own classes...
+    expect(container.querySelectorAll('.nv-route-line').length).toBeGreaterThan(0);
+    expect(container.querySelectorAll('.nv-route-casing').length).toBeGreaterThan(0);
+    // ...and the straight connector steps aside instead of double-drawing.
+    expect(container.querySelector('.nv-connector-line')).toBeNull();
+    expect(container.querySelector('.nv-connector-casing')).toBeNull();
+  });
+
+  it('AC3: draws only the straight connector when there is no route', () => {
+    const { container } = render(
+      <MapCanvas
+        ambulancias={MOCK_AMBULANCIAS}
+        emergencias={MOCK_EMERGENCIAS}
+        requestConnector={{
+          from: { lat: 4.65, lng: -74.06 },
+          to: { lat: 4.63, lng: -74.07 },
+          dashed: false,
+        }}
+        ruta={null}
+        onSelectAmbulance={() => undefined}
+        onSelectEmergency={() => undefined}
+      />,
+    );
+
+    // No route: nothing with the route class is painted, and the connector is.
+    expect(container.querySelector('.nv-route-line')).toBeNull();
+    expect(container.querySelector('.nv-route-casing')).toBeNull();
+    expect(container.querySelector('.nv-connector-line')).not.toBeNull();
+    expect(container.querySelector('.nv-connector-casing')).not.toBeNull();
+  });
+
   it('colours an aid center from the palette shared with the legend', () => {
     const { container } = renderMapWithCenters(() => undefined);
 
@@ -426,6 +485,9 @@ describe('MapCanvas smoke', () => {
     expect(GLOBALS_CSS).toContain('.nv-marker--dim');
     // The solid mission connector is a real rule, not only a class name.
     expect(GLOBALS_CSS).toContain('.nv-connector-line--solid');
+    // The real route's own classes also exist as rules, not just DOM classes.
+    expect(GLOBALS_CSS).toContain('.nv-route-casing');
+    expect(GLOBALS_CSS).toContain('.nv-route-line');
     expect(GLOBALS_CSS).toContain('@keyframes nv-radar');
     expect(GLOBALS_CSS).toContain('@keyframes nv-spin');
     expect(GLOBALS_CSS).toContain('prefers-reduced-motion: no-preference');

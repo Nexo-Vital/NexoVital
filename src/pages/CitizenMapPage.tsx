@@ -58,6 +58,7 @@ import { centroSemaforo } from '@/features/recursos/traffic-light';
 import { useInventario } from '@/features/recursos/use-inventario';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
 import { useSolicitudRegistrySync } from '@/features/solicitudes/use-solicitud-registry-sync';
+import { useRuta } from '@/hooks/use-ruta';
 import { etaMinutes } from '@/lib/geo';
 import {
   MOCK_AMBULANCIAS,
@@ -400,21 +401,31 @@ export default function CitizenMapPage({
   );
 
   // Solid connector from the assigned unit to the citizen (mockup `C.c4`); it is
-  // a visual connector, not a calculated route (no routing engine in this build).
+  // a visual connector, not a calculated route. It is the honest FALLBACK: with a
+  // real route on screen, `MapCanvas` draws the route instead of this line (AC3).
   const acceptanceConnector: RequestConnector | null = useMemo(
     () => (assignedUnit ? { from: assignedUnit.ubicacion, to: selfPosition, dashed: false } : null),
     [assignedUnit, selfPosition],
   );
 
-  // The assigned unit's marker carries its computed ETA label ("A-07 · 5 min").
+  // Real street routing (OSRM) for the ASSIGNED unit only, toward the citizen.
+  // The hook returns null until a route resolves and on any failure, so the map
+  // and the ETA fall back to the straight-line behaviour (AC3).
+  const ruta = useRuta(assignedUnit?.ubicacion ?? null, assignedUnit ? selfPosition : null);
+  const routeEtaMin = ruta ? Math.max(1, Math.round(ruta.duracionMin)) : null;
+
+  // The assigned unit's marker carries its ETA label ("A-07 · 5 min"): the real
+  // routed duration when there is a route, the straight-line estimate otherwise.
   const ambulanceLabels = useMemo(
     () =>
       assignedUnit
         ? {
-            [assignedUnit.id]: `${assignedUnit.id} · ${etaMinutes(assignedUnit.ubicacion, selfPosition)} min`,
+            [assignedUnit.id]: `${assignedUnit.id} · ${
+              routeEtaMin ?? etaMinutes(assignedUnit.ubicacion, selfPosition)
+            } min`,
           }
         : undefined,
-    [assignedUnit, selfPosition],
+    [assignedUnit, selfPosition, routeEtaMin],
   );
 
   // The donation that produced this center's current c9 state, if any. Narrowed
@@ -487,6 +498,7 @@ export default function CitizenMapPage({
           notifiedAmbulanceIds={searching ? notifiedIds : NO_UNIT_IDS}
           dimmedAmbulanceIds={dimmedIds}
           requestConnector={acceptanceConnector}
+          ruta={ruta}
           ambulanceLabels={ambulanceLabels}
           onCenterChange={setMapCenter}
           onSelectAmbulance={() => undefined}
@@ -531,6 +543,7 @@ export default function CitizenMapPage({
           confirmedAt={confirmedAt}
           units={fleet}
           origin={selfPosition}
+          duracionMin={routeEtaMin}
           onCancel={handleCancel}
           onBackToMap={handleBackToMap}
         />

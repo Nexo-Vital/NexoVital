@@ -81,6 +81,18 @@ vi.mock('@/features/recursos/use-inventario', () => ({
   useInventario: () => undefined,
 }));
 
+// The routing client is a THIRD-PARTY network call with no msw in this repo, so
+// it is mocked out for the whole file: no page test can ever reach OSRM. By
+// default the returned promise never settles (no route -> the straight-line
+// fallback); the AC2 case resolves it explicitly.
+const { mockFetchRuta } = vi.hoisted(() => ({ mockFetchRuta: vi.fn() }));
+
+vi.mock('@/features/mapa/routing-api', () => ({
+  fetchRuta: mockFetchRuta,
+}));
+
+mockFetchRuta.mockReturnValue(new Promise(() => {}));
+
 /** Origin used by the page when the device gives no position (Suba). */
 const SUBAS = { lat: 4.728, lng: -74.078 };
 
@@ -192,6 +204,9 @@ describe('CitizenMapPage', () => {
     // The map layer filter is persisted; clear it so a case cannot leak either.
     window.localStorage.removeItem(MAP_FILTER_STORAGE_KEY);
     mockMapZonas.length = 0;
+    // Back to "no route": a case that resolved one never leaks into another.
+    mockFetchRuta.mockReset();
+    mockFetchRuta.mockReturnValue(new Promise(() => {}));
   });
 
   it('renders the header, the map, the live legend and the three rail blocks', () => {
@@ -736,6 +751,37 @@ describe('CitizenMapPage', () => {
   function citizenRail() {
     return screen.getByRole('complementary', { name: 'Panel del ciudadano' });
   }
+
+  it('AC2: shows the REAL routed duration when a route resolves', async () => {
+    const port = new FakeRealtimePort();
+    mockFetchRuta.mockResolvedValue({
+      geometria: [
+        [4.72, -74.078],
+        [4.724, -74.078],
+        [4.728, -74.078],
+      ],
+      distanciaKm: 1.1,
+      duracionMin: 7.44,
+    });
+    renderPage({ port, ambulancias: MOCK_AMBULANCIAS });
+    acceptRequest(port);
+
+    const rail = citizenRail();
+    // 7.44 min from OSRM wins over the ~3 min straight-line estimate.
+    expect(await within(rail).findByText('7 min')).toBeInTheDocument();
+    expect(within(rail).queryByText('3 min')).not.toBeInTheDocument();
+  });
+
+  it('AC3: keeps the straight-line ETA when no route is available', async () => {
+    const port = new FakeRealtimePort();
+    // The default routing mock never settles: the honest fallback stays.
+    renderPage({ port, ambulancias: MOCK_AMBULANCIAS });
+    acceptRequest(port);
+
+    const rail = citizenRail();
+    expect(await within(rail).findByText('3 min')).toBeInTheDocument();
+    expect(within(rail).queryByText('7 min')).not.toBeInTheDocument();
+  });
 
   it('shows the arrival dialog with the real unit data, then the c5 panel once dismissed', () => {
     const port = new FakeRealtimePort();

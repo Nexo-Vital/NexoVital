@@ -131,17 +131,24 @@ function AcceptedTrackingPanel({
   acceptedAt,
   unit,
   origin,
+  duracionMin,
   onCancel,
 }: {
   unitId: string;
   acceptedAt: number | null;
   unit: Ambulancia | null;
   origin: Ubicacion;
+  /** Real routed duration in minutes, or null/undefined when there is no route. */
+  duracionMin?: number | null;
   onCancel: () => void;
 }) {
   const now = useClock(1000);
   const km = unit ? distanceKm(unit.ubicacion, origin) : null;
-  const etaMin = unit ? etaMinutes(unit.ubicacion, origin) : null;
+  const straightEtaMin = unit ? etaMinutes(unit.ubicacion, origin) : null;
+  // AC2: a real routed duration wins; the straight-line estimate stays as the
+  // honest fallback when no route is available (AC3).
+  const etaMin =
+    typeof duracionMin === 'number' ? Math.max(1, Math.round(duracionMin)) : straightEtaMin;
   // The arrival clock is anchored to the acceptance instant, so it is computed
   // once and stays fixed (C3). Anchoring it to the ticking clock made "llega
   // HH:MM" advance one minute every minute. The "hace N s" counter below keeps
@@ -245,6 +252,11 @@ interface CitizenRequestRailProps {
   confirmedAt: number | null;
   units: Ambulancia[];
   origin: Ubicacion;
+  /**
+   * Real routed duration in minutes toward the citizen, when a route exists.
+   * Null/undefined keeps the straight-line estimate as the ETA (AC3).
+   */
+  duracionMin?: number | null;
   onCancel: () => void;
   /** `C.c6` action: drops the closed request and returns to the map rail. */
   onBackToMap: () => void;
@@ -370,6 +382,7 @@ export function CitizenRequestRail({
   confirmedAt,
   units,
   origin,
+  duracionMin,
   onCancel,
   onBackToMap,
 }: CitizenRequestRailProps) {
@@ -398,6 +411,7 @@ export function CitizenRequestRail({
             acceptedAt={acceptedAt}
             unit={assignedUnit}
             origin={origin}
+            duracionMin={duracionMin}
             onCancel={onCancel}
           />
         )}

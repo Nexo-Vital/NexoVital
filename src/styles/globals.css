@@ -573,6 +573,20 @@
   }
 
   /*
+    Real street route (OSRM). The connector stays dashed/navy; the route is the
+    actual path the vehicle follows, so it is drawn solid and teal with a
+    stronger casing. Separate classes keep both distinguishable in the DOM.
+  */
+  .nv-route-casing {
+    stroke: var(--nv-on-accent);
+    stroke-opacity: 0.85;
+  }
+
+  .nv-route-line {
+    stroke: var(--nv-teal);
+  }
+
+  /*
     ---- citizen search: radar rings + spinner ----
     Rings anchored on the "Tú" marker. The map sizes the icon box from the
     search's real ground radius (radar-rings.ts), so the outer fill ring is 100%

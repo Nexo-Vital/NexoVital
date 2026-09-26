@@ -31,6 +31,7 @@ import {
   selfIcon,
 } from './markers';
 import { outerRingRadiusKm, radarRingsPixelDiameter } from './radar-rings';
+import type { Ruta } from './routing-api';
 import { zoneAreaPositions, zoneForCentro } from './zone-selection';
 
 /** The viewer's own unit, rendered apart from the fleet markers. */
@@ -87,6 +88,14 @@ interface MapCanvasProps {
   request?: RequestMarker | null;
   /** Driver console: decorative dashed connector, NOT a calculated route. */
   requestConnector?: RequestConnector | null;
+  /**
+   * Real street route (OSRM) between the assigned unit and the citizen, already
+   * in Leaflet `[lat, lng]` order. When present it REPLACES the straight
+   * connector: a real path must never be painted on top of a straight line
+   * pretending to be one. When absent, the connector renders exactly as before
+   * (AC3).
+   */
+  ruta?: Ruta | null;
   /** Fleet unit ids currently part of an open request (`notificadas`). */
   notifiedAmbulanceIds?: readonly string[];
   /** Fleet unit ids to de-emphasise (the units an open request did NOT alert). */
@@ -274,6 +283,7 @@ export function MapCanvas({
   self = null,
   request = null,
   requestConnector = null,
+  ruta = null,
   notifiedAmbulanceIds = [],
   dimmedAmbulanceIds = [],
   ambulanceLabels,
@@ -393,11 +403,37 @@ export function MapCanvas({
         ))}
 
       {/*
-        Decorative connector between the requester and the driver. It is a
-        straight dashed line, NOT a calculated route: this build has no routing
-        engine, so it is drawn only to point the driver at the scene.
+        Real street route (OSRM). `ruta.geometria` is already Leaflet `[lat, lng]`
+        order and is drawn exactly as received: the geometry is NEVER invented. It
+        keeps the connector's two-layer language (casing + line, non-interactive)
+        but with its own `nv-route-*` classes so a real route is distinguishable
+        from the straight connector, both in the DOM and in tests.
       */}
-      {requestConnector && (
+      {ruta && (
+        <>
+          <Polyline
+            positions={ruta.geometria}
+            className="nv-route-casing"
+            weight={11}
+            interactive={false}
+          />
+          <Polyline
+            positions={ruta.geometria}
+            className="nv-route-line"
+            weight={6}
+            lineCap="round"
+            interactive={false}
+          />
+        </>
+      )}
+
+      {/*
+        Decorative connector between the requester and the driver. It is a
+        straight dashed line, NOT a calculated route, so it is drawn only when
+        there is no real route to show (AC3). With a route on screen it steps
+        aside rather than double-drawing the same trip.
+      */}
+      {!ruta && requestConnector && (
         <>
           <Polyline
             positions={[

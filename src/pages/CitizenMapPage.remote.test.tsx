@@ -1,9 +1,16 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MapaResponse } from '@/features/mapa/map-api';
 import { setToken } from '@/services/apiClient';
 import { FakeRealtimePort } from '@/test/fake-realtime-port';
 import CitizenMapPage from './CitizenMapPage';
+
+// The page can trigger a third-party routing request; `msw` is not wired in this
+// repo, so the routing client is mocked and this file never performs real network
+// I/O beyond the stubbed `fetch` for /mapa and /inventario.
+vi.mock('@/features/mapa/routing-api', () => ({
+  fetchRuta: vi.fn(() => new Promise(() => {})),
+}));
 
 /** A live-shaped response: 2 zones and 3 Bogotá centers, with NO inventory. */
 const RESPONSE: MapaResponse = {
@@ -139,8 +146,10 @@ describe('CitizenMapPage against /api/v1/mapa', () => {
     expect(zoneAreas(container)).toEqual([]);
 
     // Opening a center paints ITS zone (resolved through zonaId) as a polygon
-    // built from the contour the backend publishes.
-    fireEvent.click(markerByLabel(container, 'Suba Norte'));
+    // built from the contour the backend publishes. The Leaflet basemap commits
+    // its markers one tick after the summary chips, so wait for the pin first.
+    const subaNorte = await waitFor(() => markerByLabel(container, 'Suba Norte'));
+    fireEvent.click(subaNorte);
     expect(zoneAreas(container)).toHaveLength(1);
   });
 });
