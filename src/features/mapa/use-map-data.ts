@@ -76,9 +76,9 @@ function upsertById<T extends { id: string }>(items: T[], incoming: T): T[] {
  * to drift from `GET /api/v1/mapa`.
  *
  * The wire marks `tipo`/`zonaId` optional (they only exist on CENTRO) while the
- * REST DTO declares them required. `tipo` is dropped by the mapper anyway;
- * `zonaId` is preserved as-is, so a center without a zone draws none instead of
- * an invented one.
+ * REST DTO declares them required. Both survive the mapper now: `tipo` IS
+ * carried through `toTipoCentroAyuda`, and `zonaId` is preserved, so a center
+ * without a zone draws none instead of an invented one.
  */
 function toCentro(elemento: MapaElementoPayload): CentroAyuda {
   const dto = {

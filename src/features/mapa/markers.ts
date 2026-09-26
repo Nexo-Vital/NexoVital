@@ -43,6 +43,9 @@ const ICON_PATHS = {
     '<path d="M10 10H6"/><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.28a1 1 0 0 0-.68-.95l-1.93-.64a1 1 0 0 1-.58-.5l-1.54-3.08A1 1 0 0 0 16.38 8H14"/><path d="M8 8v4"/><path d="M9 18h6"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
   clock: '<path d="M12 6v6l4 2"/><circle cx="12" cy="12" r="10"/>',
+  // Medical cross — the hospital's own glyph (a different icon, not a colour).
+  cross:
+    '<path d="M11 2a2 2 0 0 0-2 2v5H4a2 2 0 0 0-2 2v2c0 1.1.9 2 2 2h5v5c0 1.1.9 2 2 2h2a2 2 0 0 0 2-2v-5h5a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2h-5V4a2 2 0 0 0-2-2h-2z"/>',
   circleCheck: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
   alertTriangle:
     '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
@@ -58,6 +61,7 @@ function strokeGlyph(paths: string): string {
 }
 
 const WAREHOUSE_GLYPH = strokeGlyph(ICON_PATHS.warehouse);
+const HOSPITAL_GLYPH = strokeGlyph(ICON_PATHS.cross);
 const AMBULANCE_GLYPH = strokeGlyph(ICON_PATHS.ambulance);
 const CHECK_GLYPH = strokeGlyph(ICON_PATHS.check);
 const CLOCK_GLYPH = strokeGlyph(ICON_PATHS.clock);
@@ -197,6 +201,28 @@ export function emergencyIcon(emergency: Emergencia): L.DivIcon {
 }
 
 /**
+ * Hospital marker: a 44px TEAL DIAMOND carrying a medical cross, with NO
+ * inventory badge.
+ *
+ * The diamond is deliberately a different shape from the supply center's
+ * rounded square (and from the ambulance circle), so a hospital reads as
+ * distinct at a glance and not by colour alone. The shape is shared with the
+ * legend through the `.nv-hospital-shape` CSS, so the pin and the swatch cannot
+ * drift. `HOSPITAL` is a FRONT-ONLY demo value documented in `TipoCentroAyuda`
+ * (`src/types/domain.ts`).
+ */
+function hospitalIcon(center: CentroAyuda, selected: boolean, changed: boolean): L.DivIcon {
+  const selectedClass = selected ? ' nv-marker--selected' : '';
+  const changedClass = changed ? ' nv-marker--changed' : '';
+  const html =
+    `<div class="nv-marker nv-marker--hospital${selectedClass}${changedClass}">` +
+    `<span class="nv-marker__shape nv-hospital-shape">${HOSPITAL_GLYPH}</span>` +
+    `<span class="nv-marker__label">${escapeHtml(centerShortName(center))}</span>` +
+    `</div>`;
+  return buildMarkerIcon(html, 44);
+}
+
+/**
  * Aid-centre marker: 48px rounded square coloured by the centre's worst
  * inventory level, with a badge that repeats the level as an icon.
  *
@@ -204,8 +230,16 @@ export function emergencyIcon(emergency: Emergencia): L.DivIcon {
  * reads — written into the `--nv-marker-*` custom properties the CSS consumes.
  * `changed` adds the mockup's `.cpin.changed` halo, used right after a donation
  * to show the center that just moved level.
+ *
+ * A hospital is an organisation too, but it is NOT an inventory centre: it has
+ * no items and no traffic light, so it is routed to its own marker here. Doing
+ * the branch INSIDE this function keeps the `centros` pipeline in `MapCanvas`
+ * untouched — every center still renders through `centerIcon`.
  */
 export function centerIcon(center: CentroAyuda, selected = false, changed = false): L.DivIcon {
+  if (center.tipo === 'HOSPITAL') {
+    return hospitalIcon(center, selected, changed);
+  }
   const traffic = centroSemaforo(center);
   const level = citizenCenterLevel(traffic);
   const style = level ? CENTER_LEVEL_STYLE[level] : NOT_DECLARED_CENTER_STYLE;

@@ -358,6 +358,44 @@
     --nv-marker-color: var(--nv-marker-badge-color);
   }
 
+  /*
+    ---- hospital pin: teal DIAMOND with a medical cross, NO inventory badge ----
+
+    Deliberately a different shape from the supply-center rounded square and the
+    ambulance circle, so a hospital is distinguishable at a glance and not by
+    colour alone. `.nv-hospital-shape` is shared by the marker shape and the
+    citizen legend swatch, so the two can never drift. This is the FRONT-ONLY
+    `HOSPITAL` demo value documented in `TipoCentroAyuda`.
+  */
+  .nv-hospital-shape {
+    border: 2px solid var(--nv-on-accent);
+    border-radius: 8px;
+    transform: rotate(45deg);
+    background: var(--nv-teal);
+    color: var(--nv-on-accent);
+    --nv-marker-color: var(--nv-on-accent);
+    box-shadow: var(--nv-sh-float);
+  }
+
+  .nv-marker--hospital {
+    width: 44px;
+    height: 44px;
+  }
+
+  .nv-marker--hospital .nv-marker__shape {
+    width: 34px;
+    height: 34px;
+    border-width: 3px;
+    filter: none;
+  }
+
+  /* The glyph is counter-rotated so the cross stays upright inside the diamond. */
+  .nv-marker--hospital .nv-marker__glyph {
+    width: 18px;
+    height: 18px;
+    transform: rotate(-45deg);
+  }
+
   /* ---- active-zone area: the opened center's zone, painted as a polygon ---- */
   .nv-zone-area {
     stroke: var(--nv-teal);

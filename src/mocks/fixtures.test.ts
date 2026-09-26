@@ -48,22 +48,33 @@ describe('demo fixtures parity with the v2 mockup', () => {
     expect(busy).toEqual(['A-09', 'A-15']);
   });
 
+  /** The three mockup centers; the demo hospitals are front-only extras. */
+  const ACOPIOS = MOCK_CENTROS_AYUDA.filter((centro) => centro.tipo !== 'HOSPITAL');
+
   it('derives each center level from its inventory, never hardcoded', () => {
-    expect(
-      MOCK_CENTROS_AYUDA.map((centro) => [centerShortName(centro), centerLevel(centro)]),
-    ).toEqual([
+    expect(ACOPIOS.map((centro) => [centerShortName(centro), centerLevel(centro)])).toEqual([
       ['Suba Norte', 'critical'],
       ['La Gaitana', 'alert'],
       ['Tibabuyes', 'stable'],
     ]);
     // Same derivation the map pin and the legend read, so they cannot disagree.
-    expect(MOCK_CENTROS_AYUDA.map(centroSemaforo)).toEqual(['RED', 'AMBER', 'GREEN']);
+    expect(ACOPIOS.map(centroSemaforo)).toEqual(['RED', 'AMBER', 'GREEN']);
+  });
+
+  it('ships the front-only demo hospitals with no inventory and no traffic light', () => {
+    const hospitals = MOCK_CENTROS_AYUDA.filter((centro) => centro.tipo === 'HOSPITAL');
+
+    expect(hospitals.map((hospital) => hospital.id)).toEqual(['HOSP-SUBA', 'HOSP-KENNEDY']);
+    for (const hospital of hospitals) {
+      // HOSPITAL is NOT a contract TipoOrganizacion value: it is demo-only, so
+      // it has no inventory and derives no level (see TipoCentroAyuda).
+      expect(hospital.items).toEqual([]);
+      expect(centerLevel(hospital)).toBeNull();
+    }
   });
 
   it('writes each center need literally as the mockup, from its worst item', () => {
-    expect(
-      MOCK_CENTROS_AYUDA.map((centro) => [centerShortName(centro), centerNeedLabel(centro)]),
-    ).toEqual([
+    expect(ACOPIOS.map((centro) => [centerShortName(centro), centerNeedLabel(centro)])).toEqual([
       ['Suba Norte', 'Le falta agua potable'],
       ['La Gaitana', 'Le faltan alimentos'],
       ['Tibabuyes', 'Inventario suficiente'],

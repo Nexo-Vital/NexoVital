@@ -144,11 +144,37 @@ export interface InventarioItem {
   unitDetail?: string;
 }
 
+/**
+ * Aid-center organisation type.
+ *
+ * `CENTRO_AYUDA` and `CENTRO_ACOPIO` mirror the backend contract's
+ * `TipoOrganizacion` enum EXACTLY (`arws-inception/contract/openapi.yaml:695`),
+ * so this front type stays a faithful mirror of the contract.
+ *
+ * FRONT-ONLY DEBT — `HOSPITAL` does NOT exist in the contract. It was added for
+ * the demo-only map task `odd/tasks/front-hospitales-en-el-mapa.md` (decision
+ * FH-1, criterion AC5) so the citizen map can show nearby hospitals before a
+ * backend story exists. This is a DELIBERATE, TEMPORARY deviation from the
+ * "domain types mirror the contract" rule: `HOSPITAL` comes from the front demo
+ * fixtures, NEVER from `GET /api/v1/mapa`. Anyone porting hospitals to the
+ * backend MUST add `HOSPITAL` to `TipoOrganizacion` and to
+ * `contract/openapi.yaml`, or the value is orphaned.
+ */
+export type TipoCentroAyuda = 'CENTRO_AYUDA' | 'CENTRO_ACOPIO' | 'HOSPITAL';
+
 export interface CentroAyuda {
   id: string;
   nombre: string;
   ubicacion: Ubicacion;
   items: InventarioItem[];
+  /**
+   * Organisation type from the backend map read-model. Optional by design
+   * (decision FH-2 / criterion AC4): a center that arrives without one — or
+   * with an unknown value the mapper refused to carry — behaves exactly as
+   * before, drawn and counted as a supply center. See `TipoCentroAyuda` for the
+   * front-only `HOSPITAL` debt.
+   */
+  tipo?: TipoCentroAyuda;
   /**
    * UI-only convenience (not part of the OpenAPI schema): the street address as
    * the mockup's c7 card writes it ("Cl. 145 #91-19"). Demo data — the backend

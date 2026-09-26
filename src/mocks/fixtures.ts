@@ -267,6 +267,15 @@ export const MOCK_SOLICITUDES: SolicitudAmbulancia[] = [
  * undefined and their card shows only the computed distance. The `unidad` of an
  * item is written only when the mockup declares one ("Alimentos" has none, so it
  * is left out rather than invented).
+ *
+ * DEMO-ONLY HOSPITALS: the last two entries are hospitals with
+ * `tipo: 'HOSPITAL'`. That value does NOT exist in the contract's
+ * `TipoOrganizacion` (`arws-inception/contract/openapi.yaml:695`); it is a
+ * front-only demo value pending the backend story
+ * (`odd/tasks/front-hospitales-en-el-mapa.md`, decision FH-1). A hospital has no
+ * inventory (`items: []`) and no traffic light: it is drawn with its own marker
+ * and counted in its own legend row. The three mockup centers above deliberately
+ * keep NO `tipo`, so a center without one keeps behaving exactly as today (AC4).
  */
 export const MOCK_CENTROS_AYUDA: CentroAyuda[] = [
   {
@@ -314,5 +323,23 @@ export const MOCK_CENTROS_AYUDA: CentroAyuda[] = [
       inventoryItem('INV-TB-2', 'CA-TIBABUYES', 'Alimentos', 360, 400, 'plural'),
       inventoryItem('INV-TB-3', 'CA-TIBABUYES', 'Cobijas', 200, 0, 'plural', 'unidades'),
     ],
+  },
+  {
+    // FRONT-ONLY demo hospital (see the block comment above): no inventory, no
+    // traffic light, its own marker and its own legend count. Positioned in the
+    // same Bogotá demo area as the other fixtures, near Suba.
+    id: 'HOSP-SUBA',
+    nombre: 'Hospital Suba',
+    tipo: 'HOSPITAL',
+    ubicacion: { lat: 4.75, lng: -74.055 },
+    items: [],
+  },
+  {
+    // FRONT-ONLY demo hospital near Kennedy, next to the area A-09 patrols.
+    id: 'HOSP-KENNEDY',
+    nombre: 'Hospital Kennedy',
+    tipo: 'HOSPITAL',
+    ubicacion: { lat: 4.622, lng: -74.13 },
+    items: [],
   },
 ];

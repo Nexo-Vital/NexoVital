@@ -130,6 +130,11 @@ function centro(id: string, semaforo: TrafficLight | null, lat: number, lng: num
   };
 }
 
+/** A FRONT-ONLY demo hospital: no inventory and no traffic light. */
+function hospital(id: string, lat = 4.75, lng = -74.06): CentroAyuda {
+  return { id, nombre: `Hospital ${id}`, tipo: 'HOSPITAL', ubicacion: { lat, lng }, items: [] };
+}
+
 function amb(id: string, estado: AmbulanceState, latOffset = 0.01): Ambulancia {
   return {
     id,
@@ -702,6 +707,23 @@ describe('CitizenMapPage', () => {
     // The critical summary chip reads the same red as the pin, not a second one.
     const chip = screen.getByText('1 crítico').closest('li');
     expect(chip?.getAttribute('style')).toContain('var(--nv-red)');
+  });
+
+  it('AC2: shows the real hospital count in the legend, without faking a traffic light', () => {
+    renderPage({
+      centrosAyuda: [
+        centro('CA-1', 'GREEN', 4.728, -74.078),
+        hospital('HOSP-1', 4.75, -74.055),
+        hospital('HOSP-2', 4.622, -74.13),
+      ],
+    });
+
+    // The count comes from the data (2 hospitals), never from a constant.
+    expect(legendValue('Hospitales')).toBe('2');
+    // A hospital has no inventory, so it is NOT an undeclared supply center
+    // (FH-3): it must not inflate "Sin declarar".
+    expect(legendValue('Sin declarar')).toBe('0');
+    expect(legendValue('Estable')).toBe('1');
   });
 
   it('lists the units nearest to the citizen first, with their availability', () => {

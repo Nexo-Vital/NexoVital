@@ -92,6 +92,13 @@ export interface CitizenCenterCounts {
   critical: number;
   /** Centers with nothing declared; neutral, never forced into "stable". */
   notDeclared: number;
+  /**
+   * Hospitals (`tipo: 'HOSPITAL'`), counted on their own. A hospital has no
+   * inventory, so it has no traffic-light level and must NOT inflate
+   * `notDeclared` (FH-3): the legend gives it a plain count. Front-only demo
+   * value — see `TipoCentroAyuda` in `src/types/domain.ts`.
+   */
+  hospitals: number;
 }
 
 /** Maps a domain traffic light onto the citizen level, or `null` when unknown. */
@@ -113,10 +120,27 @@ export function centerLevel(centro: CentroAyuda): CitizenCenterLevel | null {
   return citizenCenterLevel(centroSemaforo(centro));
 }
 
-/** Counts centers by their worst inventory level (the map's own rule). */
+/**
+ * Counts centers by their worst inventory level (the map's own rule).
+ *
+ * Hospitals are counted apart (`hospitals`) and skipped for the traffic-light
+ * buckets: an empty inventory would otherwise land in `notDeclared`, claiming a
+ * hospital is an undeclared supply center (FH-3). A center with no `tipo` is
+ * still counted as today.
+ */
 export function countCentersByLevel(centros: CentroAyuda[]): CitizenCenterCounts {
-  const counts: CitizenCenterCounts = { stable: 0, alert: 0, critical: 0, notDeclared: 0 };
+  const counts: CitizenCenterCounts = {
+    stable: 0,
+    alert: 0,
+    critical: 0,
+    notDeclared: 0,
+    hospitals: 0,
+  };
   for (const centro of centros) {
+    if (centro.tipo === 'HOSPITAL') {
+      counts.hospitals += 1;
+      continue;
+    }
     const level = centerLevel(centro);
     if (level === null) {
       counts.notDeclared += 1;

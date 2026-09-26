@@ -73,10 +73,67 @@ describe('mapaToCentros', () => {
     expect(centros[0]).toEqual({
       id: 'ORG-SUBA',
       nombre: 'Acopio Suba Norte',
+      tipo: 'CENTRO_ACOPIO',
       zonaId: 'Z-SUBA',
       ubicacion: { lat: 4.742, lng: -74.09 },
       items: [],
     });
+  });
+
+  it('AC3: carries the wire tipo through instead of dropping it', () => {
+    const centros = mapaToCentros(RESPONSE);
+
+    // Regression: the mapper used to discard `tipo`, even though the wire
+    // always sent it. The domain now receives it.
+    expect(centros.map((centro) => centro.tipo)).toEqual([
+      'CENTRO_ACOPIO',
+      'CENTRO_ACOPIO',
+      'CENTRO_ACOPIO',
+    ]);
+  });
+
+  it('carries the FRONT-ONLY HOSPITAL tipo through (demo value, not contract)', () => {
+    const centros = mapaToCentros({
+      zonas: [],
+      centros: [
+        {
+          id: 'H-1',
+          nombre: 'Hospital Demo',
+          tipo: 'HOSPITAL',
+          ubicacion: { lat: 4.7, lng: -74.06 },
+        },
+      ],
+    });
+
+    expect(centros[0].tipo).toBe('HOSPITAL');
+  });
+
+  it('AC4: an absent or unknown tipo is dropped, never guessed and never a hospital', () => {
+    const centros = mapaToCentros({
+      zonas: [],
+      centros: [
+        {
+          id: 'SIN-TIPO',
+          nombre: 'Acopio sin tipo',
+          tipo: undefined as unknown as string,
+          ubicacion: { lat: 4.7, lng: -74.06 },
+        },
+        {
+          id: 'TIPO-RARO',
+          nombre: 'Acopio tipo raro',
+          tipo: 'CLINICA',
+          ubicacion: { lat: 4.71, lng: -74.07 },
+        },
+      ],
+    });
+
+    // The key is OMITTED, never `tipo: undefined`: the realtime merge would
+    // otherwise erase a type the center already had (same rule as `zonaId`).
+    expect('tipo' in centros[0]).toBe(false);
+    expect(centros[0].tipo).toBeUndefined();
+    expect(centros[1].tipo).toBeUndefined();
+    // An unknown value can never silently become a hospital.
+    expect(centros.map((centro) => centro.tipo)).not.toContain('HOSPITAL');
   });
 
   it('keeps the backend zonaId so the map can resolve the center zone', () => {
@@ -99,6 +156,7 @@ describe('mapaToCentros', () => {
       alert: 0,
       critical: 0,
       notDeclared: 3,
+      hospitals: 0,
     });
   });
 });

@@ -231,6 +231,47 @@ describe('MapCanvas smoke', () => {
     expect(badge?.querySelector('.nv-marker__glyph')).not.toBeNull();
   });
 
+  it('AC1: draws a hospital with its own marker, distinct from a supply center', () => {
+    const { container } = renderMapWithCenters(() => undefined);
+
+    const hospital = markerByLabel(container, 'Hospital Suba');
+    const center = markerByLabel(container, 'Suba Norte');
+
+    // A different class AND a different shape, not a recoloured center.
+    expect(hospital.classList.contains('nv-marker--hospital')).toBe(true);
+    expect(hospital.classList.contains('nv-marker--center')).toBe(false);
+    expect(hospital.querySelector('.nv-hospital-shape')).not.toBeNull();
+    // A hospital has no inventory, so it never wears a traffic-light badge.
+    expect(hospital.querySelector('.nv-marker__badge')).toBeNull();
+
+    expect(center.classList.contains('nv-marker--center')).toBe(true);
+    expect(center.querySelector('.nv-marker__badge')).not.toBeNull();
+  });
+
+  it('AC4: a center without tipo renders exactly as today, as a supply center', () => {
+    const { container } = render(
+      <MapCanvas
+        ambulancias={[]}
+        emergencias={[]}
+        centros={[
+          {
+            id: 'CA-NO-TIPO',
+            nombre: 'Acopio Sin Tipo',
+            ubicacion: { lat: 4.7, lng: -74.08 },
+            items: [],
+          },
+        ]}
+        onSelectAmbulance={() => undefined}
+        onSelectEmergency={() => undefined}
+      />,
+    );
+
+    const marker = markerByLabel(container, 'Sin Tipo');
+    expect(marker.classList.contains('nv-marker--center')).toBe(true);
+    expect(marker.classList.contains('nv-marker--hospital')).toBe(false);
+    expect(marker.querySelector('.nv-marker__badge')).not.toBeNull();
+  });
+
   it('draws free and busy unit variants without a heading rotation', () => {
     const { container } = renderMap();
 
