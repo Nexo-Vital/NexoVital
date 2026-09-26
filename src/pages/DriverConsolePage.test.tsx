@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useDriverAlertsStore } from '@/features/conductor/driver-alerts-store';
@@ -17,6 +17,7 @@ vi.mock('@/features/mapa/MapCanvas', () => ({
     self?: { label?: string; simulated?: boolean } | null;
     request?: { label?: string } | null;
     requestConnector?: { dashed?: boolean } | null;
+    ruta?: { geometria?: unknown[] } | null;
     notifiedAmbulanceIds?: readonly string[];
   }) => (
     <div
@@ -27,6 +28,8 @@ vi.mock('@/features/mapa/MapCanvas', () => ({
       data-request-label={props.request?.label ?? ''}
       data-connector={props.requestConnector ? 'yes' : 'no'}
       data-connector-dashed={props.requestConnector?.dashed === false ? 'no' : 'yes'}
+      data-ruta={props.ruta ? 'yes' : 'no'}
+      data-ruta-points={String(props.ruta?.geometria?.length ?? 0)}
       data-notified={(props.notifiedAmbulanceIds ?? []).join(',')}
     />
   ),
@@ -43,6 +46,18 @@ vi.mock('@/features/mapa/use-map-data', () => ({
     error: null,
   }),
 }));
+
+// The routing client is a THIRD-PARTY network call with no msw wired in this
+// repo, so it is mocked out for the whole file: no page test can ever reach
+// OSRM. By default the returned promise never settles (no route -> the
+// straight-line fallback); the routed-duration case resolves it explicitly.
+const { mockFetchRuta } = vi.hoisted(() => ({ mockFetchRuta: vi.fn() }));
+
+vi.mock('@/features/mapa/routing-api', () => ({
+  fetchRuta: mockFetchRuta,
+}));
+
+mockFetchRuta.mockReturnValue(new Promise(() => {}));
 
 const BROADCAST: SolicitudBroadcastPayload = {
   type: 'solicitud.broadcast',
@@ -95,6 +110,9 @@ describe('DriverConsolePage', () => {
     cleanup();
     useDriverAlertsStore.setState({ pendingRequests: 0 });
     setGeolocation(undefined);
+    // Back to "no route": a case that resolved one never leaks into another.
+    mockFetchRuta.mockReset();
+    mockFetchRuta.mockReturnValue(new Promise(() => {}));
   });
 
   it('renders the map and the unit panel controls', () => {
@@ -706,6 +724,45 @@ describe('DriverConsolePage', () => {
     expect(map).toHaveAttribute('data-connector-dashed', 'no');
     expect(map.getAttribute('data-request-label')).toContain('Kennedy');
     expect(map).toHaveAttribute('data-notified', '');
+  });
+
+  it('draws the real route and shows its REAL duration when one resolves', async () => {
+    const port = new FakeRealtimePort();
+    mockFetchRuta.mockResolvedValue({
+      geometria: [
+        [4.72, -74.078],
+        [4.68, -74.11],
+        [4.628, -74.148],
+      ],
+      distanciaKm: 14.2,
+      duracionMin: 7.44,
+    });
+    render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+    act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+
+    // The route geometry reaches the map, which hides the straight connector.
+    await waitFor(() =>
+      expect(screen.getByTestId('map-canvas')).toHaveAttribute('data-ruta', 'yes'),
+    );
+    expect(screen.getByTestId('map-canvas')).toHaveAttribute('data-ruta-points', '3');
+
+    // 7.44 min from OSRM wins over the ~29 min straight-line estimate.
+    const card = within(driverRail()).getByRole('region', { name: 'Solicitud de ambulancia' });
+    expect(dataRowValue(card, 'Distancia')).toBe('12,8 km · 7 min');
+  });
+
+  it('keeps the straight-line ETA and no route when routing is unavailable', () => {
+    const port = new FakeRealtimePort();
+    // The default routing mock never settles: the honest fallback stays.
+    render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+    act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+
+    const map = screen.getByTestId('map-canvas');
+    expect(map).toHaveAttribute('data-ruta', 'no');
+    expect(map).toHaveAttribute('data-ruta-points', '0');
+
+    const card = within(driverRail()).getByRole('region', { name: 'Solicitud de ambulancia' });
+    expect(dataRowValue(card, 'Distancia')).toBe('12,8 km · 29 min');
   });
 
   it('rejects from the card and keeps the rejection feedback', async () => {

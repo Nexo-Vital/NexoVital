@@ -26,6 +26,7 @@ import {
 } from '@/features/mapa/MapCanvas';
 import { useMapData } from '@/features/mapa/use-map-data';
 import { useSessionStore } from '@/features/usuarios/session';
+import { useRuta } from '@/hooks/use-ruta';
 import { distanceKm, etaMinutes } from '@/lib/geo';
 import { MOCK_AMBULANCIAS, MOCK_CENTROS_AYUDA, MOCK_EMERGENCIAS } from '@/mocks/fixtures';
 import {
@@ -185,8 +186,21 @@ export default function DriverConsolePage({
   const activeScene = (missionActive ? inbox.mission : inbox.broadcast)?.escena ?? null;
   const requestDistance =
     activeScene && effectivePosition ? distanceKm(effectivePosition, activeScene) : null;
-  const requestEta =
+  // Straight-line estimate: the honest fallback while no route is available (AC3).
+  const straightLineEta =
     activeScene && effectivePosition ? etaMinutes(effectivePosition, activeScene) : null;
+
+  // Real street routing (OSRM), the same hook the citizen page uses, from the
+  // driver's own position (`effectivePosition`) to the citizen's scene
+  // (`activeScene`). It returns null until a route resolves and on any failure
+  // (timeout, error, demo mode without coordinates), so the map and the ETA fall
+  // back to today's straight-line behaviour (AC3).
+  const ruta = useRuta(effectivePosition, activeScene);
+  // The REAL routed duration in whole minutes, or null when there is no route.
+  const routeEtaMin = ruta ? Math.max(1, Math.round(ruta.duracionMin)) : null;
+  // The driver reads the routed time when it exists and the straight-line
+  // estimate otherwise: never a routed time that does not exist.
+  const requestEta = routeEtaMin ?? straightLineEta;
 
   // The shell bell mirrors the pending request count. The driver console is the
   // only writer; it resets to zero when the page unmounts. A won mission is not
@@ -272,6 +286,7 @@ export default function DriverConsolePage({
           self={self}
           request={requestMarker}
           requestConnector={requestConnector}
+          ruta={ruta}
           notifiedAmbulanceIds={
             missionActive ? NO_NOTIFIED_UNITS : (inbox.broadcast?.notificadas ?? NO_NOTIFIED_UNITS)
           }
