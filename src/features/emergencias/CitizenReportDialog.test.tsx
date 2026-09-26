@@ -18,9 +18,11 @@ function locationState(overrides: Partial<DeviceLocationState> = {}): DeviceLoca
     position: null,
     heading: null,
     status: 'unsupported',
+    permission: 'unknown',
     simulated: false,
     setSimulatedPosition: vi.fn(),
     clearSimulated: vi.fn(),
+    retry: vi.fn(),
     ...overrides,
   };
 }

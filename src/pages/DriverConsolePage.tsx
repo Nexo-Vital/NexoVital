@@ -16,6 +16,7 @@ import { useEmergencyStore } from '@/features/emergencias/emergency-store';
 import { useEmergencySync } from '@/features/emergencias/use-emergency-sync';
 import { useFleetStore } from '@/features/flota/fleet-store';
 import { useFleetSync } from '@/features/flota/use-fleet-sync';
+import { LocationPermissionDialog } from '@/features/geolocalizacion/LocationPermissionDialog';
 import { useDeviceLocation } from '@/features/geolocalizacion/use-device-location';
 import {
   MapCanvas,
@@ -339,6 +340,17 @@ export default function DriverConsolePage({
           onTimeout: inbox.notifyTimeout,
         }}
         centros={mapa.centros}
+      />
+
+      {/*
+        Location permission pop-up, mounted at PAGE level so it does not nest
+        inside any other modal. It appears once per denial and stays dismissible:
+        the driver console keeps working with the simulated/unit fallback.
+      */}
+      <LocationPermissionDialog
+        status={location.status}
+        permission={location.permission}
+        onRetry={location.retry}
       />
     </div>
   );

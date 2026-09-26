@@ -1,9 +1,13 @@
-import { act, cleanup, renderHook } from '@testing-library/react';
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useDeviceLocation } from './use-device-location';
 
 function setGeolocation(value: unknown): void {
   Object.defineProperty(window.navigator, 'geolocation', { value, configurable: true });
+}
+
+function setPermissions(value: unknown): void {
+  Object.defineProperty(window.navigator, 'permissions', { value, configurable: true });
 }
 
 function position(
@@ -25,6 +29,7 @@ describe('useDeviceLocation', () => {
   afterEach(() => {
     cleanup();
     setGeolocation(undefined);
+    setPermissions(undefined);
   });
 
   it('reports unsupported when the insecure context has no geolocation API', () => {
@@ -109,5 +114,67 @@ describe('useDeviceLocation', () => {
     act(() => result.current.clearSimulated());
     expect(result.current.simulated).toBe(false);
     expect(result.current.position).toBeNull();
+  });
+
+  it('exposes the live permission state from the Permissions API', async () => {
+    const listeners = new Set<() => void>();
+    const permissionStatus = {
+      state: 'denied' as PermissionState,
+      addEventListener: (_type: string, listener: () => void) => listeners.add(listener),
+      removeEventListener: (_type: string, listener: () => void) => listeners.delete(listener),
+    };
+    setPermissions({ query: vi.fn().mockResolvedValue(permissionStatus) });
+    setGeolocation({ watchPosition: () => 1, clearWatch: () => undefined });
+
+    const { result } = renderHook(() => useDeviceLocation());
+    await waitFor(() => expect(result.current.permission).toBe('denied'));
+
+    // A browser-side permission change must reach the hook without a remount.
+    permissionStatus.state = 'granted' as PermissionState;
+    act(() => {
+      listeners.forEach((listener) => {
+        listener();
+      });
+    });
+    expect(result.current.permission).toBe('granted');
+  });
+
+  it('retry re-arms the watch and clears the previous subscription', () => {
+    let nextId = 0;
+    const watchPosition = vi.fn(() => {
+      nextId += 1;
+      return nextId;
+    });
+    const clearWatch = vi.fn();
+    setGeolocation({ watchPosition, clearWatch });
+
+    const { result } = renderHook(() => useDeviceLocation());
+    expect(watchPosition).toHaveBeenCalledTimes(1);
+
+    act(() => result.current.retry());
+
+    // One active watch at a time: the old id is cleared before the new request.
+    expect(clearWatch).toHaveBeenCalledWith(1);
+    expect(watchPosition).toHaveBeenCalledTimes(2);
+  });
+
+  it('retry lets a grant that follows update the status', () => {
+    let lastSuccess: PositionCallback | null = null;
+    setGeolocation({
+      watchPosition: (success: PositionCallback) => {
+        lastSuccess = success;
+        return 1;
+      },
+      clearWatch: () => undefined,
+    });
+
+    const { result } = renderHook(() => useDeviceLocation());
+    expect(result.current.status).toBe('prompt');
+
+    act(() => result.current.retry());
+    act(() => lastSuccess?.(position(4.6, -74.05, null)));
+
+    expect(result.current.status).toBe('granted');
+    expect(result.current.position).toEqual({ lat: 4.6, lng: -74.05 });
   });
 });

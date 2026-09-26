@@ -4,17 +4,36 @@ import type { Ubicacion } from '@/types/domain';
 
 export type GeolocationStatus = 'unsupported' | 'prompt' | 'granted' | 'denied' | 'unavailable';
 
+/**
+ * Real browser permission state for geolocation. `unknown` is the honest
+ * fallback when `navigator.permissions` is unavailable: the app then cannot
+ * tell a dismissal (`prompt`) from a block (`denied`).
+ */
+export type LocationPermissionState = PermissionState | 'unknown';
+
 export interface DeviceLocationState {
   /** Effective position: the device feed, or the simulated override when set. */
   position: Ubicacion | null;
   heading: number | null;
   status: GeolocationStatus;
+  /**
+   * Live permission state from the Permissions API. Unlike `status`, it tells a
+   * dismissed prompt (`prompt`, the native dialog can be shown again) from a
+   * block (`denied`, only browser settings can undo it).
+   */
+  permission: LocationPermissionState;
   /** True when `position` comes from the "Simular posición" control. */
   simulated: boolean;
   /** Move the simulated marker (used by tap-to-move and drag). */
   setSimulatedPosition: (position: Ubicacion) => void;
   /** Drop the simulated override and fall back to the device feed. */
   clearSimulated: () => void;
+  /**
+   * Ask for the location again after a denial or a dismissed prompt. Re-arms
+   * the watch (the previous one is cleared first) and puts `status` back to
+   * `prompt` while the new request is in flight.
+   */
+  retry: () => void;
 }
 
 /** Bogotá center: where the simulated marker starts. */
@@ -56,14 +75,68 @@ function normalizeHeading(value: number | null): number | null {
  */
 export function useDeviceLocation(): DeviceLocationState {
   const [status, setStatus] = useState<GeolocationStatus>(detectInitialStatus);
+  const [permission, setPermission] = useState<LocationPermissionState>('unknown');
   const [devicePosition, setDevicePosition] = useState<Ubicacion | null>(null);
   const [deviceHeading, setDeviceHeading] = useState<number | null>(null);
   const [simulatedPosition, setSimulatedPosition] = useState<Ubicacion | null>(null);
   const [simulatedHeading, setSimulatedHeading] = useState<number | null>(null);
   const simulatedRef = useRef<Ubicacion | null>(null);
+  // Bumped by `retry()`: the watcher effect depends on it, so React clears the
+  // previous watch before opening a new one (single active subscription).
+  const [attempt, setAttempt] = useState(0);
 
   const supported = status !== 'unsupported';
 
+  // The Permissions API is the only source that separates "the user dismissed
+  // the dialog" (prompt) from "the user blocked it" (denied). Re-read it on
+  // window focus because changing a site permission happens in browser chrome,
+  // outside the page; `change` keeps it live without polling.
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || typeof navigator.permissions?.query !== 'function') {
+      return;
+    }
+    let cancelled = false;
+    let current: PermissionStatus | null = null;
+
+    const apply = (state: LocationPermissionState) => {
+      if (!cancelled) {
+        setPermission(state);
+      }
+    };
+    const onChange = () => {
+      if (current) {
+        apply(current.state);
+      }
+    };
+    const refresh = () => {
+      navigator.permissions
+        .query({ name: 'geolocation' })
+        .then((result) => {
+          if (cancelled) {
+            return;
+          }
+          if (current && current !== result) {
+            current.removeEventListener('change', onChange);
+          }
+          current = result;
+          result.addEventListener('change', onChange);
+          apply(result.state);
+        })
+        .catch(() => apply('unknown'));
+    };
+
+    refresh();
+    window.addEventListener('focus', refresh);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', refresh);
+      current?.removeEventListener('change', onChange);
+    };
+  }, []);
+
+  // `attempt` is the retry trigger: bumping it re-arms the watch. It is on
+  // purpose not read inside the effect, so the linter cannot see the dependency.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: attempt is the retry trigger
   useEffect(() => {
     if (!supported || typeof navigator === 'undefined' || !navigator.geolocation) {
       return;
@@ -83,7 +156,14 @@ export function useDeviceLocation(): DeviceLocationState {
     return () => {
       geolocation.clearWatch(watchId);
     };
-  }, [supported]);
+  }, [supported, attempt]);
+
+  const retry = useCallback(() => {
+    // Back to `prompt` while the new request runs: the previous denial is no
+    // longer the current answer once the user explicitly asks again.
+    setStatus((current) => (current === 'unsupported' ? current : 'prompt'));
+    setAttempt((current) => current + 1);
+  }, []);
 
   const setSimulated = useCallback((next: Ubicacion) => {
     const previous = simulatedRef.current;
@@ -106,8 +186,10 @@ export function useDeviceLocation(): DeviceLocationState {
     position: simulatedPosition ?? devicePosition,
     heading: simulated ? simulatedHeading : deviceHeading,
     status,
+    permission,
     simulated,
     setSimulatedPosition: setSimulated,
     clearSimulated,
+    retry,
   };
 }

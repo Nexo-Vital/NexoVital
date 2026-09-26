@@ -39,6 +39,7 @@ import { useEmergencyStore } from '@/features/emergencias/emergency-store';
 import { useEmergencySync } from '@/features/emergencias/use-emergency-sync';
 import { useFleetStore } from '@/features/flota/fleet-store';
 import { useFleetSync } from '@/features/flota/use-fleet-sync';
+import { LocationPermissionDialog } from '@/features/geolocalizacion/LocationPermissionDialog';
 import { useDeviceLocation } from '@/features/geolocalizacion/use-device-location';
 import { MapCanvas, type RequestConnector, type SelfMarker } from '@/features/mapa/MapCanvas';
 import {
@@ -595,6 +596,17 @@ export default function CitizenMapPage({
         mapCenter={mapCenter}
         location={location}
         onSubmit={handleReportSubmit}
+      />
+
+      {/*
+        Location permission pop-up. It is mounted at PAGE level, not inside the
+        report dialog: nesting one modal in another is bad UX, and this dialog
+        already shares the page's single location watcher.
+      */}
+      <LocationPermissionDialog
+        status={location.status}
+        permission={location.permission}
+        onRetry={location.retry}
       />
     </div>
   );
