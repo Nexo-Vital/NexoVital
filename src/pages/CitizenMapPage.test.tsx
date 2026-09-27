@@ -41,6 +41,7 @@ vi.mock('@/features/mapa/MapCanvas', () => ({
     centros?: { id: string }[];
     zonas?: { id: string }[];
     emergencias?: { id: string }[];
+    onClearSelection?: () => void;
   }) => (
     <div
       data-testid="map-canvas"
@@ -55,7 +56,16 @@ vi.mock('@/features/mapa/MapCanvas', () => ({
       data-centros={JSON.stringify((props.centros ?? []).map((item) => item.id))}
       data-zonas={JSON.stringify((props.zonas ?? []).map((item) => item.id))}
       data-emergencias={JSON.stringify((props.emergencias ?? []).map((item) => item.id))}
-    />
+    >
+      {/* Stands in for a click on the map BACKGROUND: the page only wires the
+          callback, the real Leaflet bubbling is covered by the smoke/remote tests. */}
+      <button
+        type="button"
+        data-testid="map-background"
+        aria-label="map background"
+        onClick={() => props.onClearSelection?.()}
+      />
+    </div>
   ),
 }));
 
@@ -1066,6 +1076,27 @@ describe('CitizenMapPage', () => {
     );
     // The detail looks at ITS center: the map focus is the opened center's point.
     expect(screen.getByTestId('map-canvas')).toHaveAttribute('data-focus', '4.72,-74.05');
+  });
+
+  it('AC-U1: a map background click closes the open center detail', () => {
+    renderPage({ centrosAyuda: MOCK_CENTROS_AYUDA });
+
+    const rail = citizenRail();
+    fireEvent.click(within(rail).getByRole('button', { name: /Acopio La Gaitana/ }));
+    expect(screen.getByRole('heading', { level: 1, name: 'Centro de acopio' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('map-background'));
+
+    // The panel released the UI: the detail is gone, the map title and the
+    // citizen rail are back, and the map is told to highlight no center.
+    expect(
+      screen.queryByRole('heading', { level: 1, name: 'Centro de acopio' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Mapa de operación' }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('map-canvas')).toHaveAttribute('data-selected-centro', '');
+    expect(screen.getByRole('button', { name: 'Pedir ambulancia' })).toBeInTheDocument();
   });
 
   it('cancels the donation picker without opening a center or donating', () => {

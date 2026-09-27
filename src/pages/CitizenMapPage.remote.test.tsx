@@ -116,7 +116,7 @@ describe('CitizenMapPage against /api/v1/mapa', () => {
     localStorage.clear();
   });
 
-  it('paints the backend centers, and no zone until a center is opened', async () => {
+  it('paints the backend centers and never a zone, even after a center is opened', async () => {
     const { container } = render(
       <CitizenMapPage
         port={new FakeRealtimePort()}
@@ -145,18 +145,48 @@ describe('CitizenMapPage against /api/v1/mapa', () => {
     // Default view: the mockup's map has no zones.
     expect(zoneAreas(container)).toEqual([]);
 
-    // Opening a center paints ITS zone (resolved through zonaId) as a polygon
-    // built from the contour the backend publishes.
-    //
-    // The pin is RE-QUERIED INSIDE the retry, and clicked there too. Waiting for
-    // the pin and then clicking the node captured at that moment is still flaky
-    // under full-suite load: a commit landing between the wait and the click can
-    // leave that node detached, so the click hits nothing and the polygon never
-    // paints. Re-querying on every attempt closes that window, and the assertion
-    // in the same block only passes once the polygon is really on the map.
+    // U2 / AC-U2: opening a center whose payload DOES carry a `zonaId` no longer
+    // paints its zone. The pin is RE-QUERIED INSIDE the retry and clicked there:
+    // waiting for the pin and then clicking the node captured at that moment is
+    // flaky under full-suite load, so re-querying on every attempt closes that
+    // window. The detail panel opening is the proof the click really landed.
     await waitFor(() => {
       fireEvent.click(markerByLabel(container, 'Suba Norte'));
-      expect(zoneAreas(container)).toHaveLength(1);
+      expect(
+        screen.getByRole('heading', { level: 1, name: 'Centro de acopio' }),
+      ).toBeInTheDocument();
     });
+    expect(zoneAreas(container)).toEqual([]);
+  });
+
+  it('AC-U1: a background click closes the open center detail', async () => {
+    const { container } = render(
+      <CitizenMapPage
+        port={new FakeRealtimePort()}
+        ambulancias={[]}
+        emergencias={[]}
+        solicitudes={[]}
+        centrosAyuda={[]}
+      />,
+    );
+
+    await waitFor(() => {
+      fireEvent.click(markerByLabel(container, 'Suba Norte'));
+      expect(
+        screen.getByRole('heading', { level: 1, name: 'Centro de acopio' }),
+      ).toBeInTheDocument();
+    });
+
+    // A click on the map BACKGROUND (the Leaflet container itself, not a marker)
+    // releases the panel and brings the map title and the rail back.
+    await waitFor(() => {
+      fireEvent.click(container.querySelector('.leaflet-container') as HTMLElement);
+      expect(
+        screen.queryByRole('heading', { level: 1, name: 'Centro de acopio' }),
+      ).not.toBeInTheDocument();
+    });
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Mapa de operación' }),
+    ).toBeInTheDocument();
   });
 });

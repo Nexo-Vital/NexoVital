@@ -106,29 +106,6 @@ function renderMapWithSelectedZone() {
   );
 }
 
-/** An opened center whose zone declares no contour: there is no area to paint. */
-function renderMapWithSelectedZoneWithoutContour() {
-  return render(
-    <MapCanvas
-      ambulancias={[]}
-      emergencias={[]}
-      centros={[
-        {
-          id: 'ORG-SUBA',
-          nombre: 'Acopio Suba Norte',
-          zonaId: 'Z-SUBA',
-          ubicacion: { lat: 4.742, lng: -74.09 },
-          items: [],
-        },
-      ]}
-      zonas={[{ id: 'Z-SUBA', nombre: 'Suba', ubicacion: { lat: 4.742, lng: -74.09 } }]}
-      selectedCentroId="ORG-SUBA"
-      onSelectAmbulance={() => undefined}
-      onSelectEmergency={() => undefined}
-    />,
-  );
-}
-
 function renderMapWithSelf() {
   return render(
     <MapCanvas
@@ -483,21 +460,42 @@ describe('MapCanvas smoke', () => {
     expect(container.querySelector('path.nv-zone-area')).toBeNull();
   });
 
-  it('paints the opened center zone as an area polygon from its contour', () => {
+  it('does not paint a zone when a center that declares a zone is selected', () => {
     const { container } = renderMapWithSelectedZone();
 
-    // The zone is an AREA now: a Leaflet polygon in the overlay pane, styled with
-    // the shared palette class, drawn from the contour the contract publishes.
-    const area = container.querySelector('path.nv-zone-area');
-    expect(area).not.toBeNull();
-    expect(area?.getAttribute('d')).toBeTruthy();
+    // U2 / AC-U2: the zone overlay stopped being derived from the selection, so
+    // a selected center no longer paints its contour even though the data has
+    // one. The marker highlight (not a zone) is what selection shows.
+    expect(container.querySelector('path.nv-zone-area')).toBeNull();
   });
 
-  it('paints no area when the opened center zone carries no contour', () => {
-    const { container } = renderMapWithSelectedZoneWithoutContour();
+  it('clears the selection on a background click, never on a marker click', () => {
+    const onClearSelection = vi.fn();
+    const onSelectCentro = vi.fn();
+    const { container } = render(
+      <MapCanvas
+        ambulancias={[]}
+        emergencias={[]}
+        centros={MOCK_CENTROS_AYUDA}
+        onSelectAmbulance={() => undefined}
+        onSelectEmergency={() => undefined}
+        onSelectCentro={onSelectCentro}
+        onClearSelection={onClearSelection}
+      />,
+    );
 
-    // No geometry in the data: nothing is painted, never an invented footprint.
-    expect(container.querySelector('path.nv-zone-area')).toBeNull();
+    // A click on the map background (the Leaflet container itself, not a marker)
+    // releases the selection.
+    fireEvent.click(container.querySelector('.leaflet-container') as HTMLElement);
+    expect(onClearSelection).toHaveBeenCalledTimes(1);
+    expect(onSelectCentro).not.toHaveBeenCalled();
+
+    // A marker click selects and must NOT read as a background click: Leaflet's
+    // `Marker` does not bubble its click (`bubblingMouseEvents: false`).
+    onClearSelection.mockClear();
+    fireEvent.click(markerByLabel(container, 'Suba Norte'));
+    expect(onSelectCentro).toHaveBeenCalledWith('CA-SUBA-NORTE');
+    expect(onClearSelection).not.toHaveBeenCalled();
   });
 
   it('draws the citizen radar rings anchored on the self marker', () => {
