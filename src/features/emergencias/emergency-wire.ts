@@ -116,6 +116,11 @@ export function fromWireEmergency(value: unknown): Emergencia | null {
 
   const zonaId = typeof value.zonaId === 'string' ? value.zonaId : '';
   const descripcion = typeof value.descripcion === 'string' ? value.descripcion : undefined;
+  // Optional like `descripcion`: carried only when the wire actually sent a
+  // usable number, never invented and never defaulted. A non-number is dropped
+  // (absent version), which makes the reader degrade to today's behaviour.
+  const version =
+    typeof value.version === 'number' && Number.isFinite(value.version) ? value.version : undefined;
 
   return {
     id: value.id,
@@ -125,5 +130,6 @@ export function fromWireEmergency(value: unknown): Emergencia | null {
     ...(descripcion === undefined ? {} : { descripcion }),
     zonaId,
     createdAt: value.createdAt,
+    ...(version === undefined ? {} : { version }),
   };
 }

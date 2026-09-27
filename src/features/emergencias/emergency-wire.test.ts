@@ -30,6 +30,19 @@ describe('fromWireEmergency', () => {
     expect(fromWireEmergency({ ...WIRE, zonaId: undefined })?.zonaId).toBe('');
   });
 
+  it('carries the version when the wire sends a finite number', () => {
+    expect(fromWireEmergency({ ...WIRE, version: 7 })?.version).toBe(7);
+  });
+
+  it('omits the version when the wire does not send one', () => {
+    expect(fromWireEmergency(WIRE)).not.toHaveProperty('version');
+  });
+
+  it('omits the version when the wire sends a non-number', () => {
+    expect(fromWireEmergency({ ...WIRE, version: '7' })).not.toHaveProperty('version');
+    expect(fromWireEmergency({ ...WIRE, version: Number.NaN })).not.toHaveProperty('version');
+  });
+
   it('is idempotent: already-English values pass through', () => {
     const normalized = { ...WIRE, nivel: 'HIGH', estado: 'REPORTED' };
 

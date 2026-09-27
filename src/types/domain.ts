@@ -47,6 +47,14 @@ export interface Emergencia {
   /** UI grouping key used by the registry; not part of the OpenAPI schema. */
   zonaId: string;
   createdAt: string;
+  /**
+   * Monotonic version assigned by the server on every write, so a reader can
+   * discard stale realtime frames and converge regardless of delivery order.
+   * Optional: demo fixtures and the dev relay do not carry it, so an absent
+   * version must degrade to the pre-version (last-writer-wins) behaviour instead
+   * of breaking those payloads.
+   */
+  version?: number;
 }
 
 export type AmbulanceState = 'AVAILABLE' | 'ASSIGNED' | 'EN_ROUTE' | 'MAINTENANCE';

@@ -22,8 +22,24 @@ export const useEmergencyStore = create<EmergencyState>((set) => ({
       if (index === -1) {
         return { items: [...state.items, emergency] };
       }
+      const current = state.items[index];
+      // Convergence must not depend on delivery order: when BOTH sides carry a
+      // version, an incoming frame that does not strictly advance it is stale
+      // (lower version) or carries no new information (equal version), so it is
+      // discarded instead of overwriting state another reader already advanced.
+      // Discarding the stale frame here — rather than trying to order the
+      // transport — is what makes the final state identical whatever order the
+      // frames arrive in. When either side lacks a version we keep applying the
+      // incoming event, which is today's (pre-version) behaviour.
+      if (
+        current.version !== undefined &&
+        emergency.version !== undefined &&
+        emergency.version <= current.version
+      ) {
+        return state;
+      }
       const items = state.items.slice();
-      items[index] = { ...items[index], ...emergency };
+      items[index] = { ...current, ...emergency };
       return { items };
     }),
 }));
