@@ -5,6 +5,7 @@ import co.edu.escuelaing.nexovital.recursos.domain.exception.ItemInventarioNoEnc
 import co.edu.escuelaing.nexovital.recursos.domain.exception.StockInsuficienteException;
 import co.edu.escuelaing.nexovital.recursos.domain.model.ItemInventario;
 import co.edu.escuelaing.nexovital.recursos.domain.port.in.DespacharStockUseCase;
+import co.edu.escuelaing.nexovital.recursos.domain.port.in.RegistrarAlertaEscasezUseCase;
 import co.edu.escuelaing.nexovital.recursos.domain.port.out.CentroAcopioQueryPort;
 import co.edu.escuelaing.nexovital.recursos.domain.port.out.InventarioRepository;
 import co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.in.dto.ItemInventarioDto;
@@ -40,13 +41,16 @@ public class DespacharStockUseCaseImpl implements DespacharStockUseCase {
 
     private final InventarioRepository inventarioRepository;
     private final CentroAcopioQueryPort centroAcopioQueryPort;
+    private final RegistrarAlertaEscasezUseCase registrarAlertaEscasezUseCase;
     private final ApplicationEventPublisher eventPublisher;
 
     public DespacharStockUseCaseImpl(InventarioRepository inventarioRepository,
                                      CentroAcopioQueryPort centroAcopioQueryPort,
+                                     RegistrarAlertaEscasezUseCase registrarAlertaEscasezUseCase,
                                      ApplicationEventPublisher eventPublisher) {
         this.inventarioRepository = inventarioRepository;
         this.centroAcopioQueryPort = centroAcopioQueryPort;
+        this.registrarAlertaEscasezUseCase = registrarAlertaEscasezUseCase;
         this.eventPublisher = eventPublisher;
     }
 
@@ -67,7 +71,19 @@ public class DespacharStockUseCaseImpl implements DespacharStockUseCase {
             // fresh available quantity; the CAS is still the sole authority.
             ItemInventario sinStock = inventarioRepository.buscar(centroAcopioId, itemId)
                     .orElseThrow(() -> new ItemInventarioNoEncontradoException(centroAcopioId, itemId));
-            throw new StockInsuficienteException(itemId, sinStock.getDisponible(), cantidad);
+            StockInsuficienteException rechazo = new StockInsuficienteException(
+                    centroAcopioId, itemId, sinStock.getNombre(), sinStock.getDisponible(), cantidad);
+            // FA-6: this transaction is about to roll back when the exception
+            // is thrown, so the alert is persisted by a service that runs in
+            // its OWN transaction (REQUIRES_NEW). Saving it here would make it
+            // vanish with the rollback.
+            registrarAlertaEscasezUseCase.registrar(
+                    rechazo.getCentroAcopioId(),
+                    rechazo.getItemId(),
+                    rechazo.getNombre(),
+                    rechazo.getCantidad(),
+                    rechazo.getDisponible());
+            throw rechazo;
         }
 
         // Source of truth: re-read AFTER the atomic decrement. The cached

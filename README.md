@@ -122,6 +122,25 @@ producción**. Es idempotente, así que reiniciar no duplica cuentas. Las contra
 Tras **3 intentos fallidos seguidos** la cuenta queda bloqueada **5 minutos**. Durante el bloqueo
 la contraseña no se evalúa y el contador no se incrementa, de modo que la ventana siempre expira.
 
+## Dimensionamiento del pool de conexiones
+
+**Requisito:** `spring.datasource.hikari.maximum-pool-size` debe ser **al menos el DOBLE** de los
+despachos que puedan rechazarse simultáneamente.
+
+**Por qué:** cuando un despacho se rechaza por stock insuficiente
+(`POST /api/v1/centros-acopio/{id}/inventario/despacho` → `409`), se registra una **alerta de
+escasez** (EP-03.F1.US5) en una **transacción propia** (`REQUIRES_NEW`) que tiene que sobrevivir al
+rollback del despacho. La transacción del despacho se suspende pero **conserva su conexión**, así que
+**cada rechazo sostiene DOS conexiones a la vez**.
+
+**Valor actual: `40`** (el default era `10`). Se subió porque el escenario de concurrencia **C1**
+—*100 solicitudes sobre stock 3*— deja **97 rechazos**, y con el pool viejo la prueba de 16 hilos se
+auto-bloqueaba con `Connection is not available (total=10, active=10)`.
+
+**Si producción define el pool por variable de entorno, respetá el doble**, o los rechazos se quedan
+sin conexión. La decisión y la alternativa que se evaluó (un listener de `AFTER_ROLLBACK`, que usa
+una sola conexión) están en `../odd/tasks/back-225-alerta-escasez.md`, decisión **FA-9**.
+
 ## Pruebas
 
 ```bash
