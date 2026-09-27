@@ -31,6 +31,15 @@ import java.util.UUID;
  * that same id, so the subscribed session {@code /user/queue/solicitudes}
  * receives its own copy. {@code /topic/flota} stays a topic.
  *
+ * <p><b>Requester lifecycle.</b> The user who raised the request
+ * ({@code solicitanteId}) also receives the request-level states — creation
+ * (PENDIENTE), assignment (ASIGNADA) and confirmation (CONFIRMADA) — on their own
+ * {@code /queue/solicitudes} user destination, so the citizen's screen leaves
+ * "Pidiendo ambulancia…". The per-unit decline (RECHAZADA) is NEVER sent to the
+ * requester: it is one addressed unit's ack, and the front would map it to
+ * {@code request.rejected}, making the citizen believe their still-open request
+ * failed.
+ *
  * <p><b>Debt (stage 3).</b> The front must subscribe to
  * {@code /user/queue/solicitudes}, not {@code /queue/solicitudes} (D-F1).
  */
@@ -62,17 +71,30 @@ public class FlotaPushListener {
         for (UUID ambulanciaId : evento.ambulanciasNotificadas()) {
             publicarAlConductor(ambulanciaId, payload);
         }
+        publicarAlSolicitante(evento.solicitanteId(), payload);
     }
 
-    /** The winning unit's driver is told its bid was accepted. */
+    /** The winning unit's driver is told its bid was accepted; so is the requester. */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void alAsignarSolicitud(SolicitudAsignadaEvent evento) {
-        publicarAlConductor(evento.ambulanciaId(), new SolicitudPushPayload(
+        SolicitudPushPayload payload = new SolicitudPushPayload(
                 evento.solicitudId(), evento.emergenciaId(), evento.zonaId(),
-                "ASIGNADA", List.of(), evento.ambulanciaId()));
+                "ASIGNADA", List.of(), evento.ambulanciaId());
+        publicarAlConductor(evento.ambulanciaId(), payload);
+        publicarAlSolicitante(evento.solicitanteId(), payload);
     }
 
-    /** Only the declining driver is told; the request stays open for the rest. */
+    /**
+     * Only the declining driver is told; the request stays open for the rest.
+     *
+     * <p><b>Never delivered to the requester.</b> {@code RECHAZADA} here is a
+     * PER-UNIT acknowledgement (one addressed unit declined), not a request-level
+     * state: the request is still PENDIENTE and another unit may still accept it.
+     * The front maps {@code RECHAZADA -> request.rejected}, so sending it to the
+     * citizen would make them believe their request failed while it is still
+     * open. The requester only receives states that hold for the whole request:
+     * PENDIENTE (creation), ASIGNADA (assignment) and CONFIRMADA (confirmation).
+     */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void alRechazarSolicitud(SolicitudRechazadaEvent evento) {
         publicarAlConductor(evento.ambulanciaId(), new SolicitudPushPayload(
@@ -80,12 +102,14 @@ public class FlotaPushListener {
                 "RECHAZADA", List.of(), null));
     }
 
-    /** The help center confirmed the assignment: the assigned driver is told. */
+    /** The help center confirmed the assignment: the assigned driver and the requester are told. */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void alConfirmarSolicitud(SolicitudConfirmadaEvent evento) {
-        publicarAlConductor(evento.ambulanciaId(), new SolicitudPushPayload(
+        SolicitudPushPayload payload = new SolicitudPushPayload(
                 evento.solicitudId(), evento.emergenciaId(), evento.zonaId(),
-                "CONFIRMADA", List.of(), evento.ambulanciaId()));
+                "CONFIRMADA", List.of(), evento.ambulanciaId());
+        publicarAlConductor(evento.ambulanciaId(), payload);
+        publicarAlSolicitante(evento.solicitanteId(), payload);
     }
 
     /** State/position feed: a topic so every subscribed client sees the same state. */
@@ -105,6 +129,17 @@ public class FlotaPushListener {
                 .filter(Objects::nonNull)
                 .ifPresent(conductorId -> pushPort.publicarAUsuario(
                         conductorId.toString(), DESTINO_SOLICITUDES, payload));
+    }
+
+    /**
+     * Delivers the same payload to the requester's OWN user destination so the
+     * citizen tracks their request lifecycle. A request without a requester
+     * (legacy row) is skipped instead of failing the fan-out.
+     */
+    private void publicarAlSolicitante(UUID solicitanteId, Object payload) {
+        if (solicitanteId != null) {
+            pushPort.publicarAUsuario(solicitanteId.toString(), DESTINO_SOLICITUDES, payload);
+        }
     }
 
     /** Public projection of a request for the driver inbox. */
