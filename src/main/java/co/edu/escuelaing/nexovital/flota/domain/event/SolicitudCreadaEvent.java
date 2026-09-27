@@ -6,8 +6,10 @@ import java.util.UUID;
 
 /**
  * A new broadcast request was persisted. Published inside the transaction; the
- * post-commit listener fans it out to EVERY notified unit (D-F1, AC1).
+ * post-commit listener fans it out to EVERY notified unit (D-F1, AC1) and to
+ * the requester's own user queue.
  */
 public record SolicitudCreadaEvent(UUID solicitudId, UUID emergenciaId, String zonaId,
-                                   List<UUID> ambulanciasNotificadas, Instant solicitadaEn) {
+                                   List<UUID> ambulanciasNotificadas, Instant solicitadaEn,
+                                   UUID solicitanteId) {
 }

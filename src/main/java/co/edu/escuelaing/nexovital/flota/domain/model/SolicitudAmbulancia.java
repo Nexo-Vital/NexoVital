@@ -28,12 +28,18 @@ public final class SolicitudAmbulancia {
     private final String zonaId;
     private final Instant solicitadaEn;
     private final Instant timeoutEn;
+    /**
+     * Id of the user who raised the request. It is the citizen's own user id and
+     * the target of their private lifecycle queue, so they can watch their own
+     * request instead of being left without feedback.
+     */
+    private final UUID solicitanteId;
     private final List<UUID> ambulanciasNotificadas;
     private final UUID ambulanciaAsignadaId;
     private final long version;
 
     private SolicitudAmbulancia(UUID id, UUID emergenciaId, EstadoSolicitud estado, UUID centroAyudaId,
-                                String zonaId, Instant solicitadaEn, Instant timeoutEn,
+                                String zonaId, Instant solicitadaEn, Instant timeoutEn, UUID solicitanteId,
                                 List<UUID> ambulanciasNotificadas, UUID ambulanciaAsignadaId, long version) {
         this.id = Objects.requireNonNull(id, "id is required");
         this.emergenciaId = Objects.requireNonNull(emergenciaId, "emergenciaId is required");
@@ -42,6 +48,9 @@ public final class SolicitudAmbulancia {
         this.zonaId = Objects.requireNonNull(zonaId, "zonaId is required");
         this.solicitadaEn = Objects.requireNonNull(solicitadaEn, "solicitadaEn is required");
         this.timeoutEn = Objects.requireNonNull(timeoutEn, "timeoutEn is required");
+        // Not required here: `restaurar` must tolerate rows persisted before the
+        // requester was tracked. New requests enforce it in `solicitar`.
+        this.solicitanteId = solicitanteId;
         this.ambulanciasNotificadas = ambulanciasNotificadas == null
                 ? List.of()
                 : List.copyOf(ambulanciasNotificadas);
@@ -50,10 +59,11 @@ public final class SolicitudAmbulancia {
     }
 
     public static SolicitudAmbulancia solicitar(UUID id, UUID emergenciaId, UUID centroAyudaId, String zonaId,
-                                                Instant solicitadaEn, Instant timeoutEn,
+                                                Instant solicitadaEn, Instant timeoutEn, UUID solicitanteId,
                                                 List<UUID> ambulanciasNotificadas) {
+        Objects.requireNonNull(solicitanteId, "solicitanteId is required");
         return new SolicitudAmbulancia(id, emergenciaId, EstadoSolicitud.PENDIENTE, centroAyudaId, zonaId,
-                solicitadaEn, timeoutEn, ambulanciasNotificadas, null, 0);
+                solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, null, 0);
     }
 
     /**
@@ -62,16 +72,17 @@ public final class SolicitudAmbulancia {
      */
     public static SolicitudAmbulancia restaurar(UUID id, UUID emergenciaId, EstadoSolicitud estado,
                                                 UUID centroAyudaId, String zonaId, Instant solicitadaEn,
-                                                Instant timeoutEn, List<UUID> ambulanciasNotificadas,
+                                                Instant timeoutEn, UUID solicitanteId,
+                                                List<UUID> ambulanciasNotificadas,
                                                 UUID ambulanciaAsignadaId, long version) {
         return new SolicitudAmbulancia(id, emergenciaId, estado, centroAyudaId, zonaId,
-                solicitadaEn, timeoutEn, ambulanciasNotificadas, ambulanciaAsignadaId, version);
+                solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, ambulanciaAsignadaId, version);
     }
 
     private static SolicitudAmbulancia conEstado(SolicitudAmbulancia actual, EstadoSolicitud nuevo,
                                                  UUID ambulanciaAsignadaId) {
         return new SolicitudAmbulancia(actual.id, actual.emergenciaId, nuevo, actual.centroAyudaId,
-                actual.zonaId, actual.solicitadaEn, actual.timeoutEn,
+                actual.zonaId, actual.solicitadaEn, actual.timeoutEn, actual.solicitanteId,
                 actual.ambulanciasNotificadas, ambulanciaAsignadaId, actual.version + 1);
     }
 
@@ -142,6 +153,10 @@ public final class SolicitudAmbulancia {
 
     public Instant getTimeoutEn() {
         return timeoutEn;
+    }
+
+    public UUID getSolicitanteId() {
+        return solicitanteId;
     }
 
     public List<UUID> getAmbulanciasNotificadas() {

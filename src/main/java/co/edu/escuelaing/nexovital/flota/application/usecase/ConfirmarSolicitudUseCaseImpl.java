@@ -49,7 +49,7 @@ public class ConfirmarSolicitudUseCaseImpl implements ConfirmarSolicitudUseCase 
 
         eventPublisher.publishEvent(new SolicitudConfirmadaEvent(
                 solicitudId, confirmada.getEmergenciaId(), confirmada.getZonaId(),
-                confirmada.getAmbulanciaAsignadaId()));
+                confirmada.getAmbulanciaAsignadaId(), confirmada.getSolicitanteId()));
 
         return confirmada;
     }

@@ -72,7 +72,8 @@ public class AceptarSolicitudUseCaseImpl implements AceptarSolicitudUseCase {
         ambulanciaRepository.actualizarEstado(ambulanciaId, EstadoAmbulancia.EN_MISION);
 
         eventPublisher.publishEvent(new SolicitudAsignadaEvent(
-                solicitudId, asignada.getEmergenciaId(), asignada.getZonaId(), ambulanciaId));
+                solicitudId, asignada.getEmergenciaId(), asignada.getZonaId(), ambulanciaId,
+                asignada.getSolicitanteId()));
         eventPublisher.publishEvent(new FlotaActualizadaEvent(ambulanciaId, EstadoAmbulancia.EN_MISION));
 
         return ResultadoAceptarSolicitud.gano(asignada);

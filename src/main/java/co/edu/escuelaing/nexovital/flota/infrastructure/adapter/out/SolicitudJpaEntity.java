@@ -43,6 +43,10 @@ public class SolicitudJpaEntity {
     @Column(nullable = false)
     private Instant timeoutEn;
 
+    /** Requester's user id; nullable only to tolerate rows persisted before tracking. */
+    @Column
+    private UUID solicitanteId;
+
     @ElementCollection
     @CollectionTable(name = "solicitud_ambulancia_notificadas", joinColumns = @JoinColumn(name = "solicitud_id"))
     @Column(name = "ambulancia_id", nullable = false)
@@ -58,7 +62,7 @@ public class SolicitudJpaEntity {
     }
 
     public SolicitudJpaEntity(UUID id, UUID emergenciaId, EstadoSolicitud estado, UUID centroAyudaId,
-                              String zonaId, Instant solicitadaEn, Instant timeoutEn,
+                              String zonaId, Instant solicitadaEn, Instant timeoutEn, UUID solicitanteId,
                               List<UUID> ambulanciasNotificadas, UUID ambulanciaAsignadaId) {
         this.id = id;
         this.emergenciaId = emergenciaId;
@@ -67,6 +71,7 @@ public class SolicitudJpaEntity {
         this.zonaId = zonaId;
         this.solicitadaEn = solicitadaEn;
         this.timeoutEn = timeoutEn;
+        this.solicitanteId = solicitanteId;
         this.ambulanciasNotificadas = ambulanciasNotificadas == null
                 ? new ArrayList<>()
                 : new ArrayList<>(ambulanciasNotificadas);
@@ -99,6 +104,10 @@ public class SolicitudJpaEntity {
 
     public Instant getTimeoutEn() {
         return timeoutEn;
+    }
+
+    public UUID getSolicitanteId() {
+        return solicitanteId;
     }
 
     public List<UUID> getAmbulanciasNotificadas() {

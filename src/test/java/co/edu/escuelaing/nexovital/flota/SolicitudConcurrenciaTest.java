@@ -80,7 +80,7 @@ class SolicitudConcurrenciaTest {
                 String zona = "PruebaC2-" + UUID.randomUUID();
                 List<UUID> unidades = sembrarUnidades(zona, UNIDADES_POR_RONDA);
                 UUID solicitudId = solicitarAmbulanciaUseCase
-                        .solicitar(UUID.randomUUID(), UUID.randomUUID(), zona, null)
+                        .solicitar(UUID.randomUUID(), UUID.randomUUID(), zona, UUID.randomUUID(), null)
                         .getId();
 
                 List<Throwable> resultados = correrCarrera(pool, solicitudId, unidades);

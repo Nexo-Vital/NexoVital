@@ -24,12 +24,14 @@ class SolicitudAmbulanciaTest {
     private final UUID solicitudId = UUID.randomUUID();
     private final UUID emergenciaId = UUID.randomUUID();
     private final UUID centroAyudaId = UUID.randomUUID();
+    private final UUID solicitanteId = UUID.randomUUID();
     private final UUID ambulanciaA = UUID.randomUUID();
     private final UUID ambulanciaB = UUID.randomUUID();
 
     private SolicitudAmbulancia pendiente() {
         return SolicitudAmbulancia.solicitar(solicitudId, emergenciaId, centroAyudaId, "zona-1",
-                Instant.now(), Instant.now().plus(60, ChronoUnit.SECONDS), List.of(ambulanciaA, ambulanciaB));
+                Instant.now(), Instant.now().plus(60, ChronoUnit.SECONDS), solicitanteId,
+                List.of(ambulanciaA, ambulanciaB));
     }
 
     @Test
@@ -38,7 +40,15 @@ class SolicitudAmbulanciaTest {
         assertEquals(EstadoSolicitud.PENDIENTE, solicitud.getEstado());
         assertNull(solicitud.getAmbulanciaAsignadaId());
         assertEquals(List.of(ambulanciaA, ambulanciaB), solicitud.getAmbulanciasNotificadas());
+        assertEquals(solicitanteId, solicitud.getSolicitanteId());
         assertEquals(0, solicitud.getVersion());
+    }
+
+    @Test
+    void elSolicitanteSobreviveALasTransiciones() {
+        SolicitudAmbulancia confirmada = pendiente().aceptar(ambulanciaA).confirmar();
+        assertEquals(solicitanteId, confirmada.getSolicitanteId(),
+                "the requester must be carried through the state transitions");
     }
 
     @Test
@@ -81,7 +91,7 @@ class SolicitudAmbulanciaTest {
     void estaVencidaCuandoTimeoutQuedaAtras() {
         SolicitudAmbulancia vencida = SolicitudAmbulancia.solicitar(solicitudId, emergenciaId, centroAyudaId,
                 "zona-1", Instant.now().minus(120, ChronoUnit.SECONDS),
-                Instant.now().minus(60, ChronoUnit.SECONDS), List.of(ambulanciaA));
+                Instant.now().minus(60, ChronoUnit.SECONDS), solicitanteId, List.of(ambulanciaA));
         assertTrue(vencida.estaVencida());
         assertFalse(pendiente().estaVencida());
     }

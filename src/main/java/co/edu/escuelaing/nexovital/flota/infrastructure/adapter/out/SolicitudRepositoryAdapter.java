@@ -29,6 +29,7 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
                 solicitud.getZonaId(),
                 solicitud.getSolicitadaEn(),
                 solicitud.getTimeoutEn(),
+                solicitud.getSolicitanteId(),
                 solicitud.getAmbulanciasNotificadas(),
                 solicitud.getAmbulanciaAsignadaId());
         return toDomain(jpaRepository.save(entity));
@@ -62,6 +63,7 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
                 entity.getZonaId(),
                 entity.getSolicitadaEn(),
                 entity.getTimeoutEn(),
+                entity.getSolicitanteId(),
                 entity.getAmbulanciasNotificadas(),
                 entity.getAmbulanciaAsignadaId(),
                 entity.getVersion());

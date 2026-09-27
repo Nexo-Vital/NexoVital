@@ -75,7 +75,9 @@ public class SolicitudController {
     }
 
     /**
-     * Broadcasts the request to every available unit of the zone.
+     * Broadcasts the request to every available unit of the zone. The
+     * authenticated citizen is persisted as the requester and receives the
+     * lifecycle on their own user destination.
      *
      * @return 201 with the created request; 409 {@code AMBULANCIA_NO_DISPONIBLE}
      *         if the zone has none; 400 {@code DATOS_INVALIDOS} on a missing
@@ -93,8 +95,10 @@ public class SolicitudController {
             if (request.zonaId() == null || request.zonaId().isBlank()) {
                 throw new IllegalArgumentException("La zona es obligatoria.");
             }
+            UUID solicitanteId = usuarioAutenticadoId();
             SolicitudAmbulancia creada = solicitarAmbulanciaUseCase.solicitar(
-                    request.emergenciaId(), request.centroAyudaId(), request.zonaId(), request.timeoutEn());
+                    request.emergenciaId(), request.centroAyudaId(), request.zonaId(),
+                    solicitanteId, request.timeoutEn());
             return ResponseEntity.status(HttpStatus.CREATED).body(SolicitudAmbulanciaDto.fromDomain(creada));
         } catch (AmbulanciaNoDisponibleException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
