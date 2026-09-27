@@ -12,10 +12,12 @@ import {
   Radio,
   Timer,
   User,
+  Volume2,
+  VolumeX,
   Warehouse,
   X,
 } from 'lucide-react';
-import { type ReactNode, useEffect, useRef } from 'react';
+import { type ReactNode, useEffect, useRef, useSyncExternalStore } from 'react';
 import { formatCoordinates } from '@/features/ciudadano/citizen-request';
 import {
   CENTER_LEVEL_STYLE,
@@ -31,14 +33,23 @@ import {
   INSECURE_CONTEXT_MESSAGE,
   SIMULATED_START,
 } from '@/features/geolocalizacion/use-device-location';
-import { EMERGENCY_LEVEL_META } from '@/features/solicitudes/request-status';
+import {
+  EMERGENCY_LEVEL_META,
+  REQUEST_STATE_LABEL_ES,
+} from '@/features/solicitudes/request-status';
 import { useClock } from '@/hooks/use-clock';
 import { formatCountdown, formatElapsed } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { SolicitudBroadcastPayload } from '@/shared/realtime';
-import type { Ambulancia, CentroAyuda, EmergencyLevel } from '@/types/domain';
+import type { Ambulancia, CentroAyuda, EmergencyLevel, SolicitudAmbulancia } from '@/types/domain';
 import { DriverMissionPanel } from './DriverMissionPanel';
 import { DRIVER_STATUS_META, DRIVER_STATUS_ORDER, type DriverStatus } from './driver-status';
+import {
+  isSoundSupported,
+  isSoundUnlocked,
+  subscribeSoundStatus,
+  unlockSound,
+} from './request-sound';
 import type { DriverMissionPhase, Mission, SolicitudPhase } from './use-solicitud-inbox';
 
 /** Panel shell shared by the three rail blocks: same card as the citizen rail. */
@@ -359,6 +370,43 @@ function unitListLabel(ids: string[]): string {
   return `${ids.slice(0, -1).join(', ')} y ${ids[ids.length - 1]}`;
 }
 
+/**
+ * Discreet sound affordance. Browsers block audio until a user gesture, so this
+ * is the one control that unlocks the synthesized ding. It never claims the
+ * sound is active when it is not: while locked it offers "Activar sonido", and
+ * a browser without Web Audio says so instead of showing a dead button.
+ */
+function SoundToggle() {
+  const supported = isSoundSupported();
+  const unlocked = useSyncExternalStore(subscribeSoundStatus, isSoundUnlocked, () => false);
+
+  if (!supported) {
+    return (
+      <span className="shrink-0 rounded-nv-pill bg-idle/15 px-2.5 py-1 font-medium text-idle text-xs">
+        Sonido no disponible
+      </span>
+    );
+  }
+  if (unlocked) {
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-nv-pill bg-nv-lime px-2.5 py-1 font-semibold text-nv-navy text-xs">
+        <Volume2 className="size-3.5" aria-hidden />
+        Sonido activado
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => void unlockSound()}
+      className="inline-flex shrink-0 items-center gap-1.5 rounded-nv-pill border-[1.5px] border-nv-line bg-white px-2.5 py-1 font-semibold text-nv-navy text-xs"
+    >
+      <VolumeX className="size-3.5" aria-hidden />
+      Activar sonido
+    </button>
+  );
+}
+
 interface RequestCardProps {
   broadcast: SolicitudBroadcastPayload;
   phase: SolicitudPhase;
@@ -440,15 +488,19 @@ function RequestCard({
         */}
         <RequestDataRow
           label="Emergencia"
-          value={`${broadcast.emergenciaId} · ${broadcast.tipo}`}
+          value={`${broadcast.emergenciaId}${broadcast.tipo ? ` · ${broadcast.tipo}` : ''}`}
           icon={User}
         />
         {/* A citizen request declares no zone, so the coordinates it really
             reported (`escena`) are shown instead of an empty zone slot. A CRUE
-            request keeps its declared zone. */}
+            request keeps its declared zone. A backend frame may carry neither,
+            and then the row says so instead of inventing a location. */}
         <RequestDataRow
           label="Ubicación"
-          value={broadcast.zonaId || formatCoordinates(broadcast.escena)}
+          value={
+            broadcast.zonaId ||
+            (broadcast.escena ? formatCoordinates(broadcast.escena) : 'Sin ubicación')
+          }
           icon={MapPin}
         />
         <RequestDataRow label="Distancia" value={distanceLabel} icon={Navigation} />
@@ -525,31 +577,44 @@ function RequestsPanel({
   ...request
 }: RequestPanelProps & MissionPanelProps & { mission: Mission | null }) {
   const requestOpen = request.phase === 'idle' || request.phase === 'submitting';
+  // The sound affordance lives in the inbox header in every state, so it is
+  // always reachable (the user unlocks audio once, before the next request).
+  const header = (
+    <div className="flex items-center gap-2">
+      <h4 className="flex items-center gap-2 font-bold text-sm">
+        <ClipboardList className="size-4 text-nv-navy" aria-hidden />
+        Solicitudes
+      </h4>
+      <span className="ml-auto">
+        <SoundToggle />
+      </span>
+    </div>
+  );
   if (mission && !requestOpen) {
     return (
-      <DriverMissionPanel
-        tipo={mission.tipo}
-        nivel={mission.nivel}
-        distanceKm={missionDistanceKm}
-        etaMin={missionEtaMin}
-        locationLabel={missionLocation}
-        outcomeMessage={request.outcomeMessage}
-        phase={missionPhase}
-        acceptedAt={missionAcceptedAt}
-        arrivedAt={missionArrivedAt}
-        confirmedAt={missionConfirmedAt}
-        onDeclareArrival={onDeclareArrival}
-        onFinish={onFinish}
-      />
+      <RailPanel label="Solicitudes">
+        {header}
+        <DriverMissionPanel
+          tipo={mission.tipo}
+          nivel={mission.nivel}
+          distanceKm={missionDistanceKm}
+          etaMin={missionEtaMin}
+          locationLabel={missionLocation}
+          outcomeMessage={request.outcomeMessage}
+          phase={missionPhase}
+          acceptedAt={missionAcceptedAt}
+          arrivedAt={missionArrivedAt}
+          confirmedAt={missionConfirmedAt}
+          onDeclareArrival={onDeclareArrival}
+          onFinish={onFinish}
+        />
+      </RailPanel>
     );
   }
   if (!request.broadcast) {
     return (
       <RailPanel label="Solicitudes">
-        <h4 className="flex items-center gap-2 font-bold text-sm">
-          <ClipboardList className="size-4 text-nv-navy" aria-hidden />
-          Solicitudes
-        </h4>
+        {header}
         <div className="flex flex-col items-center gap-1.5 rounded-nv-md border border-dashed border-nv-line px-4 py-6 text-center">
           <Radio className="size-6 text-nv-teal" aria-hidden />
           <b className="font-semibold text-sm">Sin solicitudes por ahora</b>
@@ -560,7 +625,12 @@ function RequestsPanel({
       </RailPanel>
     );
   }
-  return <RequestCard {...request} broadcast={request.broadcast} />;
+  return (
+    <RailPanel label="Solicitudes">
+      {header}
+      <RequestCard {...request} broadcast={request.broadcast} />
+    </RailPanel>
+  );
 }
 
 /**
@@ -615,6 +685,60 @@ function AidCentersPanel({ centros }: { centros: CentroAyuda[] }) {
         <ul className="flex list-none flex-col gap-2.5 p-0">
           {centros.map((centro) => (
             <AidCenterRow key={centro.id} centro={centro} />
+          ))}
+        </ul>
+      )}
+    </RailPanel>
+  );
+}
+
+/**
+ * U5: the bottom list of EVERY request in the registry, not just the one the
+ * inbox is currently offering. The count comes from the real data (`solicitudes
+ * .length`), never a fixed number. Each row is a button: tapping it opens the
+ * request sheet (U6) with Aceptar / Rechazar / Visualizar.
+ */
+function SolicitudesListPanel({
+  solicitudes,
+  onSelect,
+}: {
+  solicitudes: SolicitudAmbulancia[];
+  onSelect: (solicitud: SolicitudAmbulancia) => void;
+}) {
+  return (
+    <RailPanel label="Todas las solicitudes">
+      <h4 className="flex items-center gap-2 font-bold text-sm">
+        <ClipboardList className="size-4 text-nv-navy" aria-hidden />
+        Todas las solicitudes
+        <span className="ml-auto shrink-0 rounded-nv-pill bg-nv-mint px-2.5 py-1 font-semibold text-nv-navy text-xs">
+          {solicitudes.length}
+        </span>
+      </h4>
+      {solicitudes.length === 0 ? (
+        <p className="text-nv-navy-400 text-sm">No hay solicitudes registradas.</p>
+      ) : (
+        <ul aria-label="Lista de solicitudes" className="flex list-none flex-col gap-2 p-0">
+          {solicitudes.map((solicitud) => (
+            <li key={solicitud.id}>
+              <button
+                type="button"
+                onClick={() => onSelect(solicitud)}
+                className="flex w-full flex-col gap-1 rounded-nv-md border border-nv-line bg-white p-3 text-left"
+              >
+                <span className="flex items-center gap-2">
+                  <b className="min-w-0 flex-1 truncate font-semibold text-[13.5px]">
+                    {solicitud.id}
+                  </b>
+                  <span className="shrink-0 rounded-nv-pill bg-nv-mint px-2 py-0.5 font-medium text-nv-navy-400 text-[11px]">
+                    {REQUEST_STATE_LABEL_ES[solicitud.estado]}
+                  </span>
+                </span>
+                <small className="block truncate text-nv-navy-400 text-xs">
+                  {[solicitud.tipo, solicitud.zonaId].filter(Boolean).join(' · ') ||
+                    solicitud.emergenciaId}
+                </small>
+              </button>
+            </li>
           ))}
         </ul>
       )}
@@ -678,6 +802,10 @@ interface DriverRailProps extends MissionPanelProps {
   request: RequestPanelProps;
   /** Aid centers to list, nearest first is not guaranteed by the fixture. */
   centros: CentroAyuda[];
+  /** Every request in the registry, rendered as the bottom list (U5). */
+  solicitudes: SolicitudAmbulancia[];
+  /** Opens the request sheet for a tapped row (U6). */
+  onSelectSolicitud: (solicitud: SolicitudAmbulancia) => void;
 }
 
 /** Driver rail: own unit, the live request inbox and the nearby aid centers. */
@@ -702,6 +830,8 @@ export function DriverRail({
   location,
   request,
   centros,
+  solicitudes,
+  onSelectSolicitud,
 }: DriverRailProps) {
   return (
     <aside
@@ -733,6 +863,7 @@ export function DriverRail({
         onFinish={onFinish}
       />
       <AidCentersPanel centros={centros} />
+      <SolicitudesListPanel solicitudes={solicitudes} onSelect={onSelectSolicitud} />
     </aside>
   );
 }

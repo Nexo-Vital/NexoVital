@@ -47,6 +47,21 @@ export const REQUEST_STATE_META: Record<RequestState, ColorMeta> = {
   },
 };
 
+/**
+ * Spanish lifecycle labels for the driver UI. The CRUE keeps the English
+ * `REQUEST_STATE_META` above; this is the same vocabulary in the driver's
+ * language ("Pendiente", "Tomada", ...), declared once and shared by the
+ * request list and the request sheet.
+ */
+export const REQUEST_STATE_LABEL_ES: Record<RequestState, string> = {
+  PENDING: 'Pendiente',
+  ASSIGNED: 'Asignada',
+  CONFIRMED: 'Confirmada',
+  TAKEN: 'Tomada',
+  REJECTED: 'Rechazada',
+  TIMEOUT: 'Expirada',
+};
+
 export const EMERGENCY_LEVEL_META: Record<EmergencyLevel, ColorMeta> = {
   LOW: { label: 'Low', dotClass: 'bg-ok', textClass: 'text-ok', borderClass: 'border-ok/40' },
   MEDIUM: {

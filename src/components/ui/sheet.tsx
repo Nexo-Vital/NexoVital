@@ -42,7 +42,7 @@ function SheetContent({
         {children}
         <DialogPrimitive.Close className="absolute top-3 right-3 rounded-sm text-muted-foreground outline-none transition-colors hover:text-foreground">
           <X className="size-4" />
-          <span className="sr-only">Close</span>
+          <span className="sr-only">Cerrar</span>
         </DialogPrimitive.Close>
       </DialogPrimitive.Content>
     </SheetPortal>
