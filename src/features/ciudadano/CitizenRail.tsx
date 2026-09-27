@@ -32,12 +32,15 @@ const ACTION_BUTTON_CLASS =
 function CitizenRoleActions({
   onRequest,
   availableCount,
+  requestError,
   onDonate,
   donationEnabled,
   onReport,
 }: {
   onRequest: () => void;
   availableCount: number;
+  /** Honest reason the last request could not start; null when none. */
+  requestError?: string | null;
   onDonate: () => void;
   donationEnabled: boolean;
   onReport: () => void;
@@ -85,6 +88,14 @@ function CitizenRoleActions({
         <Siren className="size-5" aria-hidden />
         Reportar zona afectada
       </button>
+
+      {/* A blocked request must never look like a dead button: the store hands
+          the page the real reason and it is shown right under the actions. */}
+      {requestError && (
+        <p role="status" className="text-critical text-xs">
+          {requestError}
+        </p>
+      )}
 
       {availableCount === 0 && (
         <p role="status" className="text-critical text-xs">
@@ -233,6 +244,8 @@ interface CitizenRailProps {
   centros: CentroAyuda[];
   /** Units currently AVAILABLE; zero disables the search honestly. */
   availableCount: number;
+  /** Honest reason the last request could not start; null when none. */
+  requestError?: string | null;
   /** Starts the citizen request from the "Pedir ambulancia" action. */
   onRequest: () => void;
   /** Opens the donation center picker; no center is chosen for the citizen. */
@@ -256,6 +269,7 @@ export function CitizenRail({
   nearby,
   centros,
   availableCount,
+  requestError,
   onRequest,
   onDonate,
   donationEnabled,
@@ -273,6 +287,7 @@ export function CitizenRail({
       <CitizenRoleActions
         onRequest={onRequest}
         availableCount={availableCount}
+        requestError={requestError}
         onDonate={onDonate}
         donationEnabled={donationEnabled}
         onReport={onReport}

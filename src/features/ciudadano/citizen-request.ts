@@ -1,8 +1,8 @@
-import { SOLICITUD_TIMEOUT_MS } from '@/features/solicitudes/solicitud-form';
+import { activeEmergencies, SOLICITUD_TIMEOUT_MS } from '@/features/solicitudes/solicitud-form';
 import { formatCountdown } from '@/lib/format';
 import { distanceKm } from '@/lib/geo';
 import type { SolicitudBroadcastPayload } from '@/shared/realtime';
-import type { Ambulancia, Ubicacion } from '@/types/domain';
+import type { Ambulancia, CentroAyuda, Emergencia, Ubicacion } from '@/types/domain';
 
 /**
  * Citizen "ask for an ambulance" projection.
@@ -15,6 +15,24 @@ import type { Ambulancia, Ubicacion } from '@/types/domain';
 
 /** Units alerted at once by a citizen request (mockup `C.c3`: "las 3"). */
 export const CITIZEN_BROADCAST_LIMIT = 3;
+
+/** Registry label for a request whose emergency has no description of its own. */
+export const CITIZEN_REQUEST_LABEL = 'Solicitud de ambulancia';
+
+/**
+ * Honest reasons the citizen request cannot be sent. The store publishes one as
+ * its `startError` and the screen renders it next to the button, so a blocked
+ * request never looks dead. They are UI copy (Spanish), one per real cause.
+ */
+export const CITIZEN_REQUEST_REASONS = {
+  noEmergency:
+    'No hay una emergencia activa reportada. Reporta primero la zona afectada y vuelve a pedir la ambulancia.',
+  noCenter: 'El mapa todavía no tiene centros de ayuda a los que dirigir la solicitud.',
+  noZone:
+    'La emergencia no tiene zona y ningún centro cercano declara una. No se puede enviar la solicitud.',
+  noUnits: 'No hay ambulancias disponibles en este momento.',
+  failed: 'No se pudo enviar la solicitud. Intenta de nuevo.',
+} as const;
 
 /** Coordinates as the citizen subtitle writes them; no reverse geocoding. */
 export function formatCoordinates(position: Ubicacion): string {
@@ -62,6 +80,35 @@ export function nearestAvailableUnits(
     .sort((a, b) => a.km - b.km)
     .slice(0, limit)
     .map((entry) => entry.unit);
+}
+
+/**
+ * The citizen's most recently created ACTIVE emergency, or null when there is
+ * none. The request is anchored to THIS emergency: a local `REQ-…` id is not an
+ * emergency and the backend rejects it as an invalid `UUID`. Ties keep the list
+ * order, so the caller's ordering stays authoritative.
+ */
+export function latestActiveEmergency(emergencies: Emergencia[]): Emergencia | null {
+  return activeEmergencies(emergencies).reduce<Emergencia | null>(
+    (latest, item) =>
+      latest === null || Date.parse(item.createdAt) >= Date.parse(latest.createdAt) ? item : latest,
+    null,
+  );
+}
+
+/**
+ * The aid center nearest to `origin`, or null when the map holds none. The
+ * request points the backend at a REAL center by id, so picking the nearest is
+ * the natural destination; against the seeded backend every center is in Suba,
+ * which is where the citizen fallback origin sits too. Returns null on an empty
+ * list so the caller can fail honestly instead of sending a blank center.
+ */
+export function nearestCentro(centros: CentroAyuda[], origin: Ubicacion): CentroAyuda | null {
+  return (
+    centros
+      .map((centro) => ({ centro, km: distanceKm(origin, centro.ubicacion) }))
+      .sort((a, b) => a.km - b.km)[0]?.centro ?? null
+  );
 }
 
 /**
@@ -127,7 +174,7 @@ export function buildCitizenBroadcast(
     // No declared zone: the citizen only reports a position, which `escena`
     // already carries. Filling this with coordinates was the bug (C2).
     zonaId: '',
-    tipo: 'Solicitud de ambulancia',
+    tipo: CITIZEN_REQUEST_LABEL,
     escena: input.origin,
     timeoutEn: new Date(now + SOLICITUD_TIMEOUT_MS).toISOString(),
     notificadas: notified.map((unit) => unit.id),

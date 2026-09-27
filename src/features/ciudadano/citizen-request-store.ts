@@ -2,21 +2,29 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 import { solicitarAmbulancia } from '@/features/solicitudes/solicitud-api';
 import {
-  CITIZEN_CENTRO_AYUDA_ID,
   nextRequestId,
+  SOLICITUD_TIMEOUT_MS,
   toSolicitud,
 } from '@/features/solicitudes/solicitud-form';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
 import { isDemoMode } from '@/services/apiClient';
 import {
   DESTINATIONS,
+  fromWireSolicitud,
   type RealtimePort,
   type SolicitudCancelPayload,
   type SolicitudConfirmarPayload,
   type SolicitudPayload,
+  solicitudFrameFromWire,
 } from '@/shared/realtime';
-import type { Ambulancia, Ubicacion } from '@/types/domain';
-import { buildCitizenBroadcast } from './citizen-request';
+import type { Ambulancia, CentroAyuda, Emergencia, Ubicacion } from '@/types/domain';
+import {
+  buildCitizenBroadcast,
+  CITIZEN_REQUEST_LABEL,
+  CITIZEN_REQUEST_REASONS,
+  latestActiveEmergency,
+  nearestCentro,
+} from './citizen-request';
 
 /**
  * The citizen's own request lifecycle. `accepted` -> `arrived` -> `closed` is
@@ -27,6 +35,12 @@ export type CitizenRequestPhase = 'idle' | 'searching' | 'accepted' | 'arrived' 
 
 interface CitizenRequestState {
   phase: CitizenRequestPhase;
+  /**
+   * Honest reason the last `start` could not open a search, or null. The screen
+   * renders it so a blocked request never looks dead; it is cleared on a new
+   * attempt, on success, and on reset/cancel.
+   */
+  startError: string | null;
   requestId: string | null;
   /** When the search began (epoch ms); drives the elapsed counter. */
   startedAt: number | null;
@@ -43,10 +57,12 @@ interface CitizenRequestState {
   /**
    * Starts the search. In demo mode it publishes the broadcast on the relay and
    * the local projection is the source of truth; against a backend it creates
-   * the request through `POST /api/v1/solicitudes` and adopts the server's
-   * response (id, estado, timestamps, notified units). Returns `false` (and
-   * changes nothing) when no unit is available, so the button cannot start a
-   * search that can never be answered.
+   * the request through `POST /api/v1/solicitudes` anchored to REAL data — the
+   * newest active emergency, its zone and the nearest aid center — and adopts
+   * the server's response (id, estado, timestamps, notified units). Returns
+   * `false` (and changes nothing) when no unit is available in demo mode or, in
+   * backend mode, when there is no active emergency, no reachable center or no
+   * usable zone: `startError` then carries the honest reason for the screen.
    */
   start: (input: CitizenRequestStart) => Promise<boolean>;
   /** Withdraws the open request on the relay and clears the local state. */
@@ -68,10 +84,18 @@ interface CitizenRequestStart {
   units: Ambulancia[];
   origin: Ubicacion;
   now?: number;
+  /**
+   * The citizen's emergencies (the emergency store snapshot). Against a backend
+   * the request is anchored to the newest ACTIVE one, never to a local id.
+   */
+  emergencies?: Emergencia[];
+  /** Aid centers from the map; the request points at the nearest REAL one. */
+  centros?: CentroAyuda[];
 }
 
 const IDLE_STATE = {
   phase: 'idle' as CitizenRequestPhase,
+  startError: null,
   requestId: null,
   startedAt: null,
   notifiedIds: [] as string[],
@@ -89,17 +113,18 @@ const IDLE_STATE = {
 export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => ({
   ...IDLE_STATE,
 
-  start: async ({ port, units, origin, now }) => {
+  start: async ({ port, units, origin, now, emergencies = [], centros = [] }) => {
     const startedAt = now ?? Date.now();
-    const requestId = nextRequestId();
-    const payload = buildCitizenBroadcast({ requestId, origin, units, now: startedAt });
-    if (!payload) {
-      return false;
-    }
 
     // Demo build: no backend exists, so the request is published on the relay
     // and the local projection is the source of truth (unchanged behaviour).
     if (isDemoMode()) {
+      const requestId = nextRequestId();
+      const payload = buildCitizenBroadcast({ requestId, origin, units, now: startedAt });
+      if (!payload) {
+        set({ ...IDLE_STATE, startError: CITIZEN_REQUEST_REASONS.noUnits });
+        return false;
+      }
       useSolicitudesStore.getState().upsert(toSolicitud(payload, startedAt));
       port?.publish(DESTINATIONS.solicitudes, payload);
       set({
@@ -111,22 +136,45 @@ export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => 
         acceptedAt: null,
         arrivedAt: null,
         confirmedAt: null,
+        startError: null,
       });
       return true;
     }
 
     // Real backend: the server creates the request and OWNS its identity and
     // state, so the store adopts the response instead of the local projection.
-    // `emergenciaId`/`zonaId` are the front's documented placeholders: the
-    // citizen request carries no emergency and declares no zone (see CR-G).
+    // The body is anchored to REAL data — a local `REQ-…` id, a `CA-CRUE`
+    // placeholder and a blank zone are all rejected by the backend (400) — so
+    // the request is only sent when there is something real to point at.
+    const emergency = latestActiveEmergency(emergencies);
+    if (!emergency) {
+      set({ ...IDLE_STATE, startError: CITIZEN_REQUEST_REASONS.noEmergency });
+      return false;
+    }
+    const centro = nearestCentro(centros, origin);
+    if (!centro) {
+      set({ ...IDLE_STATE, startError: CITIZEN_REQUEST_REASONS.noCenter });
+      return false;
+    }
+    // The backend resolves the zone when the emergency is reported; the chosen
+    // center's zone is the honest fallback. With neither, do not send blind.
+    const zonaId = emergency.zonaId.trim() || centro.zonaId?.trim() || '';
+    if (zonaId === '') {
+      set({ ...IDLE_STATE, startError: CITIZEN_REQUEST_REASONS.noZone });
+      return false;
+    }
+
     try {
       const solicitud = await solicitarAmbulancia({
-        emergenciaId: payload.emergenciaId,
-        centroAyudaId: CITIZEN_CENTRO_AYUDA_ID,
-        zonaId: payload.zonaId,
-        timeoutEn: payload.timeoutEn,
+        emergenciaId: emergency.id,
+        centroAyudaId: centro.id,
+        zonaId,
+        timeoutEn: new Date(startedAt + SOLICITUD_TIMEOUT_MS).toISOString(),
       });
-      useSolicitudesStore.getState().upsert({ ...solicitud, tipo: payload.tipo });
+      useSolicitudesStore.getState().upsert({
+        ...solicitud,
+        tipo: emergency.descripcion?.trim() || CITIZEN_REQUEST_LABEL,
+      });
       set({
         phase: 'searching',
         requestId: solicitud.id,
@@ -136,11 +184,15 @@ export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => 
         acceptedAt: null,
         arrivedAt: null,
         confirmedAt: null,
+        startError: null,
       });
       return true;
-    } catch {
-      // The server never created the request: never leave a phantom search.
-      set({ ...IDLE_STATE });
+    } catch (error) {
+      // The server never created the request: never leave a phantom search, and
+      // never fail silently. The backend's Spanish `mensaje` is surfaced as-is.
+      const reason =
+        error instanceof Error && error.message ? error.message : CITIZEN_REQUEST_REASONS.failed;
+      set({ ...IDLE_STATE, startError: reason });
       return false;
     }
   },
@@ -194,9 +246,14 @@ export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => 
 
   endOnConfirmed: (requestId) => {
     const state = get();
-    // Idempotent: the confirmation closes an already-arrived request exactly
-    // once; a repeat must not reopen it or reset the closing instant.
-    if (state.requestId !== requestId || state.phase !== 'arrived') {
+    // Idempotent: the confirmation closes OUR request exactly once; a repeat
+    // must not reopen it or reset the closing instant. The relay closes only an
+    // arrived request, but the backend has no arrival state: its CONFIRMADA
+    // arrives while the citizen is still 'accepted', so both phases close.
+    if (
+      state.requestId !== requestId ||
+      (state.phase !== 'arrived' && state.phase !== 'accepted')
+    ) {
       return;
     }
     set({ phase: 'closed', confirmedAt: Date.now() });
@@ -206,30 +263,59 @@ export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => 
 }));
 
 /**
- * Feeds the store from the request topic: only the arbiter's events for OUR
- * request id end the search or advance it. Broadcasts from other clients are
- * ignored.
+ * Applies one actionable frame to the citizen store. The union's broadcast,
+ * cancel, accept and reject frames are NOT actionable here: the citizen only
+ * reacts to the lifecycle of THEIR OWN request (`request.taken`,
+ * `request.arrived`, `request.confirmed`).
+ */
+function applyCitizenFrame(payload: SolicitudPayload): void {
+  const store = useCitizenRequestStore.getState();
+  if (payload.type === 'request.taken') {
+    // A wire ASIGNADA with no winner carries nothing actionable.
+    if (payload.winner !== '') {
+      store.endOnTaken(payload.requestId, payload.winner);
+    }
+    return;
+  }
+  if (payload.type === 'request.arrived') {
+    store.applyArrived(payload.requestId);
+    return;
+  }
+  if (payload.type === 'request.confirmed') {
+    store.endOnConfirmed(payload.requestId);
+  }
+}
+
+/**
+ * Feeds the store from `/user/queue/solicitudes`: only the arbiter's events for
+ * OUR request id end the search or advance it. Broadcasts from other clients
+ * are ignored.
+ *
+ * Two shapes share the destination. The dev relay sends the union frames with a
+ * `type`. The backend `flota` module sends its own shape (no `type`, lifecycle
+ * in `estado`), so it is reconciled first through the shared `solicitud-wire`
+ * mapping: `ASIGNADA` becomes an acceptance and `CONFIRMADA` a confirmation,
+ * and `PENDIENTE` becomes a broadcast this sync deliberately ignores.
  */
 export function useCitizenRequestSync(port: RealtimePort | null): void {
   useEffect(() => {
     if (!port) {
       return;
     }
-    return port.subscribe<SolicitudPayload>(DESTINATIONS.solicitudes, (payload) => {
-      if (!payload || typeof payload !== 'object') {
+    return port.subscribe<unknown>(DESTINATIONS.solicitudes, (raw) => {
+      if (!raw || typeof raw !== 'object') {
         return;
       }
-      if (payload.type === 'request.taken') {
-        useCitizenRequestStore.getState().endOnTaken(payload.requestId, payload.winner);
+      const wire = fromWireSolicitud(raw);
+      if (wire) {
+        // The citizen has no own ambulance id: ASIGNADA always names the winner.
+        const frame = solicitudFrameFromWire(wire, { ownAmbulanceId: '' });
+        if (frame) {
+          applyCitizenFrame(frame);
+        }
         return;
       }
-      if (payload.type === 'request.arrived') {
-        useCitizenRequestStore.getState().applyArrived(payload.requestId);
-        return;
-      }
-      if (payload.type === 'request.confirmed') {
-        useCitizenRequestStore.getState().endOnConfirmed(payload.requestId);
-      }
+      applyCitizenFrame(raw as SolicitudPayload);
     });
   }, [port]);
 }

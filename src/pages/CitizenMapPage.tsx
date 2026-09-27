@@ -205,6 +205,10 @@ export default function CitizenMapPage({
   const donable = useMemo(() => donableCenters(centros), [centros]);
 
   const requestPhase = useCitizenRequestStore((state) => state.phase);
+  // Honest reason the last attempt could not start (no active emergency, no
+  // zone, no center, backend rejection); rendered by the rail so a blocked
+  // request never looks dead.
+  const requestError = useCitizenRequestStore((state) => state.startError);
   const requestStartedAt = useCitizenRequestStore((state) => state.startedAt);
   const notifiedIds = useCitizenRequestStore((state) => state.notifiedIds);
   const acceptedBy = useCitizenRequestStore((state) => state.acceptedBy);
@@ -279,12 +283,16 @@ export default function CitizenMapPage({
     setPickerOpen(false);
     // `start` decides the transport (relay in demo, REST against a backend) and
     // resolves when the search state is set; the handler stays fire-and-forget.
+    // Against a backend it anchors the body to the citizen's real emergency, its
+    // zone and the nearest map center, so it is handed the live store snapshots.
     void useCitizenRequestStore.getState().start({
       port,
       units: useFleetStore.getState().units,
       origin: selfPosition,
+      emergencies: useEmergencyStore.getState().items,
+      centros,
     });
-  }, [port, selfPosition]);
+  }, [port, selfPosition, centros]);
 
   const handleCancel = useCallback(() => {
     useCitizenRequestStore.getState().cancel(port);
@@ -577,6 +585,7 @@ export default function CitizenMapPage({
           nearby={nearby}
           centros={centros}
           availableCount={availableCount}
+          requestError={requestError}
           onRequest={handleRequest}
           onDonate={handleDonate}
           donationEnabled={donable.length > 0}
