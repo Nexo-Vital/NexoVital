@@ -12,4 +12,11 @@ public interface AmbulanciaJpaRepository extends JpaRepository<AmbulanciaJpaEnti
     Optional<AmbulanciaJpaEntity> findByPlaca(String placa);
 
     List<AmbulanciaJpaEntity> findByEstadoAndZona(EstadoAmbulancia estado, String zona);
+
+    /**
+     * The unit driven by a user. {@code findFirst} because the invariant is one
+     * unit per driver (D-F6): a driver with several rows is a data anomaly and
+     * must not turn the read into a 500.
+     */
+    Optional<AmbulanciaJpaEntity> findFirstByConductorId(UUID conductorId);
 }

@@ -8,16 +8,14 @@ import java.util.UUID;
 /**
  * Public projection of a fleet unit (AC5): identity, state, position and zone.
  *
- * <p>{@code conductorId} is the driver user id the unit is linked to
- * ({@code Ambulancia.conductorId}). It is exposed so a driver can resolve its OWN
- * unit from {@code GET /api/v1/flota/ambulancias} — the winner the server pushes
- * is a real ambulance id, so with a real backend the driver cannot recognise
- * itself from the demo labels. It carries no name or credential, only the same
- * user id the per-user push already addresses (D-F1); a unit with no driver
- * serializes it as {@code null}.
+ * <p><b>No driver id.</b> The fleet read is authenticated for EVERY role, so it
+ * must not disclose who drives each unit: exposing {@code conductorId} here let
+ * any authenticated citizen enumerate driver user ids. A driver resolves its
+ * OWN unit from the server-scoped {@code GET /api/v1/flota/ambulancias/mia},
+ * which only ever returns the caller's unit.
  */
 public record AmbulanciaDto(UUID id, String placa, EstadoAmbulancia estado,
-                            UbicacionDto ubicacion, String zona, UUID conductorId) {
+                            UbicacionDto ubicacion, String zona) {
 
     public static AmbulanciaDto fromDomain(Ambulancia ambulancia) {
         return new AmbulanciaDto(
@@ -25,7 +23,6 @@ public record AmbulanciaDto(UUID id, String placa, EstadoAmbulancia estado,
                 ambulancia.getPlaca(),
                 ambulancia.getEstado(),
                 new UbicacionDto(ambulancia.getLat(), ambulancia.getLng()),
-                ambulancia.getZona(),
-                ambulancia.getConductorId());
+                ambulancia.getZona());
     }
 }

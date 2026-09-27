@@ -58,6 +58,11 @@ public class AmbulanciaRepositoryAdapter implements AmbulanciaRepository, FlotaQ
         return jpaRepository.findAll().stream().map(AmbulanciaRepositoryAdapter::toDomain).toList();
     }
 
+    @Override
+    public Optional<Ambulancia> buscarPorConductor(UUID conductorId) {
+        return jpaRepository.findFirstByConductorId(conductorId).map(AmbulanciaRepositoryAdapter::toDomain);
+    }
+
     private static Ambulancia toDomain(AmbulanciaJpaEntity entity) {
         return new Ambulancia(
                 entity.getId(), entity.getPlaca(), entity.getEstado(),

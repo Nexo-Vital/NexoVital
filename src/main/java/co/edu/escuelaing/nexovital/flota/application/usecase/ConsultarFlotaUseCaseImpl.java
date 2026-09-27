@@ -6,6 +6,8 @@ import co.edu.escuelaing.nexovital.flota.domain.port.out.FlotaQueryPort;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 /** Read-only fleet query with position and state (AC5). */
 @Service
@@ -20,5 +22,10 @@ public class ConsultarFlotaUseCaseImpl implements ConsultarFlotaUseCase {
     @Override
     public List<Ambulancia> consultarFlota() {
         return flotaQueryPort.consultarFlota();
+    }
+
+    @Override
+    public Optional<Ambulancia> consultarPropia(UUID conductorId) {
+        return flotaQueryPort.buscarPorConductor(conductorId);
     }
 }
