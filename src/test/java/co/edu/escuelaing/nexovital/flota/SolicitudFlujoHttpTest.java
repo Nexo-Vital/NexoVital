@@ -3,6 +3,7 @@ package co.edu.escuelaing.nexovital.flota;
 import co.edu.escuelaing.nexovital.flota.application.usecase.FlotaPushListener;
 import co.edu.escuelaing.nexovital.flota.application.usecase.FlotaPushListener.FlotaPushPayload;
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoAmbulancia;
+import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoSolicitud;
 import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.out.AmbulanciaJpaEntity;
 import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.out.AmbulanciaJpaRepository;
 import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.out.SolicitudJpaRepository;
@@ -85,6 +86,14 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
     @Autowired
     private PushPortDePrueba pushPortDePrueba;
 
+    /**
+     * Unit owned by the authenticating driver ({@code conductor1}). It is the ONLY
+     * unit the seeded conductor may accept, because the accept now verifies the
+     * unit belongs to the caller; the other units keep a random driver so AC1 can
+     * still prove each notified unit gets its OWN copy.
+     */
+    private UUID unidadDelConductor;
+
     private String zona;
     private final List<UUID> sembradas = new ArrayList<>();
     private final Map<UUID, UUID> conductorPorAmbulancia = new HashMap<>();
@@ -93,15 +102,19 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
     void sembrarAmbulanciasDePrueba() {
         pushPortDePrueba.limpiar();
         zona = "PruebaFlota-" + UUID.randomUUID();
+        UUID conductorAutenticado = usuarioDe(CONDUCTOR).getId();
         for (int i = 0; i < UNIDADES_DE_PRUEBA; i++) {
             UUID ambulanciaId = UUID.randomUUID();
-            UUID conductorId = UUID.randomUUID();
+            // The first unit is driven by the seeded driver that logs in; the rest
+            // by random drivers, so the per-user fan-out still has distinct targets.
+            UUID conductorId = i == 0 ? conductorAutenticado : UUID.randomUUID();
             ambulanciaJpaRepository.save(new AmbulanciaJpaEntity(
                     ambulanciaId, "PRB" + i, EstadoAmbulancia.DISPONIBLE,
                     4.73d + i * 0.001d, -74.08d, zona, conductorId));
             sembradas.add(ambulanciaId);
             conductorPorAmbulancia.put(ambulanciaId, conductorId);
         }
+        unidadDelConductor = sembradas.get(0);
     }
 
     @AfterEach
@@ -185,8 +198,10 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
     void ac4_rechazarDejaLaSolicitudDisponibleParaLasDemas() throws Exception {
         String ciudadano = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
         String conductor = tokenDe(CONDUCTOR, CONDUCTOR_PASSWORD);
-        UUID primera = sembradas.get(0);
-        UUID segunda = sembradas.get(1);
+        // The decline needs a notified unit (any); the accept needs a unit owned by
+        // the authenticating driver.
+        UUID primera = sembradas.get(1);
+        UUID segunda = unidadDelConductor;
         String solicitudId = crearSolicitud(ciudadano, zona);
 
         mockMvc.perform(post("/api/v1/solicitudes/{id}/reject", solicitudId)
@@ -203,6 +218,63 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.ganador").value(true))
                 .andExpect(jsonPath("$.solicitud.ambulanciaAsignadaId").value(segunda.toString()));
+    }
+
+    // -----------------------------------------------------------------------
+    // Accept authorization (FIX2): notified unit + owned by the caller
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("FIX2: aceptar con una unidad que NO fue notificada responde 409 y no asigna")
+    void fix2_aceptarConUnidadNoNotificadaDevuelve409() throws Exception {
+        String ciudadano = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+        String conductor = tokenDe(CONDUCTOR, CONDUCTOR_PASSWORD);
+        String solicitudId = crearSolicitud(ciudadano, zona);
+
+        // Available and owned by the authenticating driver, but in ANOTHER zone:
+        // the request never notified it, so its accept must be refused.
+        UUID noNotificada = UUID.randomUUID();
+        ambulanciaJpaRepository.save(new AmbulanciaJpaEntity(
+                noNotificada, "OTR0", EstadoAmbulancia.DISPONIBLE,
+                4.60d, -74.10d, "OtraZona-" + UUID.randomUUID(), usuarioDe(CONDUCTOR).getId()));
+        sembradas.add(noNotificada);
+
+        mockMvc.perform(post("/api/v1/solicitudes/{id}/accept", solicitudId)
+                        .header("Authorization", "Bearer " + conductor)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpoAmbulancia(noNotificada)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("SOLICITUD_NO_ASIGNABLE"));
+
+        // No silent win: the request stays PENDIENTE with no assigned unit.
+        assertEquals(EstadoSolicitud.PENDIENTE,
+                solicitudJpaRepository.findById(UUID.fromString(solicitudId)).orElseThrow().getEstado());
+        assertEquals(EstadoAmbulancia.DISPONIBLE,
+                ambulanciaJpaRepository.findById(noNotificada).orElseThrow().getEstado(),
+                "una aceptación rechazada no puede ocupar la unidad");
+    }
+
+    @Test
+    @DisplayName("FIX2: aceptar con una unidad notificada de OTRO conductor responde 409 y no asigna")
+    void fix2_aceptarConUnidadDeOtroConductorDevuelve409() throws Exception {
+        String ciudadano = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+        String conductor = tokenDe(CONDUCTOR, CONDUCTOR_PASSWORD);
+        String solicitudId = crearSolicitud(ciudadano, zona);
+        // Notified and available, but driven by a random conductor: not the caller's.
+        UUID ajena = sembradas.get(1);
+
+        mockMvc.perform(post("/api/v1/solicitudes/{id}/accept", solicitudId)
+                        .header("Authorization", "Bearer " + conductor)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpoAmbulancia(ajena)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("SOLICITUD_NO_ASIGNABLE"));
+
+        assertEquals(EstadoSolicitud.PENDIENTE,
+                solicitudJpaRepository.findById(UUID.fromString(solicitudId)).orElseThrow().getEstado());
+        assertEquals(EstadoAmbulancia.DISPONIBLE,
+                ambulanciaJpaRepository.findById(ajena).orElseThrow().getEstado(),
+                "una aceptación rechazada no puede ocupar la unidad");
     }
 
     // -----------------------------------------------------------------------
@@ -226,6 +298,10 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
             assertTrue(unidad.hasNonNull("estado"), "cada unidad declara su estado");
             assertTrue(unidad.path("ubicacion").hasNonNull("lat"), "cada unidad declara su posición");
             assertTrue(unidad.path("ubicacion").hasNonNull("lng"), "cada unidad declara su posición");
+            // FIX3: the driver resolves its own unit from this link, so every
+            // seeded unit (one per driver) must expose its conductorId.
+            assertTrue(unidad.hasNonNull("conductorId"),
+                    "cada unidad declara el conductor al que pertenece");
             placas.add(unidad.get("placa").asText());
         }
         assertTrue(placas.containsAll(PLACAS_SEMILLA),
@@ -286,8 +362,8 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
         String ciudadano = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
         String conductor = tokenDe(CONDUCTOR, CONDUCTOR_PASSWORD);
         String solicitanteId = usuarioDe(CIUDADANO).getId().toString();
-        UUID primera = sembradas.get(0);
-        UUID segunda = sembradas.get(1);
+        UUID primera = sembradas.get(1);
+        UUID segunda = unidadDelConductor;
         String solicitudId = crearSolicitud(ciudadano, zona);
 
         // 1) Creation (PENDIENTE) reached the requester on its own destination.

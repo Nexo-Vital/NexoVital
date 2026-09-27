@@ -17,6 +17,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -50,7 +51,7 @@ public class AceptarSolicitudUseCaseImpl implements AceptarSolicitudUseCase {
 
     @Override
     @Transactional
-    public ResultadoAceptarSolicitud aceptar(UUID solicitudId, UUID ambulanciaId) {
+    public ResultadoAceptarSolicitud aceptar(UUID solicitudId, UUID ambulanciaId, UUID conductorId) {
         SolicitudAmbulancia solicitud = solicitudRepository.buscarPorId(solicitudId)
                 .orElseThrow(() -> new SolicitudNoEncontradaException(solicitudId));
 
@@ -58,7 +59,22 @@ public class AceptarSolicitudUseCaseImpl implements AceptarSolicitudUseCase {
             throw new SolicitudNoAsignableException(solicitudId, solicitud.getEstado());
         }
 
-        validarAmbulanciaDisponible(ambulanciaId);
+        Ambulancia ambulancia = validarAmbulancia(ambulanciaId);
+
+        // Mirror the reject path: only a unit the request actually notified may
+        // act on it. Without this, any driver could accept a request that was
+        // never broadcast to their unit.
+        if (!solicitud.fueNotificada(ambulanciaId)) {
+            throw new SolicitudNoAsignableException(solicitudId, solicitud.getEstado());
+        }
+
+        // The unit must be the one driven by the authenticated user: the client
+        // sends `ambulanciaId`, so it cannot be trusted to pick someone else's
+        // unit. A unit without a driver matches nobody (Objects.equals(null, x)
+        // is false), so it can never be claimed.
+        if (!Objects.equals(ambulancia.getConductorId(), conductorId)) {
+            throw new SolicitudNoAsignableException(solicitudId, solicitud.getEstado());
+        }
 
         int filas = solicitudRepository.transicionAtomicaAsignar(
                 solicitudId, ambulanciaId, EstadoSolicitud.PENDIENTE, EstadoSolicitud.ASIGNADA);
@@ -79,11 +95,13 @@ public class AceptarSolicitudUseCaseImpl implements AceptarSolicitudUseCase {
         return ResultadoAceptarSolicitud.gano(asignada);
     }
 
-    private void validarAmbulanciaDisponible(UUID ambulanciaId) {
+    /** Loads the unit and enforces the availability precondition, mirroring the old check. */
+    private Ambulancia validarAmbulancia(UUID ambulanciaId) {
         Ambulancia ambulancia = ambulanciaRepository.buscarPorId(ambulanciaId)
                 .orElseThrow(() -> new AmbulanciaNoDisponibleException(ambulanciaId));
         if (ambulancia.getEstado() != EstadoAmbulancia.DISPONIBLE) {
             throw new AmbulanciaNoDisponibleException(ambulanciaId);
         }
+        return ambulancia;
     }
 }

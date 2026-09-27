@@ -19,7 +19,10 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -78,7 +81,7 @@ class SolicitudConcurrenciaTest {
         try {
             for (int ronda = 0; ronda < RONDAS; ronda++) {
                 String zona = "PruebaC2-" + UUID.randomUUID();
-                List<UUID> unidades = sembrarUnidades(zona, UNIDADES_POR_RONDA);
+                Map<UUID, UUID> unidades = sembrarUnidades(zona, UNIDADES_POR_RONDA);
                 UUID solicitudId = solicitarAmbulanciaUseCase
                         .solicitar(UUID.randomUUID(), UUID.randomUUID(), zona, UUID.randomUUID(), null)
                         .getId();
@@ -100,10 +103,10 @@ class SolicitudConcurrenciaTest {
                 assertEquals(co.edu.escuelaing.nexovital.flota.domain.enums.EstadoSolicitud.ASIGNADA,
                         solicitudJpaRepository.findById(solicitudId).orElseThrow().getEstado(),
                         "ronda " + ronda + ": la solicitud queda ASIGNADA");
-                assertEquals(1, unidadesEnMision(unidades),
+                assertEquals(1, unidadesEnMision(unidades.keySet()),
                         "ronda " + ronda + ": exactamente una unidad queda ocupada");
 
-                ambulanciaJpaRepository.deleteAllById(unidades);
+                ambulanciaJpaRepository.deleteAllById(unidades.keySet());
             }
         } finally {
             pool.shutdownNow();
@@ -116,16 +119,19 @@ class SolicitudConcurrenciaTest {
      * the single win, a {@link Perdedor} for a lost CAS, or the conflict the use
      * case raised.
      */
-    private List<Throwable> correrCarrera(ExecutorService pool, UUID solicitudId, List<UUID> unidades)
+    private List<Throwable> correrCarrera(ExecutorService pool, UUID solicitudId, Map<UUID, UUID> unidades)
             throws Exception {
         CountDownLatch largada = new CountDownLatch(1);
         List<Future<Throwable>> futuros = new ArrayList<>();
+        List<UUID> ids = new ArrayList<>(unidades.keySet());
         for (int i = 0; i < ACEPTACIONES_POR_RONDA; i++) {
-            UUID unidad = unidades.get(i % unidades.size());
+            UUID unidad = ids.get(i % ids.size());
+            UUID conductor = unidades.get(unidad);
             Callable<Throwable> aceptacion = () -> {
                 largada.await(ESPERA_MAXIMA_SEGUNDOS, TimeUnit.SECONDS);
                 try {
-                    ResultadoAceptarSolicitud resultado = aceptarSolicitudUseCase.aceptar(solicitudId, unidad);
+                    ResultadoAceptarSolicitud resultado =
+                            aceptarSolicitudUseCase.aceptar(solicitudId, unidad, conductor);
                     return resultado.ganador() ? new Ganador() : new Perdedor();
                 } catch (SolicitudNoAsignableException | AmbulanciaNoDisponibleException e) {
                     return e;
@@ -148,19 +154,26 @@ class SolicitudConcurrenciaTest {
         return resultados;
     }
 
-    private List<UUID> sembrarUnidades(String zona, int cantidad) {
-        List<UUID> ids = new ArrayList<>();
+    /**
+     * Seeds {@code cantidad} available units in the zone, each linked to its OWN
+     * driver. The race passes each unit back together with its driver id, so the
+     * accept can prove the caller owns the unit (the ownership check added to the
+     * use case) without changing what the race measures: "first accept wins".
+     */
+    private Map<UUID, UUID> sembrarUnidades(String zona, int cantidad) {
+        Map<UUID, UUID> conductorPorUnidad = new LinkedHashMap<>();
         for (int i = 0; i < cantidad; i++) {
             UUID id = UUID.randomUUID();
+            UUID conductorId = UUID.randomUUID();
             ambulanciaJpaRepository.save(new AmbulanciaJpaEntity(
                     id, "CON" + i, EstadoAmbulancia.DISPONIBLE,
-                    4.73d, -74.08d, zona, UUID.randomUUID()));
-            ids.add(id);
+                    4.73d, -74.08d, zona, conductorId));
+            conductorPorUnidad.put(id, conductorId);
         }
-        return ids;
+        return conductorPorUnidad;
     }
 
-    private long unidadesEnMision(List<UUID> unidades) {
+    private long unidadesEnMision(Collection<UUID> unidades) {
         return unidades.stream()
                 .map(id -> ambulanciaJpaRepository.findById(id).orElseThrow())
                 .filter(entidad -> entidad.getEstado() == EstadoAmbulancia.EN_MISION)

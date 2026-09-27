@@ -117,9 +117,11 @@ public class SolicitudController {
      *
      * @return 200 with {@code ganador=true} and the ASSIGNED request; 409
      *         {@code CAS_PERDIDO} / {@code SOLICITUD_NO_ASIGNABLE} if another
-     *         caller won; 409 {@code AMBULANCIA_NO_DISPONIBLE} if the unit is
-     *         already busy; 404 {@code SOLICITUD_NO_ENCONTRADA}; 400
-     *         {@code DATOS_INVALIDOS}; 500 {@code ERROR_ACEPTACION_SOLICITUD}
+     *         caller won, if the unit was never notified for the request, or if
+     *         the unit is not the authenticated driver's; 409
+     *         {@code AMBULANCIA_NO_DISPONIBLE} if the unit is already busy; 404
+     *         {@code SOLICITUD_NO_ENCONTRADA}; 400 {@code DATOS_INVALIDOS}; 500
+     *         {@code ERROR_ACEPTACION_SOLICITUD}
      */
     @PostMapping("/{id}/accept")
     public ResponseEntity<Object> aceptar(@PathVariable UUID id, @RequestBody AceptarSolicitudRequest request) {
@@ -127,7 +129,10 @@ public class SolicitudController {
             if (request == null || request.ambulanciaId() == null) {
                 throw new IllegalArgumentException("La ambulancia es obligatoria.");
             }
-            ResultadoAceptarSolicitud resultado = aceptarSolicitudUseCase.aceptar(id, request.ambulanciaId());
+            // The authenticated driver: the use case checks the unit belongs to
+            // them before assigning, so the client cannot claim another unit.
+            ResultadoAceptarSolicitud resultado =
+                    aceptarSolicitudUseCase.aceptar(id, request.ambulanciaId(), usuarioAutenticadoId());
             if (!resultado.ganador()) {
                 return ResponseEntity.status(HttpStatus.CONFLICT)
                         .body(ErrorResponse.of("CAS_PERDIDO", MENSAJE_CAS_PERDIDO));
