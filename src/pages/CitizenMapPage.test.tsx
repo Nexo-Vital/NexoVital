@@ -3,6 +3,7 @@ import type { ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useToastStore } from '@/components/ui/toast';
 import { ACCEPTANCE_POPUP_MS } from '@/features/ciudadano/AcceptancePopup';
+import { CITIZEN_REQUEST_REASONS } from '@/features/ciudadano/citizen-request';
 import { useCitizenRequestStore } from '@/features/ciudadano/citizen-request-store';
 import { CENTER_LEVEL_STYLE, NOT_DECLARED_CENTER_STYLE } from '@/features/ciudadano/citizen-view';
 import { useDonationStore } from '@/features/donaciones/donation';
@@ -19,6 +20,7 @@ import type {
   AmbulanceState,
   Ambulancia,
   CentroAyuda,
+  Emergencia,
   InventarioItem,
   TrafficLight,
   Zona,
@@ -143,6 +145,29 @@ function centro(id: string, semaforo: TrafficLight | null, lat: number, lng: num
 /** A FRONT-ONLY demo hospital: no inventory and no traffic light. */
 function hospital(id: string, lat = 4.75, lng = -74.06): CentroAyuda {
   return { id, nombre: `Hospital ${id}`, tipo: 'HOSPITAL', ubicacion: { lat, lng }, items: [] };
+}
+
+/** Backend-shaped ids: the contract's `emergenciaId`/`centroAyudaId` are UUIDs. */
+const PAGE_EMERGENCY_ID = '0b6f2f0e-3333-4000-8000-0000000000cc';
+const PAGE_CENTRO_ID = '1c7a3a1e-4444-4000-8000-0000000000dd';
+
+/** A citizen emergency as the backend returns it (real UUID id and zone). */
+function pageEmergency(overrides: Partial<Emergencia> = {}): Emergencia {
+  return {
+    id: PAGE_EMERGENCY_ID,
+    ubicacion: { lat: 4.728, lng: -74.078 },
+    nivel: 'HIGH',
+    estado: 'REPORTED',
+    descripcion: 'Derrumbe en Suba',
+    zonaId: 'ZONA-SUBA',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+/** A backend-shaped aid center carrying the zone the request can fall back to. */
+function backendCentro(id: string, lat: number, lng: number, zonaId = 'ZONA-CENTRO'): CentroAyuda {
+  return { id, nombre: `Centro ${id}`, ubicacion: { lat, lng }, items: [], zonaId };
 }
 
 function amb(id: string, estado: AmbulanceState, latOffset = 0.01): Ambulancia {
@@ -304,14 +329,14 @@ describe('CitizenMapPage', () => {
     });
   });
 
-  it('asks the backend for the ambulance when demo mode is off', async () => {
+  it('asks the backend with the real emergency, its zone and the nearest center', async () => {
     vi.stubEnv('VITE_DEMO_MODE', '0');
     const serverResponse = {
       id: '8b6f2f0e-0000-4000-8000-000000000042',
-      emergenciaId: 'REQ-FRONT-1',
+      emergenciaId: PAGE_EMERGENCY_ID,
       estado: 'PENDIENTE',
-      centroAyudaId: 'CA-CRUE',
-      zonaId: '',
+      centroAyudaId: PAGE_CENTRO_ID,
+      zonaId: 'ZONA-SUBA',
       solicitadaEn: '2026-01-01T00:00:00.000Z',
       timeoutEn: '2026-01-01T00:45:00.000Z',
       ambulanciasNotificadas: ['A-07', 'A-12', 'A-03'],
@@ -321,7 +346,17 @@ describe('CitizenMapPage', () => {
     vi.stubGlobal('fetch', fetchMock);
     try {
       const port = new FakeRealtimePort();
-      renderPage({ port, ambulancias: SEARCH_FLEET });
+      renderPage({
+        port,
+        ambulancias: SEARCH_FLEET,
+        emergencias: [pageEmergency()],
+        // The nearest center to the Suba origin is the first one, at the same
+        // latitude; the far center must never be picked.
+        centrosAyuda: [
+          backendCentro('C-FAR', 4.9, -74.05, 'ZONA-OTRA'),
+          backendCentro(PAGE_CENTRO_ID, 4.728, -74.078),
+        ],
+      });
 
       fireEvent.click(screen.getByRole('button', { name: 'Pedir ambulancia' }));
 
@@ -335,6 +370,13 @@ describe('CitizenMapPage', () => {
       const [path, options] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(path).toBe('/api/v1/solicitudes');
       expect(options.method).toBe('POST');
+      // The REAL body: no local `REQ-…`, no `CA-CRUE`, no blank zone.
+      expect(JSON.parse(options.body as string)).toEqual({
+        emergenciaId: PAGE_EMERGENCY_ID,
+        centroAyudaId: PAGE_CENTRO_ID,
+        zonaId: 'ZONA-SUBA',
+        timeoutEn: expect.any(String),
+      });
 
       // The rail renders the server-assigned state and its notified units.
       expect(screen.getByRole('heading', { name: 'Buscando ambulancia' })).toBeInTheDocument();
@@ -342,6 +384,98 @@ describe('CitizenMapPage', () => {
       expect(useCitizenRequestStore.getState().notifiedIds).toEqual(
         serverResponse.ambulanciasNotificadas,
       );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('does not send the request and shows the honest reason without an active emergency', async () => {
+    vi.stubEnv('VITE_DEMO_MODE', '0');
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderPage({
+        ambulancias: SEARCH_FLEET,
+        emergencias: [],
+        centrosAyuda: [backendCentro(PAGE_CENTRO_ID, 4.728, -74.078)],
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Pedir ambulancia' }));
+
+      expect(await screen.findByText(CITIZEN_REQUEST_REASONS.noEmergency)).toBeInTheDocument();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(useCitizenRequestStore.getState().phase).toBe('idle');
+      expect(useCitizenRequestStore.getState().requestId).toBeNull();
+      // The button is not dead: the map rail and the action stay available.
+      expect(
+        screen.getByRole('heading', { level: 1, name: 'Mapa de operación' }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Pedir ambulancia' })).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('drives the citizen screen with the backend lifecycle on /user/queue/solicitudes', async () => {
+    vi.stubEnv('VITE_DEMO_MODE', '0');
+    const serverResponse = {
+      id: '8b6f2f0e-0000-4000-8000-000000000042',
+      emergenciaId: PAGE_EMERGENCY_ID,
+      estado: 'PENDIENTE',
+      centroAyudaId: PAGE_CENTRO_ID,
+      zonaId: 'ZONA-SUBA',
+      solicitadaEn: '2026-01-01T00:00:00.000Z',
+      timeoutEn: '2026-01-01T00:45:00.000Z',
+      ambulanciasNotificadas: [],
+      ambulanciaAsignadaId: null,
+    };
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(201, serverResponse));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const port = new FakeRealtimePort();
+      renderPage({
+        port,
+        ambulancias: SEARCH_FLEET,
+        emergencias: [pageEmergency()],
+        centrosAyuda: [backendCentro(PAGE_CENTRO_ID, 4.728, -74.078)],
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Pedir ambulancia' }));
+      await waitFor(() =>
+        expect(useCitizenRequestStore.getState().requestId).toBe(serverResponse.id),
+      );
+
+      // ASIGNADA (the backend's winner frame) turns the search into "accepted".
+      act(() => {
+        port.emit(DESTINATIONS.solicitudes, {
+          solicitudId: serverResponse.id,
+          emergenciaId: PAGE_EMERGENCY_ID,
+          zonaId: 'ZONA-SUBA',
+          estado: 'ASIGNADA',
+          ambulanciasNotificadas: [],
+          ambulanciaAsignadaId: 'A-12',
+        });
+      });
+
+      expect(
+        screen.getByRole('heading', { level: 1, name: 'Tu ambulancia va en camino' }),
+      ).toBeInTheDocument();
+
+      // CONFIRMADA closes the citizen's request.
+      act(() => {
+        port.emit(DESTINATIONS.solicitudes, {
+          solicitudId: serverResponse.id,
+          emergenciaId: PAGE_EMERGENCY_ID,
+          zonaId: 'ZONA-SUBA',
+          estado: 'CONFIRMADA',
+          ambulanciasNotificadas: [],
+          ambulanciaAsignadaId: 'A-12',
+        });
+      });
+
+      expect(
+        screen.getByRole('heading', { level: 1, name: 'Solicitud atendida' }),
+      ).toBeInTheDocument();
     } finally {
       vi.unstubAllGlobals();
     }
