@@ -146,12 +146,17 @@ describe('CitizenMapPage against /api/v1/mapa', () => {
     expect(zoneAreas(container)).toEqual([]);
 
     // Opening a center paints ITS zone (resolved through zonaId) as a polygon
-    // built from the contour the backend publishes. The Leaflet basemap commits
-    // its markers one tick after the summary chips, so wait for the pin first.
-    const subaNorte = await waitFor(() => markerByLabel(container, 'Suba Norte'));
-    fireEvent.click(subaNorte);
-    // The zone polygon lands on the NEXT commit too, so asserting synchronously
-    // made this case flaky under full-suite load (it always passed in isolation).
-    await waitFor(() => expect(zoneAreas(container)).toHaveLength(1));
+    // built from the contour the backend publishes.
+    //
+    // The pin is RE-QUERIED INSIDE the retry, and clicked there too. Waiting for
+    // the pin and then clicking the node captured at that moment is still flaky
+    // under full-suite load: a commit landing between the wait and the click can
+    // leave that node detached, so the click hits nothing and the polygon never
+    // paints. Re-querying on every attempt closes that window, and the assertion
+    // in the same block only passes once the polygon is really on the map.
+    await waitFor(() => {
+      fireEvent.click(markerByLabel(container, 'Suba Norte'));
+      expect(zoneAreas(container)).toHaveLength(1);
+    });
   });
 });
