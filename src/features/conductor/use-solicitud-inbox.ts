@@ -1,15 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { etaMinutes } from '@/lib/geo';
+import { toast } from '@/components/ui/toast';
+import { formatDistance } from '@/features/ciudadano/citizen-view';
+import { useEmergencyStore } from '@/features/emergencias/emergency-store';
+import { distanceKm, etaMinutes } from '@/lib/geo';
 import {
   DESTINATIONS,
+  fromWireSolicitud,
   type RealtimePort,
   type SolicitudAcceptPayload,
   type SolicitudBroadcastPayload,
   type SolicitudLlegadaPayload,
   type SolicitudPayload,
   type SolicitudRejectPayload,
+  solicitudFrameFromWire,
 } from '@/shared/realtime';
 import type { EmergencyLevel, Ubicacion } from '@/types/domain';
+import { playRequestDing } from './request-sound';
 
 export type SolicitudPhase = 'idle' | 'submitting' | 'assigned' | 'taken' | 'rejected' | 'timeout';
 
@@ -26,7 +32,12 @@ export interface Mission {
   tipo: string;
   /** Absent when the request declared no severity (a citizen request). */
   nivel?: EmergencyLevel;
-  escena: Ubicacion;
+  /**
+   * Requester scene, when known. Optional because the backend `flota` push
+   * carries no coordinates: the inbox resolves them from the emergency store
+   * and leaves the scene absent when it cannot, instead of inventing a point.
+   */
+  escena?: Ubicacion;
   etaMinutes: number;
   /** When the arbiter assigned this mission (epoch ms). */
   acceptedAt: number;
@@ -71,7 +82,7 @@ const TERMINAL_DISMISS_MS = 2600;
 const ASSIGNED_DISMISS_MS = 1600;
 
 /**
- * Driver inbox for /queue/solicitudes.
+ * Driver inbox for /user/queue/solicitudes.
  *
  * The accept is a BID (rule C2): this hook only publishes `solicitud.accept`
  * and waits for the server-side arbiter. It never sets a winner itself; it
@@ -118,15 +129,24 @@ export function useSolicitudInbox(
     setRequestedAtMs(null);
   }, []);
 
-  useEffect(() => {
-    if (!port) {
-      return;
-    }
-    return port.subscribe<SolicitudPayload>(DESTINATIONS.solicitudes, (payload) => {
-      if (!payload || typeof payload !== 'object') {
-        return;
-      }
+  /**
+   * U4: ephemeral, non-blocking notice the moment a request arrives, at the one
+   * place the request becomes active. It disappears on its own (the toast store
+   * auto-dismisses) and never gates the inbox. The sound is attempted on the same
+   * instant; `playRequestDing` reports `false` while audio is locked, so the UI
+   * (the rail's sound control) is the honest source of that state.
+   */
+  const announceArrival = useCallback((active: SolicitudBroadcastPayload) => {
+    const from = positionRef.current;
+    const distance = from && active.escena ? distanceKm(from, active.escena) : null;
+    const suffix = distance !== null ? ` a ${formatDistance(distance)}` : '';
+    toast(`Nueva solicitud de ambulancia${suffix}`);
+    playRequestDing();
+  }, []);
 
+  /** Shared frame handler for both the demo union frames and the wire frames. */
+  const applyFrame = useCallback(
+    (payload: SolicitudPayload, fromWire: boolean) => {
       if (payload.type === 'solicitud.broadcast' || payload.type === 'solicitud.direct') {
         // Direct mode is addressed to one unit: everyone else ignores the frame
         // entirely (no request card, no accept bid). Broadcast reaches every unit.
@@ -135,18 +155,21 @@ export function useSolicitudInbox(
             return;
           }
         } else if (
-          !Array.isArray(payload.notificadas) ||
-          !payload.notificadas.includes(ambulanceId)
+          !fromWire &&
+          (!Array.isArray(payload.notificadas) || !payload.notificadas.includes(ambulanceId))
         ) {
           // L3: a broadcast is only visible to the units it notified. Without
           // this filter any driver could answer a request that never reached
-          // them, and "the notified units" would be a decoration.
+          // them, and "the notified units" would be a decoration. A backend
+          // frame already targets this user (per-user delivery, D-F1), so the
+          // filter is deliberately skipped for wire frames.
           return;
         }
         // Normalize to the broadcast shape; `mode`/`targetAmbulanceId` survive
         // so the request card can label the two delivery modes distinctly.
         const active: SolicitudBroadcastPayload = { ...payload, type: 'solicitud.broadcast' };
-        const deadline = Date.parse(active.timeoutEn);
+        const deadline =
+          typeof active.timeoutEn === 'string' ? Date.parse(active.timeoutEn) : Number.NaN;
         const valid = Number.isFinite(deadline);
         broadcastRef.current = active;
         wonRequestIdRef.current = null;
@@ -160,6 +183,7 @@ export function useSolicitudInbox(
         );
         setPhase('idle');
         setOutcomeMessage(null);
+        announceArrival(active);
         return;
       }
 
@@ -173,7 +197,8 @@ export function useSolicitudInbox(
         }
         if (payload.winner === ambulanceId) {
           wonRequestIdRef.current = payload.requestId;
-          const from = positionRef.current ?? active.escena;
+          const scene = active.escena;
+          const from = positionRef.current ?? scene;
           setPhase('assigned');
           setOutcomeMessage('Te la asignaron');
           setMission({
@@ -181,8 +206,9 @@ export function useSolicitudInbox(
             zonaId: active.zonaId,
             tipo: active.tipo,
             nivel: active.nivel,
-            escena: active.escena,
-            etaMinutes: etaMinutes(from, active.escena),
+            ...(scene ? { escena: scene } : {}),
+            // No scene means no honest ETA: 0 rather than an invented figure.
+            etaMinutes: from && scene ? etaMinutes(from, scene) : 0,
             acceptedAt: Date.now(),
             arrivedAt: null,
             confirmedAt: null,
@@ -261,8 +287,45 @@ export function useSolicitudInbox(
         missionRef.current = next;
         setMission(next);
       }
+    },
+    [ambulanceId, announceArrival],
+  );
+
+  useEffect(() => {
+    if (!port) {
+      return;
+    }
+    return port.subscribe<unknown>(DESTINATIONS.solicitudes, (raw) => {
+      if (!raw || typeof raw !== 'object') {
+        return;
+      }
+
+      // The backend `flota` module speaks its own shape (no `type`, lifecycle in
+      // `estado`). Validate and reconcile it first; a malformed wire frame is
+      // dropped, never blindly cast.
+      const wire = fromWireSolicitud(raw);
+      if (wire) {
+        const emergency =
+          useEmergencyStore.getState().items.find((item) => item.id === wire.emergenciaId) ?? null;
+        const frame = solicitudFrameFromWire(wire, {
+          ownAmbulanceId: ambulanceId,
+          ...(emergency
+            ? {
+                escena: emergency.ubicacion,
+                tipo: emergency.descripcion,
+                nivel: emergency.nivel,
+              }
+            : {}),
+        });
+        if (frame) {
+          applyFrame(frame, true);
+        }
+        return;
+      }
+
+      applyFrame(raw as SolicitudPayload, false);
     });
-  }, [port, ambulanceId]);
+  }, [port, ambulanceId, applyFrame]);
 
   // Auto-dismiss terminal outcomes so the request card never gets stuck.
   useEffect(() => {

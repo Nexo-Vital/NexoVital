@@ -1,5 +1,7 @@
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
+import { useToastStore } from '@/components/ui/toast';
+import { useEmergencyStore } from '@/features/emergencias/emergency-store';
 import {
   DESTINATIONS,
   type SolicitudBroadcastPayload,
@@ -38,7 +40,12 @@ function setup() {
 }
 
 describe('useSolicitudInbox', () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    // Both stores live at module scope: clear them so no case leaks into another.
+    useToastStore.setState({ toasts: [] });
+    useEmergencyStore.setState({ items: [] });
+  });
 
   it('treats accept as a bid and waits for the arbiter', () => {
     const { port, result } = setup();
@@ -231,6 +238,74 @@ describe('useSolicitudInbox', () => {
     expect(result.current.broadcast).toBeNull();
     expect(result.current.deadlineMs).toBeNull();
     expect(result.current.phase).toBe('idle');
+  });
+
+  it('raises an ephemeral toast at the exact arrival point', () => {
+    const { port, result } = setup();
+
+    expect(useToastStore.getState().toasts).toHaveLength(0);
+    act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+
+    // U4: the request became active, so a toast was raised at that instant.
+    const toastMessages = () => useToastStore.getState().toasts.map((item) => item.message);
+    expect(toastMessages()).toHaveLength(1);
+    expect(toastMessages()[0]).toContain('Nueva solicitud de ambulancia');
+    // The inbox is untouched: the toast never blocks or replaces the request.
+    expect(result.current.broadcast?.requestId).toBe('REQ-1');
+  });
+
+  it('U8: validates a backend wire frame and opens the request', () => {
+    const { port, result } = setup();
+
+    // The emergency is known, so the scene/type/level are resolved from it; the
+    // wire itself carries none of them.
+    useEmergencyStore.setState({
+      items: [
+        {
+          id: 'EMG-002',
+          ubicacion: { lat: 4.628, lng: -74.148 },
+          nivel: 'HIGH',
+          estado: 'REPORTED',
+          descripcion: 'Traffic collision',
+          zonaId: 'Kennedy',
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    });
+
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, {
+        solicitudId: 'REQ-1',
+        emergenciaId: 'EMG-002',
+        zonaId: 'Kennedy',
+        estado: 'PENDIENTE',
+        ambulanciasNotificadas: ['AMB-01'],
+        ambulanciaAsignadaId: null,
+      }),
+    );
+
+    expect(result.current.broadcast?.requestId).toBe('REQ-1');
+    expect(result.current.broadcast?.tipo).toBe('Traffic collision');
+    expect(result.current.broadcast?.nivel).toBe('HIGH');
+    expect(result.current.broadcast?.escena).toEqual({ lat: 4.628, lng: -74.148 });
+  });
+
+  it('U8: drops a malformed wire frame instead of crashing the inbox', () => {
+    const { port, result } = setup();
+
+    // No `estado`: the validator rejects it, so nothing opens and nothing rings.
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, {
+        solicitudId: 'REQ-1',
+        emergenciaId: 'EMG-002',
+        zonaId: 'Kennedy',
+        ambulanciasNotificadas: ['AMB-01'],
+        ambulanciaAsignadaId: null,
+      }),
+    );
+
+    expect(result.current.broadcast).toBeNull();
+    expect(useToastStore.getState().toasts).toHaveLength(0);
   });
 
   it('keeps the open request when a different request is cancelled', () => {
