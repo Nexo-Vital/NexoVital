@@ -28,10 +28,11 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public class PushPortDePruebaConfig {
 
     /**
-     * Publicación capturada: el destino y la carga tal como los entregó el
-     * módulo dueño.
+     * Publicación capturada: el destino, la carga y el usuario destinatario (o
+     * {@code null} para un destino de tópico/cola compartido), tal como los
+     * entregó el módulo dueño.
      */
-    public record PublicacionCapturada(String destino, Object payload) {
+    public record PublicacionCapturada(String destino, Object payload, String usuario) {
     }
 
     /**
@@ -44,7 +45,12 @@ public class PushPortDePruebaConfig {
 
         @Override
         public void publicar(String destino, Object payload) {
-            publicaciones.add(new PublicacionCapturada(destino, payload));
+            publicaciones.add(new PublicacionCapturada(destino, payload, null));
+        }
+
+        @Override
+        public void publicarAUsuario(String usuario, String destino, Object payload) {
+            publicaciones.add(new PublicacionCapturada(destino, payload, usuario));
         }
 
         /** @return copia de las publicaciones, en orden. */
@@ -69,6 +75,17 @@ public class PushPortDePruebaConfig {
         /** Vacía el registro (cada test parte de cero). */
         public void limpiar() {
             publicaciones.clear();
+        }
+
+        /**
+         * @return las publicaciones dirigidas a un usuario concreto en un
+         *         destino, en orden (las que el broadcast C2 usó por usuario)
+         */
+        public List<PublicacionCapturada> haciaUsuario(String usuario, String destino) {
+            return publicaciones.stream()
+                    .filter(publicacion -> usuario.equals(publicacion.usuario()))
+                    .filter(publicacion -> destino.equals(publicacion.destino()))
+                    .toList();
         }
 
         /** @return el payload de una publicación como mapa, para leerlo clave a clave. */

@@ -13,8 +13,15 @@ import java.util.Objects;
  *
  * @param destino destino STOMP (p. ej. {@code /topic/emergencias})
  * @param payload carga ya proyectada por el módulo dueño
+ * @param usuario destinatario de una entrega por usuario, o {@code null} para
+ *                un destino de tópico/cola compartido
  */
-public record PushMessage(String destino, Object payload) {
+public record PushMessage(String destino, Object payload, String usuario) {
+
+    /** Tópico/cola compartido: el gateway entrega con {@code convertAndSend}. */
+    public PushMessage(String destino, Object payload) {
+        this(destino, payload, null);
+    }
 
     public PushMessage {
         Objects.requireNonNull(destino, "destino es obligatorio");

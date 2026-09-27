@@ -25,4 +25,20 @@ public interface PushPort {
      * @param payload carga a publicar
      */
     void publicar(String destino, Object payload);
+
+    /**
+     * Entrega el payload a UN usuario, en su destino propio
+     * ({@code /user/{usuario}{destino}}). Es obligatorio para un broadcast: un
+     * destino {@code /queue} con N suscriptores reparte en round-robin y solo
+     * alcanzaría a UNO. El adaptador de gateway resuelve la entrega con
+     * {@code convertAndSendToUser}.
+     *
+     * @param usuario identidad del destinatario; debe coincidir con el nombre
+     *                del {@code Principal} de su sesión STOMP. El STOMP Principal
+     *                es el {@code Usuario} y {@code Usuario.getName()} resuelve a
+     *                su id, así que aquí viaja ese id como texto.
+     * @param destino destino del canal (p. ej. {@code /queue/solicitudes})
+     * @param payload carga a publicar
+     */
+    void publicarAUsuario(String usuario, String destino, Object payload);
 }

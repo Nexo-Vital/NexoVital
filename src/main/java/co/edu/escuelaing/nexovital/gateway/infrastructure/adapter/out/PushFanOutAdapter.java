@@ -26,11 +26,21 @@ public class PushFanOutAdapter {
     }
 
     /**
-     * Publica el payload en su destino STOMP. No hay suscriptores: es un no-op
-     * (el simple broker no retiene mensajes).
+     * Publica el payload en su destino STOMP. Cuando el mensaje lleva un
+     * {@code usuario} (destino por usuario, D-F1) se entrega con
+     * {@code convertAndSendToUser}: es la única forma de que un broadcast
+     * alcance a CADA suscriptor, porque un {@code /queue} compartido con N
+     * sesiones reparte en round-robin y solo llegaría a una. Sin usuario
+     * ({@code null}) el destino es un tópico o una cola compartida y se usa
+     * {@code convertAndSend}. No hay suscriptores: es un no-op (el simple broker
+     * no retiene mensajes).
      */
     @EventListener
     public void alSolicitarPush(PushMessage mensaje) {
+        if (mensaje.usuario() != null) {
+            messagingTemplate.convertAndSendToUser(mensaje.usuario(), mensaje.destino(), mensaje.payload());
+            return;
+        }
         messagingTemplate.convertAndSend(mensaje.destino(), mensaje.payload());
     }
 }

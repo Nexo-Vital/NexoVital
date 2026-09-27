@@ -33,4 +33,9 @@ public class PushPortPublicadorAdapter implements PushPort {
     public void publicar(String destino, Object payload) {
         eventPublisher.publishEvent(new PushMessage(destino, payload));
     }
+
+    @Override
+    public void publicarAUsuario(String usuario, String destino, Object payload) {
+        eventPublisher.publishEvent(new PushMessage(destino, payload, usuario));
+    }
 }
