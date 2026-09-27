@@ -146,3 +146,24 @@ una sola conexión) están en `../odd/tasks/back-225-alerta-escasez.md`, decisi�
 ```bash
 mvn test
 ```
+
+### Prueba funcional en vivo (alerta de escasez)
+
+`mvn test` corre los tests *in-process*. Para la **evidencia en vivo** —contra un backend de
+verdad, por HTTP— está el script que recorre el ciclo completo del criterio de aceptación de
+EP-03.F1.US5:
+
+1. login
+2. pedir más unidades de las disponibles → **409 `STOCK_INSUFICIENTE`**
+3. el mapa muestra la alerta **sobre el centro**, con el **recurso** y el **faltante**
+4. una donación que cubre el faltante
+5. el mapa ya no muestra la alerta: **se limpió sola**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\prueba-funcional-alerta-escasez.ps1
+```
+
+**Requiere el backend corriendo** (si no responde, el script lo dice y sale con código 1). Es
+**re-ejecutable**: dona exactamente el faltante que el propio sistema reporta, así que deja el
+estado limpio aunque una corrida anterior haya fallado. Sale con **código 0** solo si todos los
+pasos pasan.
