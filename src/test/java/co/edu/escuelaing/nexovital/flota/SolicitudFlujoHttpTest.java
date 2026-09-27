@@ -5,6 +5,7 @@ import co.edu.escuelaing.nexovital.flota.application.usecase.FlotaPushListener.F
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoAmbulancia;
 import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.out.AmbulanciaJpaEntity;
 import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.out.AmbulanciaJpaRepository;
+import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.out.SolicitudJpaRepository;
 import co.edu.escuelaing.nexovital.support.LoginTestBase;
 import co.edu.escuelaing.nexovital.support.PushPortDePruebaConfig;
 import co.edu.escuelaing.nexovital.support.PushPortDePruebaConfig.PublicacionCapturada;
@@ -77,6 +78,9 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
 
     @Autowired
     private AmbulanciaJpaRepository ambulanciaJpaRepository;
+
+    @Autowired
+    private SolicitudJpaRepository solicitudJpaRepository;
 
     @Autowired
     private PushPortDePrueba pushPortDePrueba;
@@ -260,6 +264,78 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
     }
 
     // -----------------------------------------------------------------------
+    // Requester tracking — persisted id + lifecycle on their own destination
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("El solicitante queda persistido en la solicitud y sobrevive a la relectura")
+    void solicitanteQuedaPersistido() throws Exception {
+        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+        UUID ciudadanoId = usuarioDe(CIUDADANO).getId();
+
+        String solicitudId = crearSolicitud(token, zona);
+
+        assertEquals(ciudadanoId,
+                solicitudJpaRepository.findById(UUID.fromString(solicitudId)).orElseThrow().getSolicitanteId(),
+                "el id del solicitante debe persistirse y sobrevivir a la relectura");
+    }
+
+    @Test
+    @DisplayName("El solicitante recibe PENDIENTE/ASIGNADA/CONFIRMADA en su destino y NO el declive por unidad")
+    void solicitanteRecibeElCicloYNoElDeclive() throws Exception {
+        String ciudadano = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+        String conductor = tokenDe(CONDUCTOR, CONDUCTOR_PASSWORD);
+        String solicitanteId = usuarioDe(CIUDADANO).getId().toString();
+        UUID primera = sembradas.get(0);
+        UUID segunda = sembradas.get(1);
+        String solicitudId = crearSolicitud(ciudadano, zona);
+
+        // 1) Creation (PENDIENTE) reached the requester on its own destination.
+        List<PublicacionCapturada> alSolicitante =
+                pushPortDePrueba.haciaUsuario(solicitanteId, FlotaPushListener.DESTINO_SOLICITUDES);
+        assertEquals(1, alSolicitante.size(), "el solicitante recibe la creación");
+        assertEquals("PENDIENTE", estadoDe(alSolicitante.get(0)));
+
+        // 2) A per-unit decline must NOT reach the requester: the request is
+        //    still PENDIENTE, so telling the citizen "rejected" would be a lie.
+        mockMvc.perform(post("/api/v1/solicitudes/{id}/reject", solicitudId)
+                        .header("Authorization", "Bearer " + conductor)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpoAmbulancia(primera)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.estado").value("PENDIENTE"));
+
+        alSolicitante = pushPortDePrueba.haciaUsuario(solicitanteId, FlotaPushListener.DESTINO_SOLICITUDES);
+        assertEquals(1, alSolicitante.size(),
+                "el declive por unidad NO se entrega al solicitante: la solicitud sigue PENDIENTE");
+        assertTrue(alSolicitante.stream().noneMatch(publicacion -> "RECHAZADA".equals(estadoDe(publicacion))),
+                "el solicitante nunca recibe RECHAZADA");
+
+        // 3) Assignment (ASIGNADA) reached the requester.
+        mockMvc.perform(post("/api/v1/solicitudes/{id}/accept", solicitudId)
+                        .header("Authorization", "Bearer " + conductor)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpoAmbulancia(segunda)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ganador").value(true));
+
+        alSolicitante = pushPortDePrueba.haciaUsuario(solicitanteId, FlotaPushListener.DESTINO_SOLICITUDES);
+        assertEquals(2, alSolicitante.size(), "el solicitante recibe la asignación");
+        assertEquals("ASIGNADA", estadoDe(alSolicitante.get(1)));
+        assertEquals(segunda.toString(), ambulanciaAsignadaDe(alSolicitante.get(1)));
+
+        // 4) Confirmation (CONFIRMADA) reached the requester.
+        mockMvc.perform(post("/api/v1/solicitudes/{id}/confirmar", solicitudId)
+                        .header("Authorization", "Bearer " + ciudadano))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.estado").value("CONFIRMADA"));
+
+        alSolicitante = pushPortDePrueba.haciaUsuario(solicitanteId, FlotaPushListener.DESTINO_SOLICITUDES);
+        assertEquals(3, alSolicitante.size(), "el solicitante recibe la confirmación");
+        assertEquals("CONFIRMADA", estadoDe(alSolicitante.get(2)));
+    }
+
+    // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 
@@ -282,6 +358,17 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
 
     private String cuerpoAmbulancia(UUID ambulanciaId) throws Exception {
         return objectMapper.writeValueAsString(Map.of("ambulanciaId", ambulanciaId.toString()));
+    }
+
+    /** Reads the {@code estado} of a captured request push payload. */
+    private static String estadoDe(PublicacionCapturada publicacion) {
+        return ((FlotaPushListener.SolicitudPushPayload) publicacion.payload()).estado();
+    }
+
+    /** Reads the assigned unit id of a captured request push payload, or null. */
+    private static String ambulanciaAsignadaDe(PublicacionCapturada publicacion) {
+        UUID asignada = ((FlotaPushListener.SolicitudPushPayload) publicacion.payload()).ambulanciaAsignadaId();
+        return asignada == null ? null : asignada.toString();
     }
 
     private String tokenDe(String email, String password) throws Exception {
