@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -47,6 +48,21 @@ public interface SolicitudJpaRepository extends JpaRepository<SolicitudJpaEntity
             + "SET s.llegadaEn = :llegadaEn, s.version = s.version + 1 "
             + "WHERE s.id = :id AND s.llegadaEn IS NULL")
     int transicionAtomicaLlegada(@Param("id") UUID id, @Param("llegadaEn") Instant llegadaEn);
+
+    /**
+     * Cierre del servicio: UNA sola {@code UPDATE} que mueve la solicitud al
+     * estado terminal solo si sigue en servicio ({@code ASIGNADA} o
+     * {@code CONFIRMADA}). El {@code IN :estadosEsperados} acepta los dos
+     * orígenes válidos y mantiene el CAS: un doble "finalizar" concurrente deja
+     * a uno con 1 fila y al otro con 0.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE SolicitudJpaEntity s "
+            + "SET s.estado = :nuevoEstado, s.version = s.version + 1 "
+            + "WHERE s.id = :id AND s.estado IN :estadosEsperados")
+    int transicionAtomicaFinalizar(@Param("id") UUID id,
+                                   @Param("estadosEsperados") Collection<EstadoSolicitud> estadosEsperados,
+                                   @Param("nuevoEstado") EstadoSolicitud nuevoEstado);
 
     /**
      * Solicitudes PENDIENTES cuya ventana de accept ya venció, ordenadas por

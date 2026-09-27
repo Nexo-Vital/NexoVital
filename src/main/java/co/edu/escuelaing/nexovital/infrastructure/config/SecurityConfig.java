@@ -164,6 +164,13 @@ public class SecurityConfig {
                         // Declared explicitly because the chain is fail-closed.
                         .requestMatchers(HttpMethod.POST, "/api/v1/solicitudes/*/llegada")
                                 .hasAuthority("ROLE_CONDUCTOR")
+                        // Finish the service and release the unit (EP-04.F2.US6 /
+                        // US11): only the assigned driver finishes; the server
+                        // also verifies the unit is theirs and returns the unit
+                        // to available. Declared explicitly because the chain is
+                        // fail-closed; without it, /finalizar would be denied.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/solicitudes/*/finalizar")
+                                .hasAuthority("ROLE_CONDUCTOR")
                         // Confirm the assigned unit (EP-04): the help center
                         // closes the assignment. Any authenticated role may do
                         // it. Declared explicitly because the chain is

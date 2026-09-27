@@ -8,6 +8,7 @@ import co.edu.escuelaing.nexovital.flota.domain.model.SolicitudAmbulancia;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.AceptarSolicitudUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.ConfirmarSolicitudUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.DeclararLlegadaUseCase;
+import co.edu.escuelaing.nexovital.flota.domain.port.in.FinalizarSolicitudUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.RechazarSolicitudUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.SolicitarAmbulanciaUseCase;
 import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in.dto.AceptarSolicitudRequest;
@@ -49,6 +50,8 @@ public class SolicitudController {
     private static final String MENSAJE_DATOS_ACEPTACION = "El accept no es válido: indique la ambulancia.";
     private static final String MENSAJE_DATOS_RECHAZO = "El reject no es válido: indique la ambulancia.";
     private static final String MENSAJE_DATOS_LLEGADA = "La llegada no es válida: indique la ambulancia.";
+    private static final String MENSAJE_DATOS_FINALIZACION =
+            "El cierre del servicio no es válido: indique la ambulancia.";
     private static final String MENSAJE_SOLICITUD_NO_ENCONTRADA =
             "No existe una solicitud con el identificador indicado.";
     private static final String MENSAJE_SOLICITUD_NO_ASIGNABLE =
@@ -60,23 +63,27 @@ public class SolicitudController {
     private static final String MENSAJE_ERROR_ACEPTACION = "No fue posible aceptar la solicitud.";
     private static final String MENSAJE_ERROR_RECHAZO = "No fue posible rechazar la solicitud.";
     private static final String MENSAJE_ERROR_LLEGADA = "No fue posible declarar la llegada.";
+    private static final String MENSAJE_ERROR_FINALIZACION = "No fue posible finalizar el servicio.";
     private static final String MENSAJE_ERROR_CONFIRMACION = "No fue posible confirmar la solicitud.";
 
     private final SolicitarAmbulanciaUseCase solicitarAmbulanciaUseCase;
     private final AceptarSolicitudUseCase aceptarSolicitudUseCase;
     private final RechazarSolicitudUseCase rechazarSolicitudUseCase;
     private final DeclararLlegadaUseCase declararLlegadaUseCase;
+    private final FinalizarSolicitudUseCase finalizarSolicitudUseCase;
     private final ConfirmarSolicitudUseCase confirmarSolicitudUseCase;
 
     public SolicitudController(SolicitarAmbulanciaUseCase solicitarAmbulanciaUseCase,
                                AceptarSolicitudUseCase aceptarSolicitudUseCase,
                                RechazarSolicitudUseCase rechazarSolicitudUseCase,
                                DeclararLlegadaUseCase declararLlegadaUseCase,
+                               FinalizarSolicitudUseCase finalizarSolicitudUseCase,
                                ConfirmarSolicitudUseCase confirmarSolicitudUseCase) {
         this.solicitarAmbulanciaUseCase = solicitarAmbulanciaUseCase;
         this.aceptarSolicitudUseCase = aceptarSolicitudUseCase;
         this.rechazarSolicitudUseCase = rechazarSolicitudUseCase;
         this.declararLlegadaUseCase = declararLlegadaUseCase;
+        this.finalizarSolicitudUseCase = finalizarSolicitudUseCase;
         this.confirmarSolicitudUseCase = confirmarSolicitudUseCase;
     }
 
@@ -242,11 +249,51 @@ public class SolicitudController {
     }
 
     /**
+     * The assigned driver finishes the service: the request is closed and the
+     * unit returns to available in the SAME atomic operation (EP-04.F2.US6 /
+     * US11). The unit must be the one assigned to the request and belong to the
+     * authenticated driver, exactly as arrival requires.
+     *
+     * @return 200 with the closed (TOMADA) request; 404
+     *         {@code SOLICITUD_NO_ENCONTRADA}; 409 {@code SOLICITUD_NO_ASIGNABLE}
+     *         if the request is not in service or the unit is not the caller's;
+     *         409 {@code AMBULANCIA_NO_DISPONIBLE} if the unit is not EN_MISION;
+     *         400 {@code DATOS_INVALIDOS}; 500 {@code ERROR_FINALIZACION_SOLICITUD}
+     */
+    @PostMapping("/{id}/finalizar")
+    public ResponseEntity<Object> finalizar(@PathVariable UUID id, @RequestBody AceptarSolicitudRequest request) {
+        try {
+            if (request == null || request.ambulanciaId() == null) {
+                throw new IllegalArgumentException("La ambulancia es obligatoria.");
+            }
+            SolicitudAmbulancia finalizada = finalizarSolicitudUseCase.finalizar(
+                    id, request.ambulanciaId(), usuarioAutenticadoId());
+            return ResponseEntity.ok(SolicitudAmbulanciaDto.fromDomain(finalizada));
+        } catch (SolicitudNoEncontradaException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(ErrorResponse.of("SOLICITUD_NO_ENCONTRADA", MENSAJE_SOLICITUD_NO_ENCONTRADA));
+        } catch (SolicitudNoAsignableException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ErrorResponse.of("SOLICITUD_NO_ASIGNABLE", MENSAJE_SOLICITUD_NO_ASIGNABLE));
+        } catch (AmbulanciaNoDisponibleException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ErrorResponse.of("AMBULANCIA_NO_DISPONIBLE", MENSAJE_AMBULANCIA_NO_DISPONIBLE));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest()
+                    .body(ErrorResponse.of("DATOS_INVALIDOS", MENSAJE_DATOS_FINALIZACION));
+        } catch (RuntimeException e) {
+            return ResponseEntity.internalServerError()
+                    .body(ErrorResponse.of("ERROR_FINALIZACION_SOLICITUD", MENSAJE_ERROR_FINALIZACION));
+        }
+    }
+
+    /**
      * The help center (the authenticated user) confirms the assigned unit.
      *
      * @return 200 with the CONFIRMED request; 404
      *         {@code SOLICITUD_NO_ENCONTRADA}; 409 {@code SOLICITUD_NO_ASIGNABLE}
-     *         if it is not ASIGNADA; 500 {@code ERROR_CONFIRMACION_SOLICITUD}
+     *         if it is not ASIGNADA or the caller is not the addressed help
+     *         center; 500 {@code ERROR_CONFIRMACION_SOLICITUD}
      */
     @PostMapping("/{id}/confirmar")
     public ResponseEntity<Object> confirmar(@PathVariable UUID id) {

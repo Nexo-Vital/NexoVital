@@ -4,6 +4,7 @@ import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoSolicitud;
 import co.edu.escuelaing.nexovital.flota.domain.model.SolicitudAmbulancia;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -34,6 +35,16 @@ public interface SolicitudRepository {
      * caller treats it as a no-op).
      */
     int transicionAtomicaLlegada(UUID idSolicitud, Instant llegadaEn);
+
+    /**
+     * Closes the request in the same operation that releases the unit: a single
+     * UPDATE conditioned on the request still being in service ({@code
+     * ASIGNADA} or {@code CONFIRMADA}) that moves it to the terminal
+     * {@code TOMADA}. Returns 1 when this caller closed it, 0 when another one
+     * did first.
+     */
+    int transicionAtomicaFinalizar(UUID idSolicitud, Collection<EstadoSolicitud> estadosEsperados,
+                                   EstadoSolicitud nuevoEstado);
 
     /**
      * PENDING requests whose accept window already elapsed, oldest first and

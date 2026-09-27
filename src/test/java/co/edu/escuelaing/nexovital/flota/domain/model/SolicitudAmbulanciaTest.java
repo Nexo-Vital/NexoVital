@@ -93,6 +93,23 @@ class SolicitudAmbulanciaTest {
     }
 
     @Test
+    void finalizarSoloDesdeServicioActivo() {
+        // From ASIGNADA and from CONFIRMADA the request closes as TOMADA.
+        SolicitudAmbulancia desdeAsignada = pendiente().aceptar(ambulanciaA).finalizar();
+        assertEquals(EstadoSolicitud.TOMADA, desdeAsignada.getEstado());
+        assertEquals(ambulanciaA, desdeAsignada.getAmbulanciaAsignadaId());
+        assertEquals(solicitanteId, desdeAsignada.getSolicitanteId());
+
+        SolicitudAmbulancia desdeConfirmada = pendiente().aceptar(ambulanciaA).confirmar().finalizar();
+        assertEquals(EstadoSolicitud.TOMADA, desdeConfirmada.getEstado());
+
+        // PENDIENTE has no mission to finish.
+        assertThrows(IllegalStateException.class, () -> pendiente().finalizar());
+        // A closed request cannot be closed twice.
+        assertThrows(IllegalStateException.class, desdeAsignada::finalizar);
+    }
+
+    @Test
     void expiroSoloDesdePendiente() {
         SolicitudAmbulancia vencida = pendiente().expiro();
         assertEquals(EstadoSolicitud.TIMEOUT, vencida.getEstado());

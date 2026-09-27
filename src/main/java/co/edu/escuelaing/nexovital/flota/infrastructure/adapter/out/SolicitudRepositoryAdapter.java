@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -61,6 +62,13 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
     @Transactional
     public int transicionAtomicaLlegada(UUID idSolicitud, Instant llegadaEn) {
         return jpaRepository.transicionAtomicaLlegada(idSolicitud, llegadaEn);
+    }
+
+    @Override
+    @Transactional
+    public int transicionAtomicaFinalizar(UUID idSolicitud, Collection<EstadoSolicitud> estadosEsperados,
+                                          EstadoSolicitud nuevoEstado) {
+        return jpaRepository.transicionAtomicaFinalizar(idSolicitud, estadosEsperados, nuevoEstado);
     }
 
     @Override

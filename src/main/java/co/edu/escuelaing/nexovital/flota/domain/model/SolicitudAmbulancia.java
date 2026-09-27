@@ -13,7 +13,8 @@ import java.util.UUID;
  * {@link IllegalStateException} when the transition is not allowed.
  *
  * <p>Valid transitions: PENDIENTE → ASIGNADA (first accept wins, CAS),
- * PENDIENTE → TIMEOUT, ASIGNADA → CONFIRMADA, ASIGNADA → TOMADA.
+ * PENDIENTE → TIMEOUT, ASIGNADA → CONFIRMADA, ASIGNADA → TOMADA,
+ * ASIGNADA/CONFIRMADA → TOMADA (finish/release).
  *
  * <p>A per-unit decline is NOT a state transition here: it leaves the request
  * {@code PENDIENTE} so the other notified units can still accept it (AC4). The
@@ -133,6 +134,23 @@ public final class SolicitudAmbulancia {
     public SolicitudAmbulancia confirmar() {
         requiereTransicion(this, EstadoSolicitud.ASIGNADA, "confirmation");
         return conEstado(this, EstadoSolicitud.CONFIRMADA, ambulanciaAsignadaId);
+    }
+
+    /**
+     * Closes the attended request: ASIGNADA or CONFIRMADA → TOMADA. Called by
+     * the finish operation, which releases the unit in the same atomic step
+     * (EP-04.F2.US6/US11). {@code TOMADA} is the contract's terminal forward
+     * state ("the service was carried out"), so the request stops being active
+     * without inventing new lifecycle vocabulary.
+     *
+     * @throws IllegalStateException if the request is not in service
+     */
+    public SolicitudAmbulancia finalizar() {
+        if (estado != EstadoSolicitud.ASIGNADA && estado != EstadoSolicitud.CONFIRMADA) {
+            throw new IllegalStateException("Request " + id + " in state " + estado
+                    + " does not allow finish (requires ASIGNADA or CONFIRMADA)");
+        }
+        return conEstado(this, EstadoSolicitud.TOMADA, ambulanciaAsignadaId);
     }
 
     /**

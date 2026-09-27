@@ -51,6 +51,21 @@ public final class Ambulancia {
         return new Ambulancia(id, placa, EstadoAmbulancia.EN_MISION, lat, lng, zona, conductorId, version + 1);
     }
 
+    /**
+     * Releases the unit at the end of the service: only a unit that is
+     * {@code EN_MISION} can be freed. It returns to {@code DISPONIBLE} so it can
+     * take a new mission (EP-04.F2.US11).
+     *
+     * @throws IllegalStateException if the unit is not in a mission
+     */
+    public Ambulancia liberar() {
+        if (estado != EstadoAmbulancia.EN_MISION) {
+            throw new IllegalStateException(
+                    "Ambulance " + placa + " in state " + estado + " cannot be released");
+        }
+        return new Ambulancia(id, placa, EstadoAmbulancia.DISPONIBLE, lat, lng, zona, conductorId, version + 1);
+    }
+
     public UUID getId() {
         return id;
     }

@@ -545,6 +545,81 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
     }
 
     // -----------------------------------------------------------------------
+    // Finish / release (DEBT 2 & 3, EP-04.F2.US6/US11)
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("DEBT2/3: finalizar cierra la solicitud (TOMADA), libera la unidad y propaga por /topic/flota")
+    void debt2_finalizarCierraYLiberaLaUnidad() throws Exception {
+        String ciudadano = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+        String conductor = tokenDe(CONDUCTOR, CONDUCTOR_PASSWORD);
+        String solicitanteId = usuarioDe(CIUDADANO).getId().toString();
+        UUID unidad = unidadDelConductor;
+        String solicitudId = crearSolicitud(ciudadano, zona);
+
+        mockMvc.perform(post("/api/v1/solicitudes/{id}/accept", solicitudId)
+                        .header("Authorization", "Bearer " + conductor)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpoAmbulancia(unidad)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.solicitud.estado").value("ASIGNADA"));
+
+        mockMvc.perform(post("/api/v1/solicitudes/{id}/finalizar", solicitudId)
+                        .header("Authorization", "Bearer " + conductor)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpoAmbulancia(unidad)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.estado").value("TOMADA"));
+
+        // The request stops being active and the unit is available again, in the
+        // same operation.
+        assertEquals(EstadoSolicitud.TOMADA,
+                solicitudJpaRepository.findById(UUID.fromString(solicitudId)).orElseThrow().getEstado());
+        assertEquals(EstadoAmbulancia.DISPONIBLE,
+                ambulanciaJpaRepository.findById(unidad).orElseThrow().getEstado());
+
+        PublicacionCapturada flota = pushPortDePrueba.ultimaHacia(FlotaPushListener.DESTINO_FLOTA);
+        assertNotNull(flota, "finalizar debe propagar la liberacion a /topic/flota");
+        assertInstanceOf(FlotaPushPayload.class, flota.payload());
+        assertEquals(unidad, ((FlotaPushPayload) flota.payload()).ambulanciaId());
+        assertEquals("DISPONIBLE", ((FlotaPushPayload) flota.payload()).estado());
+
+        // The requester is told the request closed.
+        boolean cierre = pushPortDePrueba
+                .haciaUsuario(solicitanteId, FlotaPushListener.DESTINO_SOLICITUDES).stream()
+                .anyMatch(publicacion -> "TOMADA".equals(estadoDe(publicacion)));
+        assertTrue(cierre, "el solicitante recibe el cierre (TOMADA)");
+    }
+
+    @Test
+    @DisplayName("DEBT2: finalizar con una unidad ajena responde 409 y no cierra ni libera nada")
+    void debt2_finalizarConUnidadAjenaDevuelve409() throws Exception {
+        String ciudadano = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+        String conductor = tokenDe(CONDUCTOR, CONDUCTOR_PASSWORD);
+        UUID unidad = unidadDelConductor;
+        String solicitudId = crearSolicitud(ciudadano, zona);
+
+        mockMvc.perform(post("/api/v1/solicitudes/{id}/accept", solicitudId)
+                        .header("Authorization", "Bearer " + conductor)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpoAmbulancia(unidad)))
+                .andExpect(status().isOk());
+
+        // Notified but not assigned: cannot finish another unit's mission.
+        mockMvc.perform(post("/api/v1/solicitudes/{id}/finalizar", solicitudId)
+                        .header("Authorization", "Bearer " + conductor)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpoAmbulancia(sembradas.get(1))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("SOLICITUD_NO_ASIGNABLE"));
+
+        assertEquals(EstadoSolicitud.ASIGNADA,
+                solicitudJpaRepository.findById(UUID.fromString(solicitudId)).orElseThrow().getEstado());
+        assertEquals(EstadoAmbulancia.EN_MISION,
+                ambulanciaJpaRepository.findById(unidad).orElseThrow().getEstado());
+    }
+
+    // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 
@@ -555,19 +630,28 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
     }
 
     private String crearSolicitud(String token, String zona) throws Exception {
+        return crearSolicitud(token, zona, UUID.randomUUID());
+    }
+
+    /** Creates a request addressed to a concrete help center (its user id). */
+    private String crearSolicitud(String token, String zona, UUID centroAyudaId) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v1/solicitudes")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(cuerpoSolicitud(zona)))
+                        .content(cuerpoSolicitud(zona, centroAyudaId)))
                 .andExpect(status().isCreated())
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asText();
     }
 
     private String cuerpoSolicitud(String zona) throws Exception {
+        return cuerpoSolicitud(zona, UUID.randomUUID());
+    }
+
+    private String cuerpoSolicitud(String zona, UUID centroAyudaId) throws Exception {
         return objectMapper.writeValueAsString(Map.of(
                 "emergenciaId", UUID.randomUUID().toString(),
-                "centroAyudaId", UUID.randomUUID().toString(),
+                "centroAyudaId", centroAyudaId.toString(),
                 "zonaId", zona));
     }
 

@@ -5,6 +5,7 @@ import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudAsignadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudConfirmadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudCreadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudExpiradaEvent;
+import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudFinalizadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudLlegadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudRechazadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.model.Ambulancia;
@@ -142,6 +143,20 @@ public class FlotaPushListener {
         for (UUID ambulanciaId : evento.ambulanciasNotificadas()) {
             publicarAlConductor(ambulanciaId, payload);
         }
+        publicarAlSolicitante(evento.solicitanteId(), payload);
+    }
+
+    /**
+     * The service was attended and finished: the assigned driver and the
+     * requester see the request closed (TOMADA). The unit's release travels
+     * separately on {@code /topic/flota} via {@link FlotaActualizadaEvent}.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void alFinalizarSolicitud(SolicitudFinalizadaEvent evento) {
+        SolicitudPushPayload payload = new SolicitudPushPayload(
+                evento.solicitudId(), evento.emergenciaId(), evento.zonaId(),
+                "TOMADA", List.of(), evento.ambulanciaId(), false);
+        publicarAlConductor(evento.ambulanciaId(), payload);
         publicarAlSolicitante(evento.solicitanteId(), payload);
     }
 
