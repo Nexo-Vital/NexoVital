@@ -277,7 +277,9 @@ export default function CitizenMapPage({
   const handleRequest = useCallback(() => {
     // A request takes over the rail, so any open donation picker is dropped.
     setPickerOpen(false);
-    useCitizenRequestStore.getState().start({
+    // `start` decides the transport (relay in demo, REST against a backend) and
+    // resolves when the search state is set; the handler stays fire-and-forget.
+    void useCitizenRequestStore.getState().start({
       port,
       units: useFleetStore.getState().units,
       origin: selfPosition,

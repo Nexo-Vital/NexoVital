@@ -8,6 +8,13 @@ import type { Ambulancia, Emergencia, SolicitudAmbulancia } from '@/types/domain
 /** Accept window used by the demo. Matches the driver overlay default. */
 export const SOLICITUD_TIMEOUT_MS = 45_000;
 
+/**
+ * Front help-center id carried by a request while the flow has no real center
+ * assigned. It is a placeholder, shared by the demo projection and the REST body
+ * so the two paths never drift.
+ */
+export const CITIZEN_CENTRO_AYUDA_ID = 'CA-CRUE';
+
 export type BroadcastScope = 'all' | 'zone';
 export type SolicitudRequestPayload = SolicitudBroadcastPayload | SolicitudDirectPayload;
 
@@ -157,7 +164,7 @@ export function toSolicitud(
     id: payload.requestId,
     emergenciaId: payload.emergenciaId,
     estado: 'PENDING',
-    centroAyudaId: 'CA-CRUE',
+    centroAyudaId: CITIZEN_CENTRO_AYUDA_ID,
     zonaId: payload.zonaId,
     tipo: payload.tipo,
     solicitadaEn: new Date(now).toISOString(),

@@ -1,7 +1,13 @@
 import { useEffect } from 'react';
 import { create } from 'zustand';
-import { nextRequestId, toSolicitud } from '@/features/solicitudes/solicitud-form';
+import { solicitarAmbulancia } from '@/features/solicitudes/solicitud-api';
+import {
+  CITIZEN_CENTRO_AYUDA_ID,
+  nextRequestId,
+  toSolicitud,
+} from '@/features/solicitudes/solicitud-form';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
+import { isDemoMode } from '@/services/apiClient';
 import {
   DESTINATIONS,
   type RealtimePort,
@@ -35,11 +41,14 @@ interface CitizenRequestState {
   /** When the citizen confirmed (epoch ms); null until then. */
   confirmedAt: number | null;
   /**
-   * Publishes the broadcast and enters the search. Returns `false` (and changes
-   * nothing) when no unit is available, so the button cannot start a search that
-   * can never be answered.
+   * Starts the search. In demo mode it publishes the broadcast on the relay and
+   * the local projection is the source of truth; against a backend it creates
+   * the request through `POST /api/v1/solicitudes` and adopts the server's
+   * response (id, estado, timestamps, notified units). Returns `false` (and
+   * changes nothing) when no unit is available, so the button cannot start a
+   * search that can never be answered.
    */
-  start: (input: CitizenRequestStart) => boolean;
+  start: (input: CitizenRequestStart) => Promise<boolean>;
   /** Withdraws the open request on the relay and clears the local state. */
   cancel: (port: RealtimePort | null) => void;
   /** Applies the server-side arbiter decision when OUR request was taken. */
@@ -80,27 +89,60 @@ const IDLE_STATE = {
 export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => ({
   ...IDLE_STATE,
 
-  start: ({ port, units, origin, now }) => {
+  start: async ({ port, units, origin, now }) => {
     const startedAt = now ?? Date.now();
     const requestId = nextRequestId();
     const payload = buildCitizenBroadcast({ requestId, origin, units, now: startedAt });
     if (!payload) {
       return false;
     }
-    // Mirror the request into the registry, then publish it on the topic.
-    useSolicitudesStore.getState().upsert(toSolicitud(payload, startedAt));
-    port?.publish(DESTINATIONS.solicitudes, payload);
-    set({
-      phase: 'searching',
-      requestId,
-      startedAt,
-      notifiedIds: payload.notificadas,
-      acceptedBy: null,
-      acceptedAt: null,
-      arrivedAt: null,
-      confirmedAt: null,
-    });
-    return true;
+
+    // Demo build: no backend exists, so the request is published on the relay
+    // and the local projection is the source of truth (unchanged behaviour).
+    if (isDemoMode()) {
+      useSolicitudesStore.getState().upsert(toSolicitud(payload, startedAt));
+      port?.publish(DESTINATIONS.solicitudes, payload);
+      set({
+        phase: 'searching',
+        requestId,
+        startedAt,
+        notifiedIds: payload.notificadas,
+        acceptedBy: null,
+        acceptedAt: null,
+        arrivedAt: null,
+        confirmedAt: null,
+      });
+      return true;
+    }
+
+    // Real backend: the server creates the request and OWNS its identity and
+    // state, so the store adopts the response instead of the local projection.
+    // `emergenciaId`/`zonaId` are the front's documented placeholders: the
+    // citizen request carries no emergency and declares no zone (see CR-G).
+    try {
+      const solicitud = await solicitarAmbulancia({
+        emergenciaId: payload.emergenciaId,
+        centroAyudaId: CITIZEN_CENTRO_AYUDA_ID,
+        zonaId: payload.zonaId,
+        timeoutEn: payload.timeoutEn,
+      });
+      useSolicitudesStore.getState().upsert({ ...solicitud, tipo: payload.tipo });
+      set({
+        phase: 'searching',
+        requestId: solicitud.id,
+        startedAt: Date.parse(solicitud.solicitadaEn),
+        notifiedIds: solicitud.ambulanciasNotificadas,
+        acceptedBy: null,
+        acceptedAt: null,
+        arrivedAt: null,
+        confirmedAt: null,
+      });
+      return true;
+    } catch {
+      // The server never created the request: never leave a phantom search.
+      set({ ...IDLE_STATE });
+      return false;
+    }
   },
 
   cancel: (port) => {
