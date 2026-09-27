@@ -118,6 +118,18 @@ public class SecurityConfig {
                         // /centros-acopio/{id}/inventario/donacion se denegaría.
                         .requestMatchers(HttpMethod.POST, "/api/v1/centros-acopio/*/inventario/donacion")
                                 .authenticated()
+                        // Despacho de un recurso (EP-03.F1.US1): el contrato NO
+                        // fija rol para la operación, así que cualquier rol
+                        // autenticado puede despachar, igual que la donación.
+                        // Declarado explícitamente porque la cadena es
+                        // fail-closed; sin él, POST
+                        // /centros-acopio/{id}/inventario/despacho devolvería 403
+                        // y parecería no implementado. Si el equipo decide
+                        // exigir el rol del actor de la historia
+                        // (ROLE_ADMIN_CENTRO_AYUDA), es un cambio de una línea:
+                        // .hasAuthority("ROLE_ADMIN_CENTRO_AYUDA").
+                        .requestMatchers(HttpMethod.POST, "/api/v1/centros-acopio/*/inventario/despacho")
+                                .authenticated()
                         // Fail-closed standard: an operation that is not declared here is
                         // denied, never silently open to every authenticated role. A new
                         // operation must add its own declaration (matcher or

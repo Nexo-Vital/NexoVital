@@ -55,6 +55,15 @@ public class InventarioRepositoryAdapter implements InventarioRepository {
         return jpaRepository.acreditar(centroAcopioId, itemId, cantidad) > 0;
     }
 
+    @Override
+    @Transactional
+    public int transicionAtomicaDespacho(UUID centroAcopioId, UUID itemId, int cantidad) {
+        if (cantidad < 1) {
+            throw new IllegalArgumentException("cantidad must be >= 1: " + cantidad);
+        }
+        return jpaRepository.transicionAtomicaDespacho(centroAcopioId, itemId, cantidad);
+    }
+
     private static ItemInventario toDomain(ItemInventarioJpaEntity entity) {
         return new ItemInventario(
                 entity.getId(),

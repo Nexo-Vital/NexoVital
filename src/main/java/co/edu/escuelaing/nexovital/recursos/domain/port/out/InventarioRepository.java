@@ -42,4 +42,19 @@ public interface InventarioRepository {
      *         item exists in that center
      */
     boolean acreditar(UUID centroAcopioId, UUID itemId, int cantidad);
+
+    /**
+     * Atomic dispatch (CAS) of the finite stock C1: ONE {@code @Modifying} JPQL
+     * update conditioned to {@code disponible >= :cantidad}. It never loads the
+     * entity, so the conditional {@code WHERE} makes over-allocation impossible
+     * by construction: two concurrent dispatches can never take more stock than
+     * there is.
+     *
+     * @param centroAcopioId id of the center that owns the item
+     * @param itemId         id of the item
+     * @param cantidad       quantity to subtract; must be {@code >= 1}
+     * @return affected rows: 1 when this caller took the stock, 0 when the stock
+     *         no longer covered the quantity or the item is not in that center
+     */
+    int transicionAtomicaDespacho(UUID centroAcopioId, UUID itemId, int cantidad);
 }

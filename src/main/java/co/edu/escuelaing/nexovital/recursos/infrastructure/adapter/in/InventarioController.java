@@ -2,9 +2,12 @@ package co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.in;
 
 import co.edu.escuelaing.nexovital.recursos.domain.exception.CentroAcopioNoEncontradoException;
 import co.edu.escuelaing.nexovital.recursos.domain.exception.ItemInventarioNoEncontradoException;
+import co.edu.escuelaing.nexovital.recursos.domain.exception.StockInsuficienteException;
 import co.edu.escuelaing.nexovital.recursos.domain.model.ItemInventario;
 import co.edu.escuelaing.nexovital.recursos.domain.port.in.ConsultarInventarioUseCase;
+import co.edu.escuelaing.nexovital.recursos.domain.port.in.DespacharStockUseCase;
 import co.edu.escuelaing.nexovital.recursos.domain.port.in.RegistrarDonacionUseCase;
+import co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.in.dto.DespachoRequest;
 import co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.in.dto.DonacionRequest;
 import co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.in.dto.ItemInventarioDto;
 import co.edu.escuelaing.nexovital.shared.infrastructure.dto.ErrorResponse;
@@ -42,14 +45,22 @@ public class InventarioController {
     private static final String MENSAJE_DATOS_INVALIDOS =
             "La donación no es válida: revise el insumo y la cantidad.";
     private static final String MENSAJE_ERROR_DONACION = "No fue posible registrar la donación.";
+    private static final String MENSAJE_STOCK_INSUFICIENTE =
+            "No hay unidades suficientes del insumo para atender la solicitud.";
+    private static final String MENSAJE_DATOS_DESPACHO =
+            "El despacho no es válido: revise el insumo y la cantidad.";
+    private static final String MENSAJE_ERROR_DESPACHO = "No fue posible despachar el recurso.";
 
     private final ConsultarInventarioUseCase consultarInventarioUseCase;
     private final RegistrarDonacionUseCase registrarDonacionUseCase;
+    private final DespacharStockUseCase despacharStockUseCase;
 
     public InventarioController(ConsultarInventarioUseCase consultarInventarioUseCase,
-                                RegistrarDonacionUseCase registrarDonacionUseCase) {
+                                RegistrarDonacionUseCase registrarDonacionUseCase,
+                                DespacharStockUseCase despacharStockUseCase) {
         this.consultarInventarioUseCase = consultarInventarioUseCase;
         this.registrarDonacionUseCase = registrarDonacionUseCase;
+        this.despacharStockUseCase = despacharStockUseCase;
     }
 
     /**
@@ -117,6 +128,53 @@ public class InventarioController {
         } catch (RuntimeException e) {
             return ResponseEntity.internalServerError()
                     .body(ErrorResponse.of("ERROR_REGISTRO_DONACION", MENSAJE_ERROR_DONACION));
+        }
+    }
+
+    /**
+     * Despacha stock del item indicado: descuenta la cantidad elegida con un
+     * CAS atómico (C1). La solicitud entra al proceso de asignación —el stock
+     * se reserva de inmediato— y se rechaza con 409 si no alcanza; el stock
+     * nunca queda negativo. El servicio publica el semáforo actualizado en
+     * {@code /topic/suministros} después del commit.
+     *
+     * <p>El orden de los {@code catch} importa: los "no encontrado" (404) caen
+     * antes que {@link StockInsuficienteException} (409), esta antes que
+     * {@link IllegalArgumentException} (400) y esta antes de la genérica (500).
+     *
+     * @return 200 con el {@code ItemInventarioDto} descontado; 404
+     *         {@code CENTRO_ACOPIO_NO_ENCONTRADO} si no existe el centro; 404
+     *         {@code ITEM_INVENTARIO_NO_ENCONTRADO} si el item no existe en ese
+     *         centro; 409 {@code STOCK_INSUFICIENTE} si el stock no alcanza; 400
+     *         {@code DATOS_INVALIDOS} si falta el item o la cantidad no es un
+     *         entero positivo; 500 {@code ERROR_DESPACHO} si el despacho falla
+     */
+    @PostMapping("/{id}/inventario/despacho")
+    public ResponseEntity<Object> despachar(@PathVariable UUID id, @RequestBody DespachoRequest request) {
+        try {
+            if (request == null || request.itemId() == null) {
+                throw new IllegalArgumentException("El insumo es obligatorio.");
+            }
+            if (request.cantidad() == null) {
+                throw new IllegalArgumentException("La cantidad es obligatoria.");
+            }
+            ItemInventario despachado = despacharStockUseCase.despachar(id, request.itemId(), request.cantidad());
+            return ResponseEntity.ok(ItemInventarioDto.fromDomain(despachado));
+        } catch (CentroAcopioNoEncontradoException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(ErrorResponse.of("CENTRO_ACOPIO_NO_ENCONTRADO", MENSAJE_CENTRO_NO_ENCONTRADO));
+        } catch (ItemInventarioNoEncontradoException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(ErrorResponse.of("ITEM_INVENTARIO_NO_ENCONTRADO", MENSAJE_ITEM_NO_ENCONTRADO));
+        } catch (StockInsuficienteException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ErrorResponse.of("STOCK_INSUFICIENTE", MENSAJE_STOCK_INSUFICIENTE));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest()
+                    .body(ErrorResponse.of("DATOS_INVALIDOS", MENSAJE_DATOS_DESPACHO));
+        } catch (RuntimeException e) {
+            return ResponseEntity.internalServerError()
+                    .body(ErrorResponse.of("ERROR_DESPACHO", MENSAJE_ERROR_DESPACHO));
         }
     }
 }

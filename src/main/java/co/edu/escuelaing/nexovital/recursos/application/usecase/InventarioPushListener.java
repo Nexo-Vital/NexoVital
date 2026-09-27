@@ -38,4 +38,14 @@ public class InventarioPushListener {
     public void alRegistrarDonacion(DonacionRegistradaEvento evento) {
         pushPort.publicar(DESTINO_SUMINISTROS, evento.item());
     }
+
+    /**
+     * El despacho de stock también publica el semáforo actualizado en el mismo
+     * canal: el contrato lo declara para la operación
+     * ({@code x-usa-publicacion: /topic/suministros}, publish POST-COMMIT).
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void alDespacharStock(StockDespachadoEvento evento) {
+        pushPort.publicar(DESTINO_SUMINISTROS, evento.item());
+    }
 }

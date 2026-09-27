@@ -37,4 +37,34 @@ public interface ItemInventarioJpaRepository extends JpaRepository<ItemInventari
     int acreditar(@Param("centroAcopioId") UUID centroAcopioId,
                   @Param("itemId") UUID itemId,
                   @Param("cantidad") int cantidad);
+
+    /**
+     * CAS real del stock finito C1: UNA sola {@code UPDATE} condicionada a que
+     * el {@code disponible} siga cubriendo la cantidad. Devuelve filas
+     * afectadas: 1 = este llamador se llevó el stock, 0 = el stock ya no
+     * alcanzaba (o el item no está en ese centro).
+     *
+     * <p>El {@code WHERE i.disponible >= :cantidad} hace el check-and-set
+     * atómico: dos despachos concurrentes jamás pueden llevarse más stock del
+     * que hay, así que el stock nunca queda negativo <b>por construcción</b>.
+     *
+     * <p>A diferencia del backend de referencia, este modelo NO tiene columna
+     * {@code version}: el incremento de versión de allá es de su modelo, no un
+     * requisito del invariante, y agregar la columna obligaría a una migración
+     * que el {@code validate} de producción exigiría. La condición del
+     * {@code WHERE} es toda la garantía.
+     *
+     * <p>{@code clearAutomatically} descarta la entidad cacheada, de modo que
+     * una lectura posterior vea el stock ya descontado.
+     *
+     * @return número de filas actualizadas: 1 si este llamador tomó el stock, 0
+     *         si no alcanzaba
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE ItemInventarioJpaEntity i SET i.disponible = i.disponible - :cantidad "
+            + "WHERE i.id = :itemId AND i.centroAcopioId = :centroAcopioId "
+            + "AND i.disponible >= :cantidad")
+    int transicionAtomicaDespacho(@Param("centroAcopioId") UUID centroAcopioId,
+                                  @Param("itemId") UUID itemId,
+                                  @Param("cantidad") int cantidad);
 }
