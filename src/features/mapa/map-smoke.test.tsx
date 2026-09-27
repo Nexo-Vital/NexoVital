@@ -231,6 +231,56 @@ describe('MapCanvas smoke', () => {
     expect(badge?.querySelector('.nv-marker__glyph')).not.toBeNull();
   });
 
+  it('EP-03.F1.US5: an alerted center draws a shortage badge with the missing quantity', () => {
+    const { container } = render(
+      <MapCanvas
+        ambulancias={[]}
+        emergencias={[]}
+        centros={[
+          {
+            id: 'CA-ALERTA',
+            nombre: 'Acopio Alerta',
+            ubicacion: { lat: 4.7, lng: -74.08 },
+            items: [],
+            alerta: {
+              itemId: 'INV-1',
+              nombre: 'Agua potable',
+              cantidadSolicitada: 8,
+              faltante: 3,
+              creadaEn: '2026-09-27T10:00:00Z',
+            },
+          },
+        ]}
+        onSelectAmbulance={() => undefined}
+        onSelectEmergency={() => undefined}
+      />,
+    );
+
+    const marker = markerByLabel(container, 'Alerta');
+    const shortage = marker.querySelector('.nv-marker__shortage');
+    expect(shortage).not.toBeNull();
+    expect(shortage?.textContent).toBe('3');
+
+    // Clearly distinguishable from the traffic-light badge: it is its own node
+    // and class (the level glyph stays on the badge), so they mean different
+    // things: an unmet demand vs the stock level.
+    expect(marker.querySelector('.nv-marker__badge')).not.toBeNull();
+    expect(shortage?.classList.contains('nv-marker__badge')).toBe(false);
+    expect(GLOBALS_CSS).toContain('.nv-marker__shortage');
+  });
+
+  it('EP-03.F1.US5: a center without an alert draws no shortage badge', () => {
+    const { container } = renderMapWithCenters(() => undefined);
+
+    // Degradation: the demo centers carry no alert, so every one of them keeps
+    // exactly today's marker (level badge only, no second badge).
+    for (const label of ['Suba Norte', 'La Gaitana', 'Tibabuyes']) {
+      const marker = markerByLabel(container, label);
+      expect(marker.querySelector('.nv-marker__shortage')).toBeNull();
+      expect(marker.querySelector('.nv-marker__badge')).not.toBeNull();
+    }
+  });
+
   it('AC1: draws a hospital with its own marker, distinct from a supply center', () => {
     const { container } = renderMapWithCenters(() => undefined);
 

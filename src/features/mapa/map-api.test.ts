@@ -143,6 +143,66 @@ describe('mapaToCentros', () => {
     expect(centros.map((centro) => centro.zonaId)).toEqual(['Z-SUBA', 'Z-SUBA', 'Z-SUBA']);
   });
 
+  it('EP-03.F1.US5: carries the worst active alert and the count through, verbatim', () => {
+    const centros = mapaToCentros({
+      zonas: [],
+      centros: [
+        {
+          id: 'ORG-ALERTA',
+          nombre: 'Acopio Alerta',
+          tipo: 'CENTRO_ACOPIO',
+          ubicacion: { lat: 4.7, lng: -74.06 },
+          alerta: {
+            itemId: 'INV-1',
+            nombre: 'Agua potable',
+            cantidadSolicitada: 8,
+            faltante: 3,
+            creadaEn: '2026-09-27T10:00:00Z',
+          },
+          alertasActivas: 2,
+        },
+      ],
+    });
+
+    // Field names mirror the contract `AlertaEscasez` byte-for-byte.
+    expect(centros[0].alerta).toEqual({
+      itemId: 'INV-1',
+      nombre: 'Agua potable',
+      cantidadSolicitada: 8,
+      faltante: 3,
+      creadaEn: '2026-09-27T10:00:00Z',
+    });
+    expect(centros[0].alertasActivas).toBe(2);
+  });
+
+  it('EP-03.F1.US5: an absent or null alert is OMITTED, never a present-but-nullish key', () => {
+    const centros = mapaToCentros({
+      zonas: [],
+      centros: [
+        {
+          id: 'SIN-ALERTA',
+          nombre: 'Acopio sin alerta',
+          tipo: 'CENTRO_ACOPIO',
+          ubicacion: { lat: 4.7, lng: -74.06 },
+        },
+        {
+          id: 'ALERTA-NULL',
+          nombre: 'Acopio alerta nula',
+          tipo: 'CENTRO_ACOPIO',
+          ubicacion: { lat: 4.71, lng: -74.07 },
+          alerta: null,
+        },
+      ],
+    });
+
+    // The realtime merge would otherwise erase an alert the center already had
+    // (same rule as `tipo`/`zonaId`): both must collapse to "no key".
+    for (const centro of centros) {
+      expect('alerta' in centro).toBe(false);
+      expect('alertasActivas' in centro).toBe(false);
+    }
+  });
+
   it('declares no inventory: every backend center is NOT_DECLARED, never a faked light', () => {
     const centros = mapaToCentros(RESPONSE);
 

@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   ArrowRight,
   HandHeart,
   Info,
@@ -160,6 +161,30 @@ export function CenterDetailRail({
               : 'Estado del centro'}
           </span>
         </div>
+
+        {/*
+          Active shortage alert (EP-03.F1.US5): the resource a center could not
+          dispatch and the amount still missing. It is NOT the traffic light —
+          the light measures stock against the item's threshold, this is an
+          unmet demand — so it gets its own red block. A center with no alert
+          renders nothing here, exactly as before (FA-7).
+        */}
+        {centro.alerta && (
+          <div
+            data-testid="centro-alerta-escasez"
+            className="flex items-start gap-2 rounded-nv-md bg-nv-red-600/10 p-2.5 text-nv-navy text-xs"
+          >
+            <AlertTriangle className="mt-px size-4 shrink-0 text-nv-red-600" aria-hidden />
+            <span>
+              <b className="text-nv-red-600">Alerta de escasez:</b> se solicitaron{' '}
+              {centro.alerta.cantidadSolicitada} y faltan <b>{centro.alerta.faltante}</b> de{' '}
+              {centro.alerta.nombre.toLowerCase()}.
+              {centro.alertasActivas !== undefined && centro.alertasActivas > 1 && (
+                <> Hay {centro.alertasActivas} recursos en escasez en este centro.</>
+              )}
+            </span>
+          </div>
+        )}
 
         <h4 className="flex items-center gap-2 font-bold text-sm">
           <Package className="size-4 text-nv-navy" aria-hidden />

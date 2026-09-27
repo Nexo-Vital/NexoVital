@@ -404,4 +404,76 @@ describe('CenterDetailRail', () => {
     expect(screen.getByRole('button', { name: 'Donar kits de higiene' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Volver al mapa' })).toBeInTheDocument();
   });
+
+  it('EP-03.F1.US5: shows the active shortage alert with the resource and the missing quantity', () => {
+    const centro: CentroAyuda = {
+      ...subaNorte(),
+      alerta: {
+        itemId: 'INV-SN-1',
+        nombre: 'Agua potable',
+        cantidadSolicitada: 8,
+        faltante: 3,
+        creadaEn: '2026-09-27T10:00:00Z',
+      },
+      alertasActivas: 1,
+    };
+    render(
+      <CenterDetailRail
+        centro={centro}
+        origin={SUBAS}
+        lastDonation={null}
+        onDonate={vi.fn()}
+        onBackToMap={vi.fn()}
+      />,
+    );
+
+    const alert = screen.getByTestId('centro-alerta-escasez');
+    // The AC: the alert names the resource AND the amount that is missing.
+    expect(alert.textContent).toContain('agua potable');
+    expect(within(alert).getByText('3')).toBeInTheDocument();
+    expect(alert.textContent).toContain('se solicitaron 8');
+    // A single alert says nothing about further ones.
+    expect(alert.textContent).not.toContain('recursos en escasez');
+  });
+
+  it('EP-03.F1.US5: mentions the other active alerts only when there is more than one', () => {
+    const centro: CentroAyuda = {
+      ...subaNorte(),
+      alerta: {
+        itemId: 'INV-SN-1',
+        nombre: 'Agua potable',
+        cantidadSolicitada: 8,
+        faltante: 3,
+        creadaEn: '2026-09-27T10:00:00Z',
+      },
+      alertasActivas: 3,
+    };
+    render(
+      <CenterDetailRail
+        centro={centro}
+        origin={SUBAS}
+        lastDonation={null}
+        onDonate={vi.fn()}
+        onBackToMap={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId('centro-alerta-escasez').textContent).toContain(
+      'Hay 3 recursos en escasez en este centro.',
+    );
+  });
+
+  it('EP-03.F1.US5: a center without an alert renders no alert block', () => {
+    render(
+      <CenterDetailRail
+        centro={subaNorte()}
+        origin={SUBAS}
+        lastDonation={null}
+        onDonate={vi.fn()}
+        onBackToMap={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByTestId('centro-alerta-escasez')).not.toBeInTheDocument();
+  });
 });

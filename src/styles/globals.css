@@ -359,6 +359,37 @@
   }
 
   /*
+    ---- shortage badge: the center's UNMET DEMAND, not its traffic light ----
+
+    A filled red pill anchored top-LEFT, opposite the traffic-light badge
+    (top-right), carrying the missing quantity as a NUMBER. It shares the badge
+    language (22px, on-accent border, same shadow) but differs in fill, corner
+    and content, because it means something else: the light compares stock
+    against the item's `requerido` threshold, this one is what a donor still has
+    to cover. An alerted center can therefore show both at once; a center with no
+    alert draws neither (see `shortageBadgeHtml` in `markers.ts`).
+  */
+  .nv-marker--center .nv-marker__shortage {
+    position: absolute;
+    top: -10px;
+    left: -10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 5px;
+    border: 2px solid var(--nv-on-accent);
+    border-radius: 9999px;
+    background: var(--nv-red-600);
+    color: var(--nv-on-accent);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    box-shadow: 0 1px 4px color-mix(in srgb, var(--nv-navy) 25%, transparent);
+  }
+
+  /*
     ---- hospital pin: teal DIAMOND with a medical cross, NO inventory badge ----
 
     Deliberately a different shape from the supply-center rounded square and the

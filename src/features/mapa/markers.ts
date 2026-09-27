@@ -223,8 +223,28 @@ function hospitalIcon(center: CentroAyuda, selected: boolean, changed: boolean):
 }
 
 /**
+ * Shortage badge HTML for a center, or an empty string when it has no active
+ * alert.
+ *
+ * It is a SECOND, different message from the traffic-light badge: the light
+ * reads the stock against the item's `requerido` threshold, this one is the
+ * UNMET DEMAND (the missing quantity a donor still has to cover). It therefore
+ * reuses the badge's visual language (a 22px on-accent-bordered pill) but
+ * anchors on the OPPOSITE corner and carries the missing quantity as a NUMBER
+ * instead of a level glyph, so the two can never be confused. A center without
+ * an alert emits nothing and renders exactly as before (FA-7).
+ */
+function shortageBadgeHtml(center: CentroAyuda): string {
+  if (!center.alerta) {
+    return '';
+  }
+  return `<span class="nv-marker__shortage">${escapeHtml(String(center.alerta.faltante))}</span>`;
+}
+
+/**
  * Aid-centre marker: 48px rounded square coloured by the centre's worst
- * inventory level, with a badge that repeats the level as an icon.
+ * inventory level, with a badge that repeats the level as an icon, plus an
+ * optional shortage badge carrying the unmet demand.
  *
  * The colours come from `CENTER_LEVEL_STYLE` — the same table the citizen legend
  * reads — written into the `--nv-marker-*` custom properties the CSS consumes.
@@ -250,6 +270,7 @@ export function centerIcon(center: CentroAyuda, selected = false, changed = fals
     `<div class="nv-marker nv-marker--center${selectedClass}${changedClass}" style="${styleAttribute}">` +
     `<span class="nv-marker__shape">${WAREHOUSE_GLYPH}</span>` +
     `<span class="nv-marker__badge">${CENTER_BADGE_GLYPH[traffic]}</span>` +
+    shortageBadgeHtml(center) +
     `<span class="nv-marker__label">${escapeHtml(centerShortName(center))}</span>` +
     `</div>`;
   return buildMarkerIcon(html, 48);

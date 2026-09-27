@@ -1,11 +1,11 @@
 import { apiFetch } from '@/services/apiClient';
-import type { CentroAyuda, TipoCentroAyuda, Ubicacion, Zona } from '@/types/domain';
+import type { AlertaEscasez, CentroAyuda, TipoCentroAyuda, Ubicacion, Zona } from '@/types/domain';
 
 /**
  * Aid center exactly as `GET /api/v1/mapa` returns it (verified live): identity,
- * name, type, zone and location, and NOTHING else. The endpoint carries no
- * inventory — that belongs to the `recursos` module (EP-03), which does not
- * exist yet.
+ * name, type, zone and location. It carries NO inventory — that belongs to the
+ * `recursos` module (EP-03) — but it DOES carry the center's worst active
+ * shortage alert and the number of active alerts (EP-03.F1.US5).
  */
 export interface MapaCentroDto {
   id: string;
@@ -19,6 +19,19 @@ export interface MapaCentroDto {
    */
   zonaId?: string | null;
   ubicacion: Ubicacion;
+  /**
+   * Worst active shortage alert of the center, if any. Optional AND nullable:
+   * the backend omits it when the center has none (`@JsonInclude(NON_NULL)`,
+   * verified in `CentroDto.java`), but a realtime frame or another client can
+   * still send an explicit `null`, so both must collapse to "no key".
+   */
+  alerta?: AlertaEscasez | null;
+  /**
+   * Number of active shortage alerts of the center. Optional: the map read-model
+   * exposes it as `alertasActivas`, but a payload that does not carry it must
+   * degrade to today's behaviour.
+   */
+  alertasActivas?: number;
 }
 
 /** Body of `GET /api/v1/mapa`: active zones and aid centers with their location. */
@@ -76,6 +89,12 @@ export function mapaToCentros(mapa: MapaResponse): CentroAyuda[] {
       // for a center without a zone, and the REST path can too now that the
       // backend column is nullable, so BOTH must collapse to "no key".
       ...(centro.zonaId == null ? {} : { zonaId: centro.zonaId }),
+      // The alert is OMITTED when absent or `null`, never written as
+      // `alerta: null`: the same merge rule as `tipo`/`zonaId` (design D4) — a
+      // present-but-nullish key would ERASE an alert the center already had.
+      ...(centro.alerta == null ? {} : { alerta: centro.alerta }),
+      // Same rule for the count: an absent key must not overwrite a known one.
+      ...(centro.alertasActivas == null ? {} : { alertasActivas: centro.alertasActivas }),
       ubicacion: centro.ubicacion,
       items: [],
     };

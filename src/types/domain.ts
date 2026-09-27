@@ -170,11 +170,44 @@ export interface InventarioItem {
  */
 export type TipoCentroAyuda = 'CENTRO_AYUDA' | 'CENTRO_ACOPIO' | 'HOSPITAL';
 
+/**
+ * Active shortage alert of an aid center (contract `AlertaEscasez`,
+ * EP-03.F1.US5 / Azure 225). It is NOT a traffic light: the light compares the
+ * stock against the item's `requerido` threshold, while this records an unmet
+ * DEMAND — a requested amount the center could not dispatch.
+ *
+ * `faltante` is deliberately NOT a frozen deficit: it is
+ * `cantidadSolicitada - disponibleActual`, the CURRENT missing quantity, which
+ * shrinks on its own as donations arrive (backend FA-2). The map receives, per
+ * center, its WORST active alert and `alertasActivas` as the total count (FA-5).
+ */
+export interface AlertaEscasez {
+  itemId: string;
+  nombre: string;
+  cantidadSolicitada: number;
+  faltante: number;
+  creadaEn: string;
+}
+
 export interface CentroAyuda {
   id: string;
   nombre: string;
   ubicacion: Ubicacion;
   items: InventarioItem[];
+  /**
+   * Worst active shortage alert of the center, if any (contract `alerta`,
+   * EP-03.F1.US5). OPTIONAL by design (backend FA-7): most centers have none
+   * and the backend omits the field from the JSON when it does, so an absent
+   * alert must degrade to today's rendering instead of breaking the payload.
+   * Distinct from the traffic light — see `AlertaEscasez`.
+   */
+  alerta?: AlertaEscasez;
+  /**
+   * How many active shortage alerts the center has (contract `alertasActivas`,
+   * EP-03.F1.US5). Optional for the same reason as `alerta`; the marker only
+   * carries the worst one, so this count is the detail's hint that more exist.
+   */
+  alertasActivas?: number;
   /**
    * Organisation type from the backend map read-model. Optional by design
    * (decision FH-2 / criterion AC4): a center that arrives without one — or
