@@ -130,6 +130,34 @@ public class SecurityConfig {
                         // .hasAuthority("ROLE_ADMIN_CENTRO_AYUDA").
                         .requestMatchers(HttpMethod.POST, "/api/v1/centros-acopio/*/inventario/despacho")
                                 .authenticated()
+                        // Fleet read model (EP-04): the operations room and the
+                        // drivers need the fleet with position and state, so
+                        // every authenticated role may read it. Declared
+                        // explicitly because the chain is fail-closed; without
+                        // it, GET /flota/ambulancias would be denied.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/flota/ambulancias").authenticated()
+                        // Request an ambulance (EP-04, broadcast C2): the
+                        // citizen raises the request, the role Azure fixes.
+                        // Declared explicitly because the chain is fail-closed;
+                        // without it, POST /solicitudes would be denied.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/solicitudes")
+                                .hasAuthority("ROLE_CIUDADANO")
+                        // Accept a request (EP-04, C2): only the driver bids;
+                        // the first accept wins the CAS server-side. Declared
+                        // explicitly because the chain is fail-closed.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/solicitudes/*/accept")
+                                .hasAuthority("ROLE_CONDUCTOR")
+                        // Reject a request (EP-04, AC4): only the driver
+                        // declines, and the request stays open for the rest.
+                        // Declared explicitly because the chain is fail-closed.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/solicitudes/*/reject")
+                                .hasAuthority("ROLE_CONDUCTOR")
+                        // Confirm the assigned unit (EP-04): the help center
+                        // closes the assignment. Any authenticated role may do
+                        // it. Declared explicitly because the chain is
+                        // fail-closed; without it, /confirmar would be denied.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/solicitudes/*/confirmar")
+                                .authenticated()
                         // Fail-closed standard: an operation that is not declared here is
                         // denied, never silently open to every authenticated role. A new
                         // operation must add its own declaration (matcher or
