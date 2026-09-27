@@ -99,3 +99,29 @@ export async function rechazarSolicitud(
   }
   return solicitud;
 }
+
+/**
+ * Driver arrival declaration through `POST /api/v1/solicitudes/{id}/llegada`.
+ *
+ * The backend records the arrival as a milestone on the still-ASIGNADA request
+ * (it is idempotent), so the response is the server's request carrying
+ * `llegadaEn`. The same `{ambulanciaId}` body as accept/reject is used; the
+ * backend verifies the unit is the assigned one and belongs to the driver.
+ * `ApiError` bubbles up uncaught: the caller decides what to show.
+ */
+export async function declararLlegada(
+  requestId: string,
+  ambulanciaId: string,
+): Promise<SolicitudAmbulancia> {
+  const body: ResponderSolicitudBody = { ambulanciaId };
+  const response = await apiFetch<unknown>(`/solicitudes/${requestId}/llegada`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+
+  const solicitud = fromWireSolicitudAmbulancia(response);
+  if (!solicitud) {
+    throw new Error('El servidor devolvió una solicitud con una forma inesperada.');
+  }
+  return solicitud;
+}

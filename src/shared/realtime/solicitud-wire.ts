@@ -39,6 +39,7 @@ export function fromWireSolicitud(value: unknown): SolicitudWireFrame | null {
     estado,
     ambulanciasNotificadas,
     ambulanciaAsignadaId,
+    llegada,
   } = value;
 
   if (typeof solicitudId !== 'string' || solicitudId.length === 0) {
@@ -68,6 +69,11 @@ export function fromWireSolicitud(value: unknown): SolicitudWireFrame | null {
   ) {
     return null;
   }
+  // Arrival is an optional milestone flag; anything other than a boolean is a
+  // malformed frame rather than a value to coerce.
+  if (llegada !== undefined && typeof llegada !== 'boolean') {
+    return null;
+  }
 
   return {
     solicitudId,
@@ -76,6 +82,7 @@ export function fromWireSolicitud(value: unknown): SolicitudWireFrame | null {
     estado,
     ambulanciasNotificadas: [...ambulanciasNotificadas],
     ambulanciaAsignadaId: typeof ambulanciaAsignadaId === 'string' ? ambulanciaAsignadaId : null,
+    ...(llegada === true ? { llegada: true } : {}),
   };
 }
 
@@ -105,6 +112,10 @@ export interface WireSolicitudContext {
  *   RECHAZADA  -> request.rejected     (this driver's decline was recorded)
  *   TOMADA / TIMEOUT -> null           (not actionable on the driver's own copy)
  *
+ * A frame flagged `llegada` is the arrival milestone the winning unit emits:
+ * it becomes `request.arrived` regardless of the lifecycle `estado` (which
+ * stays ASIGNADA), and no new lifecycle state is introduced.
+ *
  * The union's `escena`/`tipo`/`nivel` are filled from the context or left
  * absent; `timeoutEn` is '' when the backend declared no deadline, which the
  * inbox already treats as "no window known" and falls back to its default.
@@ -113,6 +124,13 @@ export function solicitudFrameFromWire(
   frame: SolicitudWireFrame,
   context: WireSolicitudContext,
 ): SolicitudPayload | null {
+  if (frame.llegada === true) {
+    return {
+      type: 'request.arrived',
+      requestId: frame.solicitudId,
+      ambulanceId: frame.ambulanciaAsignadaId ?? context.ownAmbulanceId,
+    };
+  }
   switch (frame.estado) {
     case 'PENDIENTE':
       return {

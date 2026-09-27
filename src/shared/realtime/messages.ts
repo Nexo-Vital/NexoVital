@@ -374,4 +374,11 @@ export interface SolicitudWireFrame {
   ambulanciasNotificadas: string[];
   /** Winner unit, or null while the request is still PENDIENTE. */
   ambulanciaAsignadaId: string | null;
+  /**
+   * Arrival milestone: true on the request-level push the winning unit's
+   * arrival emits. Arrival is NOT a lifecycle state (the request stays
+   * ASIGNADA), so it travels as this flag and `solicitudFrameFromWire` turns it
+   * into `request.arrived`. Absent on every other frame.
+   */
+  llegada?: boolean;
 }

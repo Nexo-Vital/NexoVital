@@ -66,6 +66,13 @@ describe('fromWireSolicitud', () => {
     expect(fromWireSolicitud({ ...PENDIENTE, ambulanciasNotificadas: 'A-1' })).toBeNull();
     expect(fromWireSolicitud({ ...PENDIENTE, ambulanciasNotificadas: [1] })).toBeNull();
     expect(fromWireSolicitud({ ...PENDIENTE, ambulanciaAsignadaId: 7 })).toBeNull();
+    // A non-boolean arrival flag is malformed, never coerced.
+    expect(fromWireSolicitud({ ...PENDIENTE, llegada: 'yes' })).toBeNull();
+  });
+
+  it('carries the arrival flag when it is true', () => {
+    expect(fromWireSolicitud({ ...PENDIENTE, llegada: true })?.llegada).toBe(true);
+    expect(fromWireSolicitud(PENDIENTE)?.llegada).toBeUndefined();
   });
 });
 
@@ -132,5 +139,26 @@ describe('solicitudFrameFromWire', () => {
     const timeout = validWire({ ...PENDIENTE, estado: 'TIMEOUT' });
     expect(solicitudFrameFromWire(taken, CONTEXT)).toBeNull();
     expect(solicitudFrameFromWire(timeout, CONTEXT)).toBeNull();
+  });
+
+  it('maps an arrival-flagged frame to request.arrived, keeping the estado out of it', () => {
+    const arrived = validWire({
+      ...PENDIENTE,
+      estado: 'ASIGNADA',
+      ambulanciaAsignadaId: 'winner-9',
+      llegada: true,
+    });
+    expect(solicitudFrameFromWire(arrived, CONTEXT)).toEqual({
+      type: 'request.arrived',
+      requestId: PENDIENTE.solicitudId,
+      ambulanceId: 'winner-9',
+    });
+
+    // No winner on the wire: the receiving unit is the arrival's author.
+    const sinGanador = validWire({ ...PENDIENTE, estado: 'ASIGNADA', llegada: true });
+    expect(solicitudFrameFromWire(sinGanador, CONTEXT)).toMatchObject({
+      type: 'request.arrived',
+      ambulanceId: 'own',
+    });
   });
 });

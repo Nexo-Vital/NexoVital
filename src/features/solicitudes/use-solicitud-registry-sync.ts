@@ -73,6 +73,12 @@ export function useSolicitudRegistrySync(port: RealtimePort | null): void {
       // lives in `estado`. A malformed frame is dropped by the validator.
       const wire = fromWireSolicitud(raw);
       if (wire) {
+        // The arrival milestone is a flag, not a lifecycle state: record it
+        // without touching `estado` (the request stays ASIGNADA).
+        if (wire.llegada) {
+          useSolicitudesStore.getState().markArrived(wire.solicitudId);
+          return;
+        }
         if (wire.estado === 'PENDIENTE') {
           useSolicitudesStore.getState().upsert(solicitudFromWire(wire));
           return;
