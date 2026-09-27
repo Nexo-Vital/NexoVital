@@ -1,4 +1,4 @@
-import { fireEvent, render } from '@testing-library/react';
+import { cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CENTER_LEVEL_STYLE } from '@/features/ciudadano/citizen-view';
 import { ALL_LEVELS, DEFAULT_OVERLAYS, useLayersStore } from '@/features/mapa/layers-store';
@@ -452,21 +452,35 @@ describe('MapCanvas smoke', () => {
     expect(onSelectCentro).toHaveBeenCalledWith('CA-SUBA-NORTE');
   });
 
-  it('draws no zone by default, even when the map data carries zones', () => {
+  it('U2b: paints every zone the layer carries, as a real area footprint', () => {
     const { container } = renderMapWithZones();
 
-    // The mockup's map has no zones: an idle map must stay clean. The contour is
-    // available, but nothing is painted until a center is actually opened.
-    expect(container.querySelector('path.nv-zone-area')).toBeNull();
+    // The "Zonas" layer is ON (the page hands the map its filtered zones), so
+    // the zone paints as its contour polygon, never as a bare point.
+    expect(container.querySelectorAll('path.nv-zone-area').length).toBe(1);
   });
 
-  it('does not paint a zone when a center that declares a zone is selected', () => {
+  it('U2b: never derives a zone from the selected center', () => {
+    // The layer carries a zone, so it paints — that is the layer's rule, not the
+    // selection's. Proving the two are separate needs the opposite case too.
     const { container } = renderMapWithSelectedZone();
+    expect(container.querySelectorAll('path.nv-zone-area').length).toBe(1);
 
-    // U2 / AC-U2: the zone overlay stopped being derived from the selection, so
-    // a selected center no longer paints its contour even though the data has
-    // one. The marker highlight (not a zone) is what selection shows.
-    expect(container.querySelector('path.nv-zone-area')).toBeNull();
+    // A selected center with the "Zonas" layer empty paints NOTHING: selection
+    // can never reveal a zone the filter did not let through.
+    cleanup();
+    const { container: empty } = render(
+      <MapCanvas
+        ambulancias={[]}
+        emergencias={[]}
+        centros={MOCK_CENTROS_AYUDA}
+        selectedCentroId="CA-SUBA-NORTE"
+        zonas={[]}
+        onSelectAmbulance={() => undefined}
+        onSelectEmergency={() => undefined}
+      />,
+    );
+    expect(empty.querySelector('path.nv-zone-area')).toBeNull();
   });
 
   it('clears the selection on a background click, never on a marker click', () => {

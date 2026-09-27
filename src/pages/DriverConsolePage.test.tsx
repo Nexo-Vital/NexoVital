@@ -1,8 +1,10 @@
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useToastStore } from '@/components/ui/toast';
 import { useDriverAlertsStore } from '@/features/conductor/driver-alerts-store';
-import { MOCK_CENTROS_AYUDA } from '@/mocks/fixtures';
+import { DEFAULT_MAP_FILTER, MAP_FILTER_STORAGE_KEY } from '@/features/mapa/map-filter';
+import { MOCK_CENTROS_AYUDA, MOCK_SOLICITUDES } from '@/mocks/fixtures';
 import { DESTINATIONS, type SolicitudBroadcastPayload } from '@/shared/realtime';
 import { FakeRealtimePort } from '@/test/fake-realtime-port';
 import DriverConsolePage from './DriverConsolePage';
@@ -19,10 +21,13 @@ vi.mock('@/features/mapa/MapCanvas', () => ({
     requestConnector?: { dashed?: boolean } | null;
     ruta?: { geometria?: unknown[] } | null;
     notifiedAmbulanceIds?: readonly string[];
+    focus?: { lat: number; lng: number } | null;
+    zonas?: { id: string }[];
   }) => (
     <div
       data-testid="map-canvas"
       data-centers={props.centros?.length ?? 0}
+      data-zonas={(props.zonas ?? []).map((zone) => zone.id).join(',')}
       data-self-label={props.self?.label ?? ''}
       data-self-sim={props.self?.simulated ? 'yes' : 'no'}
       data-request-label={props.request?.label ?? ''}
@@ -31,17 +36,32 @@ vi.mock('@/features/mapa/MapCanvas', () => ({
       data-ruta={props.ruta ? 'yes' : 'no'}
       data-ruta-points={String(props.ruta?.geometria?.length ?? 0)}
       data-notified={(props.notifiedAmbulanceIds ?? []).join(',')}
+      data-focus-lat={String(props.focus?.lat ?? '')}
+      data-focus-lng={String(props.focus?.lng ?? '')}
     />
   ),
 }));
 
 // The map data source is the only network path in this screen; it is stubbed to
 // the injected fixtures so the mocked suite keeps testing the page without
-// setting the demo flag and without touching the backend.
+// setting the demo flag and without touching the backend. It also carries one
+// zone so the "Zonas" layer (U2b) has something real to paint when it is on.
 vi.mock('@/features/mapa/use-map-data', () => ({
   useMapData: (fallbackCentros: unknown[]) => ({
     centros: fallbackCentros,
-    zonas: [],
+    zonas: [
+      {
+        id: 'Z-SUBA',
+        nombre: 'Suba',
+        ubicacion: { lat: 4.742, lng: -74.09 },
+        contorno: [
+          { lat: 4.79, lng: -74.1 },
+          { lat: 4.795, lng: -74.05 },
+          { lat: 4.755, lng: -74.032 },
+          { lat: 4.7, lng: -74.05 },
+        ],
+      },
+    ],
     loading: false,
     error: null,
   }),
@@ -106,9 +126,17 @@ function setGeolocation(value: unknown): void {
 }
 
 describe('DriverConsolePage', () => {
+  beforeEach(() => {
+    // The map layer filter persists to localStorage; every case starts from the
+    // documented default (all layers visible) so no case leaks a filter.
+    window.localStorage.setItem(MAP_FILTER_STORAGE_KEY, JSON.stringify(DEFAULT_MAP_FILTER));
+  });
+
   afterEach(() => {
     cleanup();
     useDriverAlertsStore.setState({ pendingRequests: 0 });
+    // The arrival toast lives in a module store: clear it so counts never leak.
+    useToastStore.setState({ toasts: [] });
     setGeolocation(undefined);
     // Back to "no route": a case that resolved one never leaks into another.
     mockFetchRuta.mockReset();
@@ -384,19 +412,28 @@ describe('DriverConsolePage', () => {
     expect(within(card).getByRole('timer')).toHaveTextContent(/^\d+:\d{2}$/);
   });
 
-  it('shows the real distance from the unit fallback, and still after simulating', async () => {
+  it('U4: raises an ephemeral toast with the distance, without blocking the card', async () => {
     const user = userEvent.setup();
     const port = new FakeRealtimePort();
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
 
-    // No GPS: the toast already carries the distance from the unit's own
-    // declared position (RAD-3), never a missing or invented value.
-    expect(screen.getByText('Nueva solicitud de ambulancia a 12,8 km')).toBeInTheDocument();
+    // No GPS: the toast carries the distance from the unit's own declared
+    // position (RAD-3), never a missing or invented value.
+    const messages = () => useToastStore.getState().toasts.map((item) => item.message);
+    expect(messages()).toContain('Nueva solicitud de ambulancia a 12,8 km');
+    // The request card is still fully there: the toast did not replace it.
+    expect(
+      within(driverRail()).getByRole('heading', { name: 'Solicitud de ambulancia' }),
+    ).toBeInTheDocument();
 
+    // After simulating, a fresh arrival carries the simulated distance.
     await user.click(screen.getByRole('button', { name: 'Simular posición' }));
+    act(() => port.emit(DESTINATIONS.solicitudes, { ...BROADCAST, requestId: 'REQ-2' }));
 
-    expect(screen.getByText(/Nueva solicitud de ambulancia/)).toHaveTextContent(/a \d+,\d km$/);
+    const all = messages();
+    const latest = all[all.length - 1] ?? '';
+    expect(latest).toMatch(/^Nueva solicitud de ambulancia a \d+,\d km$/);
   });
 
   it('passes the requester pin, the connector and the notified units to the map', async () => {
@@ -763,6 +800,93 @@ describe('DriverConsolePage', () => {
 
     const card = within(driverRail()).getByRole('region', { name: 'Solicitud de ambulancia' });
     expect(dataRowValue(card, 'Distancia')).toBe('12,8 km · 29 min');
+  });
+
+  it('U2b: paints zones only while the "Zonas" filter is on', () => {
+    const renderWithZoneFilter = (enabled: boolean) => {
+      const filter = { ...DEFAULT_MAP_FILTER, ZONA: enabled };
+      window.localStorage.setItem(MAP_FILTER_STORAGE_KEY, JSON.stringify(filter));
+      const { container } = render(
+        <DriverConsolePage port={new FakeRealtimePort()} ambulanceId="A-07" />,
+      );
+      return container.querySelector('[data-testid="map-canvas"]');
+    };
+
+    // "Zonas" off: the page hands the map an empty zone list, so nothing paints.
+    expect(renderWithZoneFilter(false)).toHaveAttribute('data-zonas', '');
+    cleanup();
+
+    // "Zonas" on (the default): the page hands the map the real zones it got from
+    // the map source, and it did not require selecting any center.
+    expect(renderWithZoneFilter(true)).toHaveAttribute('data-zonas', 'Z-SUBA');
+  });
+
+  it('U5: lists every request from the real registry, never just one', () => {
+    render(<DriverConsolePage port={new FakeRealtimePort()} ambulanceId="A-07" />);
+
+    const rail = driverRail();
+    expect(within(rail).getByText('Todas las solicitudes')).toBeInTheDocument();
+    const list = within(rail).getByRole('list', { name: 'Lista de solicitudes' });
+    // The count comes from the fixtures' real registry, not a fixed one.
+    expect(within(list).getAllByRole('listitem')).toHaveLength(MOCK_SOLICITUDES.length);
+    // Every row is a real request id from the registry, not a placeholder.
+    expect(within(list).getAllByText(/^REQ-\d+$/)).toHaveLength(MOCK_SOLICITUDES.length);
+  });
+
+  it('U6: a tapped request opens the sliding sheet with the three actions', async () => {
+    const user = userEvent.setup();
+    render(<DriverConsolePage port={new FakeRealtimePort()} ambulanceId="A-07" />);
+
+    const list = within(driverRail()).getByRole('list', { name: 'Lista de solicitudes' });
+    const row = within(list).getByText(MOCK_SOLICITUDES[0].id).closest('button');
+    expect(row).not.toBeNull();
+    await user.click(row as HTMLElement);
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('button', { name: 'Aceptar' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Rechazar' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Visualizar' })).toBeInTheDocument();
+  });
+
+  it('U6: "Aceptar" in the sheet reuses the inbox accept and bids for the open request', async () => {
+    const user = userEvent.setup();
+    const port = new FakeRealtimePort();
+    render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+
+    // Make REQ-1 the inbox's open broadcast, then open its row in the sheet.
+    act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+    const list = within(driverRail()).getByRole('list', { name: 'Lista de solicitudes' });
+    await user.click(within(list).getByText('REQ-1').closest('button') as HTMLElement);
+
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Aceptar' }));
+
+    expect(port.published[0]?.payload).toEqual({
+      type: 'solicitud.accept',
+      requestId: 'REQ-1',
+      ambulanceId: 'A-07',
+    });
+  });
+
+  it('U7: "Visualizar" closes the sheet and focuses the map on the requester', async () => {
+    const user = userEvent.setup();
+    const port = new FakeRealtimePort();
+    render(
+      <DriverConsolePage port={port} ambulanceId="A-07" solicitudes={[MOCK_SOLICITUDES[0]]} />,
+    );
+
+    // Open REQ-1001 (its emergency EMG-002 sits at the fixture position 4.628/-74.148).
+    const list = within(driverRail()).getByRole('list', { name: 'Lista de solicitudes' });
+    await user.click(within(list).getByText('REQ-1001').closest('button') as HTMLElement);
+    const dialog = await screen.findByRole('dialog');
+
+    await user.click(within(dialog).getByRole('button', { name: 'Visualizar' }));
+
+    // The sheet is gone and the map was handed the requester's real coordinates.
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    const map = screen.getByTestId('map-canvas');
+    expect(Number(map.getAttribute('data-focus-lat'))).toBeCloseTo(4.628, 3);
+    expect(Number(map.getAttribute('data-focus-lng'))).toBeCloseTo(-74.148, 3);
   });
 
   it('rejects from the card and keeps the rejection feedback', async () => {

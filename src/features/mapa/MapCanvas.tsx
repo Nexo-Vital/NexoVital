@@ -3,7 +3,15 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import type {} from '@maplibre/maplibre-gl-leaflet';
 import L from 'leaflet';
 import { useEffect, useMemo, useState } from 'react';
-import { MapContainer, Marker, Polyline, useMap, useMapEvents, ZoomControl } from 'react-leaflet';
+import {
+  MapContainer,
+  Marker,
+  Polygon,
+  Polyline,
+  useMap,
+  useMapEvents,
+  ZoomControl,
+} from 'react-leaflet';
 import { filterByLevel, useLayersStore } from '@/features/mapa/layers-store';
 import { cn } from '@/lib/utils';
 import type { Ambulancia, CentroAyuda, Emergencia, Ubicacion, Zona } from '@/types/domain';
@@ -24,6 +32,7 @@ import {
 } from './markers';
 import { outerRingRadiusKm, radarRingsPixelDiameter } from './radar-rings';
 import type { Ruta } from './routing-api';
+import { zoneAreaPositions } from './zone-selection';
 
 /** The viewer's own unit, rendered apart from the fleet markers. */
 export interface SelfMarker {
@@ -59,14 +68,15 @@ interface MapCanvasProps {
   emergencias: Emergencia[];
   centros?: CentroAyuda[];
   /**
-   * Active zones (`GET /api/v1/mapa`). Accepted so the pages keep passing the
-   * layer-filtered zones, but deliberately NOT painted: the product ask is that
-   * a zone never appears on its own, not even when a center is selected (U2 /
-   * AC-U2). `zoneForCentro` and `zoneAreaPositions` stay in `zone-selection.ts`
-   * as the tested derivations for an explicit zone layer that does not exist yet.
+   * Active zones the map is allowed to paint (`GET /api/v1/mapa`), already
+   * filtered by the page's "Zonas" layer toggle. The map paints EVERY zone it
+   * receives: the "Zonas" filter is the ONLY switch that turns them on or off.
+   * A zone is a real footprint — a Leaflet polygon built from its `contorno` —
+   * never a bare point, and a zone with no usable contour paints nothing.
    *
-   * Every zone in this list still counts in the page's "Zonas" filter chip; the
-   * map simply draws none of them.
+   * INVARIANT (U2 / AC-U2): painting is driven by this layer, NEVER by the
+   * selected center. Selecting a center only highlights its marker; it must not
+   * add, reveal or remove a zone.
    */
   zonas?: Zona[];
   selectedAmbulanceId?: string | null;
@@ -74,7 +84,14 @@ interface MapCanvasProps {
   /** Center that just changed level, drawn with the mockup's "changed" halo. */
   changedCentroId?: string | null;
   /** Latest selection to glide to, or null to stay put. */
+  /**
+   * The occupant to frame. When it changes (a fresh object), the map flies there.
+   * It is a one-shot: `onFocusApplied` fires once it is consumed, so a later
+   * recentre of the same point is a no-op until a new focus object arrives.
+   */
   focus?: Ubicacion | null;
+  /** Fired after `focus` was applied, so the host can clear its one-shot value. */
+  onFocusApplied?: () => void;
   /** Initial map center; defaults to the city center. */
   center?: Ubicacion;
   /** Driver console: "You are here" marker, draggable while simulated. */
@@ -144,14 +161,23 @@ function MapClickHandler({
   return null;
 }
 
-function FocusController({ focus }: { focus: Ubicacion | null }) {
+function FocusController({
+  focus,
+  onFocusApplied,
+}: {
+  focus: Ubicacion | null;
+  onFocusApplied?: () => void;
+}) {
   const map = useMap();
 
   useEffect(() => {
     if (focus) {
       map.flyTo([focus.lat, focus.lng], Math.max(map.getZoom(), MAP_ZOOM), { duration: 0.4 });
+      // One-shot: the host clears its focus value so the fly does not repeat on
+      // every re-render with the same (stale) object.
+      onFocusApplied?.();
     }
-  }, [focus, map]);
+  }, [focus, map, onFocusApplied]);
 
   return null;
 }
@@ -285,10 +311,12 @@ export function MapCanvas({
   ambulancias,
   emergencias,
   centros = [],
+  zonas = [],
   selectedAmbulanceId = null,
   selectedCentroId = null,
   changedCentroId = null,
   focus = null,
+  onFocusApplied,
   center = BOGOTA_CENTER,
   self = null,
   request = null,
@@ -316,13 +344,21 @@ export function MapCanvas({
   );
 
   /**
-   * Product decision (U2 / AC-U2): the map does NOT paint a zone derived from
-   * the selected center. Selecting a center only highlights its marker and
-   * focuses the map; the zone overlay was removed on purpose because it kept
-   * covering the screen and blocking the rest of the UI. `zoneForCentro` and
-   * `zoneAreaPositions` stay in `zone-selection.ts`, tested, ready for an
-   * explicit zone layer the product has not asked for yet.
+   * The zones the "Zonas" filter let through, as paintable Leaflet areas. A
+   * zone with no usable contour is dropped by `zoneAreaPositions` (never invent
+   * a footprint), and the resulting list is derived ONLY from the layer prop:
+   * the selected center is deliberately not part of this computation (U2b).
    */
+  const zoneAreas = useMemo(
+    () =>
+      zonas
+        .map((zona) => ({ id: zona.id, positions: zoneAreaPositions(zona) }))
+        .filter(
+          (entry): entry is { id: string; positions: [number, number][] } =>
+            entry.positions !== null,
+        ),
+    [zonas],
+  );
 
   /**
    * Citizen search radar: only while a search is open AND at least one alerted
@@ -347,9 +383,25 @@ export function MapCanvas({
     >
       <BaseLayerController baseLayer={baseLayer} />
       <ZoomControl position="bottomright" />
-      <FocusController focus={focus} />
+      <FocusController focus={focus} onFocusApplied={onFocusApplied} />
       <CenterReporter onCenterChange={onCenterChange} />
       <MapClickHandler onMapClick={onMapClick} onClearSelection={onClearSelection} />
+
+      {/*
+        U2b: the "Zonas" layer paints every zone it receives as its real area
+        footprint. This is independent of the selection: a selected center never
+        adds, reveals or removes a zone. The page turns the layer off by handing
+        this prop an empty list (`applyMapFilter`), so the toggle is the only
+        switch. A zone with no usable contour painted nothing instead.
+      */}
+      {zoneAreas.map((zone) => (
+        <Polygon
+          key={zone.id}
+          positions={zone.positions}
+          className="nv-zone-area"
+          interactive={false}
+        />
+      ))}
 
       {visibleEmergencies.map((emergency) => (
         <Marker

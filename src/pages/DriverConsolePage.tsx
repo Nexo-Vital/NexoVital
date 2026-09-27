@@ -1,4 +1,4 @@
-import { Check, Radio } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CitizenSummaryChips } from '@/features/ciudadano/CitizenSummaryChips';
 import { formatCoordinates } from '@/features/ciudadano/citizen-request';
@@ -11,6 +11,7 @@ import { DriverRail } from '@/features/conductor/DriverRail';
 import { useDriverAlertsStore } from '@/features/conductor/driver-alerts-store';
 import { resolveDriverAmbulanceId } from '@/features/conductor/driver-session';
 import { DRIVER_STATUS_META, type DriverStatus } from '@/features/conductor/driver-status';
+import { SolicitudSheet } from '@/features/conductor/SolicitudSheet';
 import { useSolicitudInbox } from '@/features/conductor/use-solicitud-inbox';
 import { useEmergencyStore } from '@/features/emergencias/emergency-store';
 import { useEmergencySync } from '@/features/emergencias/use-emergency-sync';
@@ -24,18 +25,30 @@ import {
   type RequestMarker,
   type SelfMarker,
 } from '@/features/mapa/MapCanvas';
+import {
+  applyMapFilter,
+  type MapFilterState,
+  readPersistedMapFilter,
+} from '@/features/mapa/map-filter';
 import { useMapData } from '@/features/mapa/use-map-data';
+import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
+import { useSolicitudRegistrySync } from '@/features/solicitudes/use-solicitud-registry-sync';
 import { useSessionStore } from '@/features/usuarios/session';
 import { useRuta } from '@/hooks/use-ruta';
 import { distanceKm, etaMinutes } from '@/lib/geo';
-import { MOCK_AMBULANCIAS, MOCK_CENTROS_AYUDA, MOCK_EMERGENCIAS } from '@/mocks/fixtures';
+import {
+  MOCK_AMBULANCIAS,
+  MOCK_CENTROS_AYUDA,
+  MOCK_EMERGENCIAS,
+  MOCK_SOLICITUDES,
+} from '@/mocks/fixtures';
 import {
   DESTINATIONS,
   getRealtimePort,
   type LiveUnitPayload,
   type RealtimePort,
 } from '@/shared/realtime';
-import type { Ambulancia, CentroAyuda } from '@/types/domain';
+import type { Ambulancia, CentroAyuda, SolicitudAmbulancia, Ubicacion } from '@/types/domain';
 
 /** Stable empty list so the map props do not change identity every render. */
 const NO_NOTIFIED_UNITS: readonly string[] = [];
@@ -49,6 +62,8 @@ interface DriverConsolePageProps {
   ambulancias?: Ambulancia[];
   /** Aid centers drawn on the map and listed in the rail. */
   centrosAyuda?: CentroAyuda[];
+  /** Requests hydrated into the registry and listed at the bottom. */
+  solicitudes?: SolicitudAmbulancia[];
 }
 
 /**
@@ -71,6 +86,7 @@ export default function DriverConsolePage({
   ambulanceId,
   ambulancias = MOCK_AMBULANCIAS,
   centrosAyuda = MOCK_CENTROS_AYUDA,
+  solicitudes = MOCK_SOLICITUDES,
 }: DriverConsolePageProps) {
   const userId = useSessionStore((state) => state.user?.id);
   const unitId = ambulanceId ?? resolveDriverAmbulanceId(userId);
@@ -79,6 +95,8 @@ export default function DriverConsolePage({
   const [online, setOnline] = useState(false);
   const [status, setStatus] = useState<DriverStatus>('OFF_DUTY');
   const [hasCentered, setHasCentered] = useState(false);
+  const [selectedSolicitud, setSelectedSolicitud] = useState<SolicitudAmbulancia | null>(null);
+  const [mapFocus, setMapFocus] = useState<Ubicacion | null>(null);
 
   // Shared stores: emergencies reported and units created on another client
   // show up on the driver map too (UPSERT semantics).
@@ -88,14 +106,31 @@ export default function DriverConsolePage({
   useEffect(() => {
     useEmergencyStore.getState().hydrate(MOCK_EMERGENCIAS);
   }, []);
+  // The request registry (U5) is the same multi-request store the CRUE uses: the
+  // fixtures seed it and the realtime sync UPSERTs every arriving request.
+  useEffect(() => {
+    useSolicitudesStore.getState().hydrate(solicitudes);
+  }, [solicitudes]);
   useFleetSync(port);
   useEmergencySync(port);
+  useSolicitudRegistrySync(port);
 
   const fleetUnits = useFleetStore((state) => state.units);
   const emergencies = useEmergencyStore((state) => state.items);
+  const solicitudesRegistry = useSolicitudesStore((state) => state.items);
   // Zones and centers come from the shared map source: the fixtures with the
   // demo flag on, `GET /api/v1/mapa` with it off (never a silent fallback).
   const mapa = useMapData(centrosAyuda);
+
+  // U2b: the "Zonas" LAYER filter is the only switch that paints zones. Selection
+  // never does. The choice is read once from the same persisted shape the citizen
+  // map writes, and applied ONLY to the props the map receives, so a zone hidden
+  // here stays in the source ready to paint the moment the layer is back on.
+  const [mapFilter] = useState<MapFilterState>(readPersistedMapFilter);
+  const visibleMapLayers = useMemo(
+    () => applyMapFilter(mapFilter, { zonas: mapa.zonas, centros: mapa.centros, ambulancias: [] }),
+    [mapFilter, mapa.zonas, mapa.centros],
+  );
 
   // The rail reads the driver's own unit straight from the store (the self marker
   // stands in for it on the map, so `fleet` below excludes it).
@@ -122,6 +157,65 @@ export default function DriverConsolePage({
   // `C.d4`: an open mission owns the rail and the map, unless a new request is
   // actually waiting for an answer (phase idle/submitting).
   const missionActive = inbox.mission !== null && !requestOpen;
+
+  // U6: the tapped request is actionable only while it is the inbox's open
+  // broadcast. The accept/reject actions act on that one, so the sheet disables
+  // them (with a reason) for any other row instead of silently mis-firing.
+  const selectedIsActive =
+    selectedSolicitud !== null &&
+    inbox.broadcast?.requestId === selectedSolicitud.id &&
+    requestOpen;
+
+  const handleSelectSolicitud = useCallback((solicitud: SolicitudAmbulancia) => {
+    setSelectedSolicitud(solicitud);
+  }, []);
+
+  const handleAcceptFromSheet = useCallback(() => {
+    inbox.accept();
+    setSelectedSolicitud(null);
+  }, [inbox.accept]);
+
+  const handleRejectFromSheet = useCallback(() => {
+    // Only the open request is actionable: any other row must not fire a reject
+    // for a mission the inbox is not offering. Returning false lets the sheet
+    // stay open with its honest reason.
+    if (!selectedIsActive) {
+      return false;
+    }
+    inbox.reject();
+    setSelectedSolicitud(null);
+    return true;
+  }, [selectedIsActive, inbox.reject]);
+
+  // U7 "Visualizar": close the sheet and centre the map on the requester. The
+  // scene comes from the active broadcast when it is the open request, and from
+  // the emergency store otherwise; the last resort is the request's own location
+  // in the registry (the map source already knows the centers/zones by id). With
+  // none of them the map stays put instead of flying to an invented point.
+  const handleViewSolicitud = useCallback(() => {
+    const solicitud = selectedSolicitud;
+    setSelectedSolicitud(null);
+    if (!solicitud) {
+      return;
+    }
+    const emergency = emergencies.find((item) => item.id === solicitud.emergenciaId) ?? null;
+    const centro = mapa.centros.find((item) => item.id === solicitud.centroAyudaId) ?? null;
+    // A backend wire frame declares the zone, not coordinates: those come from
+    // the emergency or the (real) aid center, both resolved by id.
+    const zone = solicitud.zonaId
+      ? mapa.centros.find((item) => item.zonaId === solicitud.zonaId)?.ubicacion
+      : undefined;
+    const scene =
+      (inbox.broadcast?.requestId === solicitud.id ? inbox.broadcast?.escena : undefined) ??
+      emergency?.ubicacion ??
+      centro?.ubicacion ??
+      zone ??
+      null;
+    if (scene) {
+      // A fresh object so a repeated "Visualizar" re-flies even to the same point.
+      setMapFocus({ lat: scene.lat, lng: scene.lng });
+    }
+  }, [selectedSolicitud, emergencies, inbox.broadcast, mapa.centros]);
 
   useEffect(() => {
     if (!hasCentered && effectivePosition) {
@@ -243,12 +337,9 @@ export default function DriverConsolePage({
     [activeScene, effectivePosition, missionActive],
   );
 
-  const missionLocation =
-    inbox.mission && (inbox.mission.zonaId || formatCoordinates(inbox.mission.escena));
-
-  const toastText = `Nueva solicitud de ambulancia${
-    requestDistance !== null ? ` a ${formatDistance(requestDistance)}` : ''
-  }`;
+  const missionLocation = inbox.mission
+    ? inbox.mission.zonaId || (inbox.mission.escena ? formatCoordinates(inbox.mission.escena) : '')
+    : '';
 
   return (
     <div className="relative flex h-full min-h-0 w-full flex-col gap-3 overflow-y-auto bg-nv-mint text-nv-navy lg:grid lg:grid-cols-[minmax(0,1fr)_344px] lg:grid-rows-[auto_minmax(0,1fr)] lg:gap-5 lg:overflow-hidden">
@@ -280,9 +371,10 @@ export default function DriverConsolePage({
           ambulancias={fleet}
           emergencias={emergencies}
           centros={mapa.centros}
-          zonas={mapa.zonas}
+          zonas={visibleMapLayers.zonas}
           center={effectivePosition ?? CITIZEN_FALLBACK_POSITION}
-          focus={hasCentered ? null : effectivePosition}
+          focus={mapFocus ?? (hasCentered ? null : effectivePosition)}
+          onFocusApplied={() => setMapFocus(null)}
           self={self}
           request={requestMarker}
           requestConnector={requestConnector}
@@ -296,16 +388,9 @@ export default function DriverConsolePage({
           onSelectEmergency={() => undefined}
         />
 
-        {inbox.broadcast && requestOpen && (
-          <div className="pointer-events-none absolute inset-x-0 top-5 z-[1000] flex justify-center px-3">
-            <div className="flex items-center gap-2.5 whitespace-nowrap rounded-nv-md bg-nv-navy px-4 py-3 font-medium text-sm text-white shadow-nv-float">
-              <span className="grid size-7 shrink-0 place-items-center rounded-full bg-nv-lime text-nv-navy">
-                <Radio className="size-4" aria-hidden />
-              </span>
-              {toastText}
-            </div>
-          </div>
-        )}
+        {/* U4: the arrival notice is now an ephemeral toast raised by the inbox
+            hook at the exact arrival point (bottom-centre, auto-dismissing, never
+            blocking). No second inline banner duplicates it here. */}
 
         {/* Only once the citizen confirmed: the toast never announces a step
             that has not happened (`C.d5`). */}
@@ -355,6 +440,25 @@ export default function DriverConsolePage({
           onTimeout: inbox.notifyTimeout,
         }}
         centros={mapa.centros}
+        solicitudes={solicitudesRegistry}
+        onSelectSolicitud={handleSelectSolicitud}
+      />
+
+      {/* U6/U7: the tapped request opens the bottom sheet with the three
+          actions; "Visualizar" closes it and focuses the map on the requester. */}
+      <SolicitudSheet
+        open={selectedSolicitud !== null}
+        onOpenChange={(open) => {
+          // Reconcile explicitly in BOTH directions: a programmatic close (accept
+          // or reject clearing the request) must not leave the sheet's internal
+          // dialog mounted, and re-opening needs the state to move too.
+          setSelectedSolicitud((current) => (open ? current : null));
+        }}
+        solicitud={selectedSolicitud}
+        canRespond={selectedIsActive}
+        onAccept={handleAcceptFromSheet}
+        onReject={handleRejectFromSheet}
+        onView={handleViewSolicitud}
       />
 
       {/*

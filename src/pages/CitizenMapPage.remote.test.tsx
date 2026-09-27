@@ -91,7 +91,8 @@ function zoneAreas(container: HTMLElement): Element[] {
 /**
  * End-to-end of the new source, without the demo flag: the citizen screen has to
  * request `GET /api/v1/mapa`, paint the backend's centers as UNDECLARED (no
- * inventory is invented) and paint the opened center's zone as its area contour.
+ * inventory is invented) and paint the backend zones as area contours while the
+ * "Zonas" layer is on.
  */
 describe('CitizenMapPage against /api/v1/mapa', () => {
   const fetchMock = vi.fn();
@@ -116,7 +117,7 @@ describe('CitizenMapPage against /api/v1/mapa', () => {
     localStorage.clear();
   });
 
-  it('paints the backend centers and never a zone, even after a center is opened', async () => {
+  it('paints the backend centers and the zones while the "Zonas" layer is on', async () => {
     const { container } = render(
       <CitizenMapPage
         port={new FakeRealtimePort()}
@@ -142,21 +143,24 @@ describe('CitizenMapPage against /api/v1/mapa', () => {
     // stays off with its reason instead of opening an empty screen.
     expect(screen.getByRole('button', { name: 'Donar suministros' })).toBeDisabled();
 
-    // Default view: the mockup's map has no zones.
-    expect(zoneAreas(container)).toEqual([]);
+    // U2b: the "Zonas" layer is on by default, so BOTH backend zones paint as
+    // their area contour (the assertion is inside `waitFor` because the zone
+    // polygons are Leaflet DOM painted after mount).
+    await waitFor(() => expect(zoneAreas(container)).toHaveLength(2));
 
-    // U2 / AC-U2: opening a center whose payload DOES carry a `zonaId` no longer
-    // paints its zone. The pin is RE-QUERIED INSIDE the retry and clicked there:
-    // waiting for the pin and then clicking the node captured at that moment is
-    // flaky under full-suite load, so re-querying on every attempt closes that
-    // window. The detail panel opening is the proof the click really landed.
+    // U2 / AC-U2 + U2b: opening a center whose payload DOES carry a `zonaId` does
+    // NOT add a third zone. Painting is the layer's job; selection never derives
+    // one. The pin is RE-QUERIED INSIDE the retry and clicked there (a stale node
+    // click flakes under full-suite load); the detail panel opening proves the
+    // click landed.
     await waitFor(() => {
       fireEvent.click(markerByLabel(container, 'Suba Norte'));
       expect(
         screen.getByRole('heading', { level: 1, name: 'Centro de acopio' }),
       ).toBeInTheDocument();
     });
-    expect(zoneAreas(container)).toEqual([]);
+    // Still exactly the layer's two zones: the selection added none.
+    expect(zoneAreas(container)).toHaveLength(2);
   });
 
   it('AC-U1: a background click closes the open center detail', async () => {
