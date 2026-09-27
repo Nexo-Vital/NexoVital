@@ -1,5 +1,8 @@
 package co.edu.escuelaing.nexovital.infrastructure.config;
 
+import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoAmbulancia;
+import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.out.AmbulanciaJpaEntity;
+import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.out.AmbulanciaJpaRepository;
 import co.edu.escuelaing.nexovital.mapa.domain.model.Zona;
 import co.edu.escuelaing.nexovital.mapa.domain.port.out.ZonaRepository;
 import co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.out.ItemInventarioJpaEntity;
@@ -67,6 +70,9 @@ public class DataSeeder implements CommandLineRunner {
     }
 
     private record ZonaSemilla(String id, String nombre, double lat, double lng, List<Ubicacion> contorno) {
+    }
+
+    private record AmbulanciaSemilla(String placa, String emailConductor, String zona, double lat, double lng) {
     }
 
     /** Vértice del contorno de una zona, para leer el catálogo sin ruido. */
@@ -201,22 +207,45 @@ public class DataSeeder implements CommandLineRunner {
                     vertice(4.585d, -74.105d),
                     vertice(4.610d, -74.100d))));
 
+    /**
+     * Una ambulancia disponible por cada conductor demo (decisión D-F6). Las
+     * placas se toman de los nombres del catálogo de usuarios (ABC101..ABC505) y
+     * el {@code conductorId} se resuelve por email, de modo que la ambulancia
+     * queda enlazada al usuario conductor. Todas se siembran en {@code Suba},
+     * la zona que el seeder ya declara: así un {@code POST /solicitudes} de esa
+     * zona notifica a las cinco y el broadcast C2 es observable de punta a
+     * punta.
+     *
+     * <p>El enlace conductor↔ambulancia es la llave del push por usuario: el
+     * listener post-commit resuelve {@code Ambulancia.conductorId} y publica en
+     * el destino propio de ese conductor.
+     */
+    private static final List<AmbulanciaSemilla> CATALOGO_AMBULANCIAS = List.of(
+            new AmbulanciaSemilla("ABC101", "conductor1@nexovital.co", "Suba", 4.735d, -74.080d),
+            new AmbulanciaSemilla("ABC202", "conductor2@nexovital.co", "Suba", 4.745d, -74.095d),
+            new AmbulanciaSemilla("ABC303", "conductor3@nexovital.co", "Suba", 4.720d, -74.060d),
+            new AmbulanciaSemilla("ABC404", "conductor4@nexovital.co", "Suba", 4.760d, -74.075d),
+            new AmbulanciaSemilla("ABC505", "conductor5@nexovital.co", "Suba", 4.700d, -74.090d));
+
     private final UsuarioRepository usuarioRepository;
     private final OrganizacionRepository organizacionRepository;
     private final ZonaRepository zonaRepository;
     private final PasswordEncoderPort passwordEncoderPort;
     private final ItemInventarioJpaRepository itemInventarioJpaRepository;
+    private final AmbulanciaJpaRepository ambulanciaJpaRepository;
 
     public DataSeeder(UsuarioRepository usuarioRepository,
                       OrganizacionRepository organizacionRepository,
                       ZonaRepository zonaRepository,
                       PasswordEncoderPort passwordEncoderPort,
-                      ItemInventarioJpaRepository itemInventarioJpaRepository) {
+                      ItemInventarioJpaRepository itemInventarioJpaRepository,
+                      AmbulanciaJpaRepository ambulanciaJpaRepository) {
         this.usuarioRepository = usuarioRepository;
         this.organizacionRepository = organizacionRepository;
         this.zonaRepository = zonaRepository;
         this.passwordEncoderPort = passwordEncoderPort;
         this.itemInventarioJpaRepository = itemInventarioJpaRepository;
+        this.ambulanciaJpaRepository = ambulanciaJpaRepository;
     }
 
     @Override
@@ -225,6 +254,7 @@ public class DataSeeder implements CommandLineRunner {
         sembrarOrganizaciones();
         sembrarZonas();
         sembrarInventario();
+        sembrarAmbulancias();
     }
 
     private void sembrarUsuarios() {
@@ -328,6 +358,43 @@ public class DataSeeder implements CommandLineRunner {
         }
         LOG.info("Seed de inventario demo finalizado: {} nuevos de {} centros en el catálogo",
                 sembrados, CATALOGO_INVENTARIO.size());
+    }
+
+    /**
+     * Idempotente por placa: una ambulancia que ya existe no se vuelve a
+     * insertar, así que reiniciar la aplicación no duplica filas ni falla. El
+     * conductor se resuelve por email contra los usuarios ya sembrados; si no
+     * existe, la siembra de esa ambulancia se omite con un log (nunca falla el
+     * arranque).
+     */
+    private void sembrarAmbulancias() {
+        int sembradas = 0;
+        for (AmbulanciaSemilla semilla : CATALOGO_AMBULANCIAS) {
+            if (ambulanciaJpaRepository.findByPlaca(semilla.placa()).isPresent()) {
+                LOG.info("Ambulancia demo ya existe, seed omitido: {}", semilla.placa());
+                continue;
+            }
+            UUID conductorId = usuarioRepository.buscarPorEmail(semilla.emailConductor())
+                    .map(Usuario::getId)
+                    .orElse(null);
+            if (conductorId == null) {
+                LOG.warn("Conductor demo no encontrado, seed de ambulancia omitido: {} ({})",
+                        semilla.placa(), semilla.emailConductor());
+                continue;
+            }
+            ambulanciaJpaRepository.save(new AmbulanciaJpaEntity(
+                    UUID.randomUUID(),
+                    semilla.placa(),
+                    EstadoAmbulancia.DISPONIBLE,
+                    semilla.lat(),
+                    semilla.lng(),
+                    semilla.zona(),
+                    conductorId));
+            sembradas++;
+            LOG.info("Ambulancia demo sembrada: {} (zona {})", semilla.placa(), semilla.zona());
+        }
+        LOG.info("Seed de ambulancias demo finalizado: {} nuevas de {} en el catálogo",
+                sembradas, CATALOGO_AMBULANCIAS.size());
     }
 
     /** Id determinista del item, para que el seed sea idempotente sin clave natural. */
