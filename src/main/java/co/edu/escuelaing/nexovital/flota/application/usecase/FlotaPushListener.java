@@ -4,6 +4,7 @@ import co.edu.escuelaing.nexovital.flota.domain.event.FlotaActualizadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudAsignadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudConfirmadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudCreadaEvent;
+import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudLlegadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudRechazadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.model.Ambulancia;
 import co.edu.escuelaing.nexovital.flota.domain.port.out.AmbulanciaRepository;
@@ -67,7 +68,7 @@ public class FlotaPushListener {
     public void alCrearSolicitud(SolicitudCreadaEvent evento) {
         SolicitudPushPayload payload = new SolicitudPushPayload(
                 evento.solicitudId(), evento.emergenciaId(), evento.zonaId(),
-                "PENDIENTE", evento.ambulanciasNotificadas(), null);
+                "PENDIENTE", evento.ambulanciasNotificadas(), null, false);
         for (UUID ambulanciaId : evento.ambulanciasNotificadas()) {
             publicarAlConductor(ambulanciaId, payload);
         }
@@ -79,7 +80,7 @@ public class FlotaPushListener {
     public void alAsignarSolicitud(SolicitudAsignadaEvent evento) {
         SolicitudPushPayload payload = new SolicitudPushPayload(
                 evento.solicitudId(), evento.emergenciaId(), evento.zonaId(),
-                "ASIGNADA", List.of(), evento.ambulanciaId());
+                "ASIGNADA", List.of(), evento.ambulanciaId(), false);
         publicarAlConductor(evento.ambulanciaId(), payload);
         publicarAlSolicitante(evento.solicitanteId(), payload);
     }
@@ -99,7 +100,21 @@ public class FlotaPushListener {
     public void alRechazarSolicitud(SolicitudRechazadaEvent evento) {
         publicarAlConductor(evento.ambulanciaId(), new SolicitudPushPayload(
                 evento.solicitudId(), evento.emergenciaId(), evento.zonaId(),
-                "RECHAZADA", List.of(), null));
+                "RECHAZADA", List.of(), null, false));
+    }
+
+    /**
+     * The winning unit arrived: the requester is told, so the citizen's screen
+     * leaves the "on the way" phase. The request state stays ASIGNADA; the
+     * arrival is flagged with {@code llegada=true} instead of a new state, so no
+     * parallel lifecycle is introduced. Only the requester is notified: the
+     * arriving driver already adopted the REST response.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void alDeclararLlegada(SolicitudLlegadaEvent evento) {
+        publicarAlSolicitante(evento.solicitanteId(), new SolicitudPushPayload(
+                evento.solicitudId(), evento.emergenciaId(), evento.zonaId(),
+                "ASIGNADA", List.of(), evento.ambulanciaId(), true));
     }
 
     /** The help center confirmed the assignment: the assigned driver and the requester are told. */
@@ -107,7 +122,7 @@ public class FlotaPushListener {
     public void alConfirmarSolicitud(SolicitudConfirmadaEvent evento) {
         SolicitudPushPayload payload = new SolicitudPushPayload(
                 evento.solicitudId(), evento.emergenciaId(), evento.zonaId(),
-                "CONFIRMADA", List.of(), evento.ambulanciaId());
+                "CONFIRMADA", List.of(), evento.ambulanciaId(), false);
         publicarAlConductor(evento.ambulanciaId(), payload);
         publicarAlSolicitante(evento.solicitanteId(), payload);
     }
@@ -145,7 +160,7 @@ public class FlotaPushListener {
     /** Public projection of a request for the driver inbox. */
     public record SolicitudPushPayload(UUID solicitudId, UUID emergenciaId, String zonaId,
                                        String estado, List<UUID> ambulanciasNotificadas,
-                                       UUID ambulanciaAsignadaId) {
+                                       UUID ambulanciaAsignadaId, boolean llegada) {
     }
 
     /** Public projection of a fleet state change. */

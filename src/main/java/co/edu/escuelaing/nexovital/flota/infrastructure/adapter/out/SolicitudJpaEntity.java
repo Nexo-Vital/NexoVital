@@ -55,6 +55,10 @@ public class SolicitudJpaEntity {
     @Column
     private UUID ambulanciaAsignadaId;
 
+    /** Arrival milestone of the winning unit; null until it declares arrival. */
+    @Column
+    private Instant llegadaEn;
+
     @Version
     private long version;
 
@@ -63,7 +67,8 @@ public class SolicitudJpaEntity {
 
     public SolicitudJpaEntity(UUID id, UUID emergenciaId, EstadoSolicitud estado, UUID centroAyudaId,
                               String zonaId, Instant solicitadaEn, Instant timeoutEn, UUID solicitanteId,
-                              List<UUID> ambulanciasNotificadas, UUID ambulanciaAsignadaId) {
+                              List<UUID> ambulanciasNotificadas, UUID ambulanciaAsignadaId,
+                              Instant llegadaEn) {
         this.id = id;
         this.emergenciaId = emergenciaId;
         this.estado = estado;
@@ -76,6 +81,7 @@ public class SolicitudJpaEntity {
                 ? new ArrayList<>()
                 : new ArrayList<>(ambulanciasNotificadas);
         this.ambulanciaAsignadaId = ambulanciaAsignadaId;
+        this.llegadaEn = llegadaEn;
     }
 
     public UUID getId() {
@@ -116,6 +122,10 @@ public class SolicitudJpaEntity {
 
     public UUID getAmbulanciaAsignadaId() {
         return ambulanciaAsignadaId;
+    }
+
+    public Instant getLlegadaEn() {
+        return llegadaEn;
     }
 
     public long getVersion() {

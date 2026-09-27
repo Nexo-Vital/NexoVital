@@ -24,6 +24,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -34,6 +35,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -198,26 +200,25 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
     void ac4_rechazarDejaLaSolicitudDisponibleParaLasDemas() throws Exception {
         String ciudadano = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
         String conductor = tokenDe(CONDUCTOR, CONDUCTOR_PASSWORD);
-        // The decline needs a notified unit (any); the accept needs a unit owned by
-        // the authenticating driver.
-        UUID primera = sembradas.get(1);
-        UUID segunda = unidadDelConductor;
+        // Both actions must come from a unit the authenticating driver owns; the
+        // reject does not occupy it, so the same unit can still accept afterwards.
+        UUID unidad = unidadDelConductor;
         String solicitudId = crearSolicitud(ciudadano, zona);
 
         mockMvc.perform(post("/api/v1/solicitudes/{id}/reject", solicitudId)
                         .header("Authorization", "Bearer " + conductor)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(cuerpoAmbulancia(primera)))
+                        .content(cuerpoAmbulancia(unidad)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.estado").value("PENDIENTE"));
 
         mockMvc.perform(post("/api/v1/solicitudes/{id}/accept", solicitudId)
                         .header("Authorization", "Bearer " + conductor)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(cuerpoAmbulancia(segunda)))
+                        .content(cuerpoAmbulancia(unidad)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.ganador").value(true))
-                .andExpect(jsonPath("$.solicitud.ambulanciaAsignadaId").value(segunda.toString()));
+                .andExpect(jsonPath("$.solicitud.ambulanciaAsignadaId").value(unidad.toString()));
     }
 
     // -----------------------------------------------------------------------
@@ -278,6 +279,105 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
     }
 
     // -----------------------------------------------------------------------
+    // Reject authorization (FIX4): the unit must belong to the caller
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("FIX4: rechazar con una unidad notificada de OTRO conductor responde 409")
+    void fix4_rechazarConUnidadDeOtroConductorDevuelve409() throws Exception {
+        String ciudadano = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+        String conductor = tokenDe(CONDUCTOR, CONDUCTOR_PASSWORD);
+        String solicitudId = crearSolicitud(ciudadano, zona);
+        // Notified, but driven by a random conductor: not the caller's.
+        UUID ajena = sembradas.get(1);
+
+        mockMvc.perform(post("/api/v1/solicitudes/{id}/reject", solicitudId)
+                        .header("Authorization", "Bearer " + conductor)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpoAmbulancia(ajena)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("SOLICITUD_NO_ASIGNABLE"));
+
+        // The request is untouched: no decline was recorded for the foreign unit.
+        assertEquals(EstadoSolicitud.PENDIENTE,
+                solicitudJpaRepository.findById(UUID.fromString(solicitudId)).orElseThrow().getEstado());
+    }
+
+    // -----------------------------------------------------------------------
+    // Arrival (FIX A): idempotent milestone, not a lifecycle state
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("FIX A: declarar la llegada es idempotente, no cambia el estado y notifica al solicitante")
+    void fixA_declararLlegadaEsIdempotenteYNotificaAlSolicitante() throws Exception {
+        String ciudadano = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+        String conductor = tokenDe(CONDUCTOR, CONDUCTOR_PASSWORD);
+        String solicitanteId = usuarioDe(CIUDADANO).getId().toString();
+        UUID unidad = unidadDelConductor;
+        String solicitudId = crearSolicitud(ciudadano, zona);
+
+        mockMvc.perform(post("/api/v1/solicitudes/{id}/accept", solicitudId)
+                        .header("Authorization", "Bearer " + conductor)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpoAmbulancia(unidad)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/v1/solicitudes/{id}/llegada", solicitudId)
+                        .header("Authorization", "Bearer " + conductor)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpoAmbulancia(unidad)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.estado").value("ASIGNADA"))
+                .andExpect(jsonPath("$.llegadaEn").isNotEmpty());
+
+        // The request keeps its state: arrival is a milestone, not a new state.
+        assertEquals(EstadoSolicitud.ASIGNADA,
+                solicitudJpaRepository.findById(UUID.fromString(solicitudId)).orElseThrow().getEstado());
+        assertNotNull(solicitudJpaRepository.findById(UUID.fromString(solicitudId))
+                .orElseThrow().getLlegadaEn(), "la llegada queda registrada");
+
+        List<PublicacionCapturada> alSolicitante =
+                pushPortDePrueba.haciaUsuario(solicitanteId, FlotaPushListener.DESTINO_SOLICITUDES);
+        boolean llegada = alSolicitante.stream().anyMatch(publicacion ->
+                publicacion.payload() instanceof FlotaPushListener.SolicitudPushPayload payload && payload.llegada());
+        assertTrue(llegada, "el solicitante recibe la llegada de la unidad");
+
+        // A repeat (double tap / retry) is a no-op: 200, no second arrival notice.
+        int antes = alSolicitante.size();
+        mockMvc.perform(post("/api/v1/solicitudes/{id}/llegada", solicitudId)
+                        .header("Authorization", "Bearer " + conductor)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpoAmbulancia(unidad)))
+                .andExpect(status().isOk());
+        assertEquals(antes,
+                pushPortDePrueba.haciaUsuario(solicitanteId, FlotaPushListener.DESTINO_SOLICITUDES).size(),
+                "una llegada repetida no vuelve a notificar");
+    }
+
+    @Test
+    @DisplayName("FIX A: declarar la llegada con una unidad ajena responde 409")
+    void fixA_declararLlegadaConUnidadAjenaDevuelve409() throws Exception {
+        String ciudadano = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+        String conductor = tokenDe(CONDUCTOR, CONDUCTOR_PASSWORD);
+        UUID unidad = unidadDelConductor;
+        String solicitudId = crearSolicitud(ciudadano, zona);
+
+        mockMvc.perform(post("/api/v1/solicitudes/{id}/accept", solicitudId)
+                        .header("Authorization", "Bearer " + conductor)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpoAmbulancia(unidad)))
+                .andExpect(status().isOk());
+
+        // A notified but non-assigned unit of another conductor cannot declare it.
+        mockMvc.perform(post("/api/v1/solicitudes/{id}/llegada", solicitudId)
+                        .header("Authorization", "Bearer " + conductor)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpoAmbulancia(sembradas.get(1))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("SOLICITUD_NO_ASIGNABLE"));
+    }
+
+    // -----------------------------------------------------------------------
     // AC5 — fleet read model with position and state
     // -----------------------------------------------------------------------
 
@@ -298,14 +398,45 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
             assertTrue(unidad.hasNonNull("estado"), "cada unidad declara su estado");
             assertTrue(unidad.path("ubicacion").hasNonNull("lat"), "cada unidad declara su posición");
             assertTrue(unidad.path("ubicacion").hasNonNull("lng"), "cada unidad declara su posición");
-            // FIX3: the driver resolves its own unit from this link, so every
-            // seeded unit (one per driver) must expose its conductorId.
-            assertTrue(unidad.hasNonNull("conductorId"),
-                    "cada unidad declara el conductor al que pertenece");
+            // FIX3: the general fleet read is visible to EVERY authenticated
+            // role, so it must NOT disclose which driver owns each unit.
+            assertFalse(unidad.has("conductorId"),
+                    "la lista general de flota no debe exponer el conductor de cada unidad");
             placas.add(unidad.get("placa").asText());
         }
         assertTrue(placas.containsAll(PLACAS_SEMILLA),
                 "la flota sembrada (D-F6) debe aparecer: " + PLACAS_SEMILLA + " pero fue " + placas);
+    }
+
+    // -----------------------------------------------------------------------
+    // FIX3 — the driver's OWN unit is a server-scoped read
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("FIX3: GET /flota/ambulancias/mia devuelve la unidad del conductor autenticado, sin exponer su id")
+    void fix3_miAmbulanciaDevuelveSoloLaUnidadPropia() throws Exception {
+        String conductor = tokenDe(CONDUCTOR, CONDUCTOR_PASSWORD);
+        // A different seeded driver, so the two server-scoped reads can be
+        // proven to return DIFFERENT units without depending on row order.
+        String otroConductor = tokenDe("conductor2@nexovital.co", "conductor123");
+        String solicitante = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+
+        JsonNode mia = leerJson(get("/api/v1/flota/ambulancias/mia")
+                .header("Authorization", "Bearer " + conductor));
+        JsonNode otra = leerJson(get("/api/v1/flota/ambulancias/mia")
+                .header("Authorization", "Bearer " + otroConductor));
+
+        assertTrue(mia.hasNonNull("id"), "el recurso propio devuelve una unidad");
+        assertFalse(mia.has("conductorId"), "ni siquiera el recurso propio expone el id del conductor");
+        assertFalse(otra.has("conductorId"), "el recurso propio nunca expone el id del conductor");
+        assertFalse(mia.get("id").asText().equals(otra.get("id").asText()),
+                "cada conductor recibe su propia unidad, no la misma");
+
+        // The server-scoped read is driver-only: a citizen gets 403 (fail-closed).
+        mockMvc.perform(get("/api/v1/flota/ambulancias/mia")
+                        .header("Authorization", "Bearer " + solicitante))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("ACCESO_DENEGADO"));
     }
 
     // -----------------------------------------------------------------------
@@ -362,7 +493,9 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
         String ciudadano = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
         String conductor = tokenDe(CONDUCTOR, CONDUCTOR_PASSWORD);
         String solicitanteId = usuarioDe(CIUDADANO).getId().toString();
-        UUID primera = sembradas.get(1);
+        // The decline must come from the caller's own unit (FIX4); it does not
+        // occupy it, so the same unit can then win the accept.
+        UUID primera = unidadDelConductor;
         UUID segunda = unidadDelConductor;
         String solicitudId = crearSolicitud(ciudadano, zona);
 
@@ -414,6 +547,12 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
+
+    /** Executes a GET and reads its JSON body, failing if it is not a 200. */
+    private JsonNode leerJson(MockHttpServletRequestBuilder builder) throws Exception {
+        MvcResult result = mockMvc.perform(builder).andExpect(status().isOk()).andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString());
+    }
 
     private String crearSolicitud(String token, String zona) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v1/solicitudes")

@@ -18,6 +18,14 @@ import java.util.UUID;
  * <p>A per-unit decline is NOT a state transition here: it leaves the request
  * {@code PENDIENTE} so the other notified units can still accept it (AC4). The
  * {@code RECHAZADA} state is reserved for a future whole-request cancellation.
+ *
+ * <p>Arrival is also NOT a lifecycle state: the winning unit declares it on an
+ * already-ASIGNADA request and the milestone is recorded in {@code llegadaEn}.
+ * Reusing the existing state enum (the request stays ASIGNADA) keeps a single
+ * state machine; arrival is a mission milestone, not a parallel state (see
+ * {@code llegadaEn} in the front domain). The milestone is monotone: {@code
+ * llegar} refuses to move it backwards and the use case treats a repeat as a
+ * no-op.
  */
 public final class SolicitudAmbulancia {
 
@@ -36,11 +44,18 @@ public final class SolicitudAmbulancia {
     private final UUID solicitanteId;
     private final List<UUID> ambulanciasNotificadas;
     private final UUID ambulanciaAsignadaId;
+    /**
+     * Instant the winning unit declared its arrival at the scene, or null while
+     * it has not. It is a mission milestone, not a lifecycle state: the request
+     * remains ASIGNADA, so no parallel state machine is introduced.
+     */
+    private final Instant llegadaEn;
     private final long version;
 
     private SolicitudAmbulancia(UUID id, UUID emergenciaId, EstadoSolicitud estado, UUID centroAyudaId,
                                 String zonaId, Instant solicitadaEn, Instant timeoutEn, UUID solicitanteId,
-                                List<UUID> ambulanciasNotificadas, UUID ambulanciaAsignadaId, long version) {
+                                List<UUID> ambulanciasNotificadas, UUID ambulanciaAsignadaId,
+                                Instant llegadaEn, long version) {
         this.id = Objects.requireNonNull(id, "id is required");
         this.emergenciaId = Objects.requireNonNull(emergenciaId, "emergenciaId is required");
         this.estado = Objects.requireNonNull(estado, "estado is required");
@@ -55,6 +70,7 @@ public final class SolicitudAmbulancia {
                 ? List.of()
                 : List.copyOf(ambulanciasNotificadas);
         this.ambulanciaAsignadaId = ambulanciaAsignadaId;
+        this.llegadaEn = llegadaEn;
         this.version = version;
     }
 
@@ -63,7 +79,7 @@ public final class SolicitudAmbulancia {
                                                 List<UUID> ambulanciasNotificadas) {
         Objects.requireNonNull(solicitanteId, "solicitanteId is required");
         return new SolicitudAmbulancia(id, emergenciaId, EstadoSolicitud.PENDIENTE, centroAyudaId, zonaId,
-                solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, null, 0);
+                solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, null, null, 0);
     }
 
     /**
@@ -74,16 +90,17 @@ public final class SolicitudAmbulancia {
                                                 UUID centroAyudaId, String zonaId, Instant solicitadaEn,
                                                 Instant timeoutEn, UUID solicitanteId,
                                                 List<UUID> ambulanciasNotificadas,
-                                                UUID ambulanciaAsignadaId, long version) {
+                                                UUID ambulanciaAsignadaId, Instant llegadaEn, long version) {
         return new SolicitudAmbulancia(id, emergenciaId, estado, centroAyudaId, zonaId,
-                solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, ambulanciaAsignadaId, version);
+                solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, ambulanciaAsignadaId,
+                llegadaEn, version);
     }
 
     private static SolicitudAmbulancia conEstado(SolicitudAmbulancia actual, EstadoSolicitud nuevo,
                                                  UUID ambulanciaAsignadaId) {
         return new SolicitudAmbulancia(actual.id, actual.emergenciaId, nuevo, actual.centroAyudaId,
                 actual.zonaId, actual.solicitadaEn, actual.timeoutEn, actual.solicitanteId,
-                actual.ambulanciasNotificadas, ambulanciaAsignadaId, actual.version + 1);
+                actual.ambulanciasNotificadas, ambulanciaAsignadaId, actual.llegadaEn, actual.version + 1);
     }
 
     private static void requiereTransicion(SolicitudAmbulancia solicitud, EstadoSolicitud esperado, String accion) {
@@ -116,6 +133,22 @@ public final class SolicitudAmbulancia {
     public SolicitudAmbulancia confirmar() {
         requiereTransicion(this, EstadoSolicitud.ASIGNADA, "confirmation");
         return conEstado(this, EstadoSolicitud.CONFIRMADA, ambulanciaAsignadaId);
+    }
+
+    /**
+     * Records the winning unit's arrival at the scene. It is a milestone on an
+     * assigned request, NOT a lifecycle state: the estado is unchanged, so no
+     * parallel state machine exists. It only applies to an ASIGNADA request; a
+     * request that has not been assigned cannot have an arrival.
+     *
+     * @param llegadaEn instant the unit declared its arrival
+     * @throws IllegalStateException if the request is not ASIGNADA
+     */
+    public SolicitudAmbulancia llegar(Instant llegadaEn) {
+        requiereTransicion(this, EstadoSolicitud.ASIGNADA, "arrival");
+        return new SolicitudAmbulancia(id, emergenciaId, estado, centroAyudaId, zonaId,
+                solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, ambulanciaAsignadaId,
+                Objects.requireNonNull(llegadaEn, "llegadaEn is required"), version + 1);
     }
 
     public boolean estaVencida() {
@@ -165,6 +198,11 @@ public final class SolicitudAmbulancia {
 
     public UUID getAmbulanciaAsignadaId() {
         return ambulanciaAsignadaId;
+    }
+
+    /** Arrival milestone instant, or null while the unit has not arrived. */
+    public Instant getLlegadaEn() {
+        return llegadaEn;
     }
 
     public long getVersion() {

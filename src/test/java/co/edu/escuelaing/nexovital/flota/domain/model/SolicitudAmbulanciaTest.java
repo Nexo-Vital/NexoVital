@@ -81,6 +81,18 @@ class SolicitudAmbulanciaTest {
     }
 
     @Test
+    void llegarSoloDesdeAsignadaYNoCambiaElEstado() {
+        SolicitudAmbulancia asignada = pendiente().aceptar(ambulanciaA);
+        Instant llegada = Instant.now();
+        SolicitudAmbulancia conLlegada = asignada.llegar(llegada);
+        // Arrival is a milestone, not a state: the enum is reused unchanged.
+        assertEquals(EstadoSolicitud.ASIGNADA, conLlegada.getEstado());
+        assertEquals(llegada, conLlegada.getLlegadaEn());
+        assertNull(asignada.getLlegadaEn());
+        assertThrows(IllegalStateException.class, () -> pendiente().llegar(llegada));
+    }
+
+    @Test
     void expiroSoloDesdePendiente() {
         SolicitudAmbulancia vencida = pendiente().expiro();
         assertEquals(EstadoSolicitud.TIMEOUT, vencida.getEstado());

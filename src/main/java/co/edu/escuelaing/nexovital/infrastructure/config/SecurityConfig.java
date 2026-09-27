@@ -136,6 +136,13 @@ public class SecurityConfig {
                         // explicitly because the chain is fail-closed; without
                         // it, GET /flota/ambulancias would be denied.
                         .requestMatchers(HttpMethod.GET, "/api/v1/flota/ambulancias").authenticated()
+                        // The driver's OWN unit (EP-04, FIX3): the general fleet
+                        // list no longer exposes any driver id, so only a driver
+                        // may read the server-scoped resource. The server returns
+                        // only the caller's unit. Declared explicitly because the
+                        // chain is fail-closed.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/flota/ambulancias/mia")
+                                .hasAuthority("ROLE_CONDUCTOR")
                         // Request an ambulance (EP-04, broadcast C2): the
                         // citizen raises the request, the role Azure fixes.
                         // Declared explicitly because the chain is fail-closed;
@@ -151,6 +158,11 @@ public class SecurityConfig {
                         // declines, and the request stays open for the rest.
                         // Declared explicitly because the chain is fail-closed.
                         .requestMatchers(HttpMethod.POST, "/api/v1/solicitudes/*/reject")
+                                .hasAuthority("ROLE_CONDUCTOR")
+                        // Declare arrival at the scene (EP-04): only the winning
+                        // driver announces it. It is idempotent server-side.
+                        // Declared explicitly because the chain is fail-closed.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/solicitudes/*/llegada")
                                 .hasAuthority("ROLE_CONDUCTOR")
                         // Confirm the assigned unit (EP-04): the help center
                         // closes the assignment. Any authenticated role may do

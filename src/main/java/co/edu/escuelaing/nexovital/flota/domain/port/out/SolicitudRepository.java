@@ -3,6 +3,7 @@ package co.edu.escuelaing.nexovital.flota.domain.port.out;
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoSolicitud;
 import co.edu.escuelaing.nexovital.flota.domain.model.SolicitudAmbulancia;
 
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -24,4 +25,12 @@ public interface SolicitudRepository {
 
     int transicionAtomicaEstado(UUID idSolicitud,
                                 EstadoSolicitud estadoEsperado, EstadoSolicitud nuevoEstado);
+
+    /**
+     * Atomic, idempotent arrival milestone: writes {@code llegadaEn} only if no
+     * arrival was recorded yet. Returns 1 when this call recorded it (the caller
+     * emits the post-commit event) and 0 when another call already did (the
+     * caller treats it as a no-op).
+     */
+    int transicionAtomicaLlegada(UUID idSolicitud, Instant llegadaEn);
 }

@@ -11,7 +11,7 @@ import java.util.UUID;
 public record SolicitudAmbulanciaDto(UUID id, UUID emergenciaId, EstadoSolicitud estado,
                                      UUID centroAyudaId, String zonaId, Instant solicitadaEn,
                                      Instant timeoutEn, List<UUID> ambulanciasNotificadas,
-                                     UUID ambulanciaAsignadaId) {
+                                     UUID ambulanciaAsignadaId, Instant llegadaEn) {
 
     public static SolicitudAmbulanciaDto fromDomain(SolicitudAmbulancia solicitud) {
         return new SolicitudAmbulanciaDto(
@@ -23,6 +23,7 @@ public record SolicitudAmbulanciaDto(UUID id, UUID emergenciaId, EstadoSolicitud
                 solicitud.getSolicitadaEn(),
                 solicitud.getTimeoutEn(),
                 solicitud.getAmbulanciasNotificadas(),
-                solicitud.getAmbulanciaAsignadaId());
+                solicitud.getAmbulanciaAsignadaId(),
+                solicitud.getLlegadaEn());
     }
 }

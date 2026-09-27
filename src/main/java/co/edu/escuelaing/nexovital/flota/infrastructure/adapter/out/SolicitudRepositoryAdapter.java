@@ -6,6 +6,7 @@ import co.edu.escuelaing.nexovital.flota.domain.port.out.SolicitudRepository;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -31,7 +32,8 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
                 solicitud.getTimeoutEn(),
                 solicitud.getSolicitanteId(),
                 solicitud.getAmbulanciasNotificadas(),
-                solicitud.getAmbulanciaAsignadaId());
+                solicitud.getAmbulanciaAsignadaId(),
+                solicitud.getLlegadaEn());
         return toDomain(jpaRepository.save(entity));
     }
 
@@ -54,6 +56,12 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
         return jpaRepository.transicionAtomicaEstado(idSolicitud, estadoEsperado, nuevoEstado);
     }
 
+    @Override
+    @Transactional
+    public int transicionAtomicaLlegada(UUID idSolicitud, Instant llegadaEn) {
+        return jpaRepository.transicionAtomicaLlegada(idSolicitud, llegadaEn);
+    }
+
     private static SolicitudAmbulancia toDomain(SolicitudJpaEntity entity) {
         return SolicitudAmbulancia.restaurar(
                 entity.getId(),
@@ -66,6 +74,7 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
                 entity.getSolicitanteId(),
                 entity.getAmbulanciasNotificadas(),
                 entity.getAmbulanciaAsignadaId(),
+                entity.getLlegadaEn(),
                 entity.getVersion());
     }
 }

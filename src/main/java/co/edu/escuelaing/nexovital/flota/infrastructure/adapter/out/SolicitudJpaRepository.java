@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.util.UUID;
 
 public interface SolicitudJpaRepository extends JpaRepository<SolicitudJpaEntity, UUID> {
@@ -32,4 +33,17 @@ public interface SolicitudJpaRepository extends JpaRepository<SolicitudJpaEntity
     int transicionAtomicaEstado(@Param("id") UUID id,
                                 @Param("estadoEsperado") EstadoSolicitud estadoEsperado,
                                 @Param("nuevoEstado") EstadoSolicitud nuevoEstado);
+
+    /**
+     * Idempotent arrival milestone: a single UPDATE that only writes the instant
+     * if no arrival was recorded yet. Returns affected rows (1 = this call
+     * recorded the arrival, 0 = another call already did). The
+     * {@code WHERE s.llegadaEn IS NULL} turns check-and-set into atomic, so two
+     * simultaneous declarations cannot both emit the arrival event.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE SolicitudJpaEntity s "
+            + "SET s.llegadaEn = :llegadaEn, s.version = s.version + 1 "
+            + "WHERE s.id = :id AND s.llegadaEn IS NULL")
+    int transicionAtomicaLlegada(@Param("id") UUID id, @Param("llegadaEn") Instant llegadaEn);
 }
