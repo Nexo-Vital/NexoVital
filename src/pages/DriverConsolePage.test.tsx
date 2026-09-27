@@ -127,6 +127,10 @@ function setGeolocation(value: unknown): void {
 
 describe('DriverConsolePage', () => {
   beforeEach(() => {
+    // This file drives the DEMO path: accept/reject must keep publishing on the
+    // relay instead of calling the backend (FIX1). The REST path is covered by
+    // DriverConsolePage.remote.test.tsx.
+    vi.stubEnv('VITE_DEMO_MODE', '1');
     // The map layer filter persists to localStorage; every case starts from the
     // documented default (all layers visible) so no case leaks a filter.
     window.localStorage.setItem(MAP_FILTER_STORAGE_KEY, JSON.stringify(DEFAULT_MAP_FILTER));
@@ -141,6 +145,7 @@ describe('DriverConsolePage', () => {
     // Back to "no route": a case that resolved one never leaks into another.
     mockFetchRuta.mockReset();
     mockFetchRuta.mockReturnValue(new Promise(() => {}));
+    vi.unstubAllEnvs();
   });
 
   it('renders the map and the unit panel controls', () => {

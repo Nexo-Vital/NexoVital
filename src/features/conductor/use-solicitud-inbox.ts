@@ -3,6 +3,7 @@ import { toast } from '@/components/ui/toast';
 import { formatDistance } from '@/features/ciudadano/citizen-view';
 import { useEmergencyStore } from '@/features/emergencias/emergency-store';
 import { distanceKm, etaMinutes } from '@/lib/geo';
+import { isDemoMode } from '@/services/apiClient';
 import {
   DESTINATIONS,
   fromWireSolicitud,
@@ -16,6 +17,7 @@ import {
 } from '@/shared/realtime';
 import type { EmergencyLevel, Ubicacion } from '@/types/domain';
 import { playRequestDing } from './request-sound';
+import { aceptarSolicitud, rechazarSolicitud } from './solicitud-api';
 
 export type SolicitudPhase = 'idle' | 'submitting' | 'assigned' | 'taken' | 'rejected' | 'timeout';
 
@@ -61,6 +63,12 @@ export interface SolicitudInboxState {
    */
   requestedAtMs: number | null;
   phase: SolicitudPhase;
+  /**
+   * True while an accept is in flight against the backend (REST), so the card
+   * can keep its "Enviando…" state. The demo path stays synchronous and never
+   * sets it.
+   */
+  accepting: boolean;
   /** Human-readable Spanish outcome; announced through aria-live by the rail. */
   outcomeMessage: string | null;
   mission: Mission | null;
@@ -84,9 +92,13 @@ const ASSIGNED_DISMISS_MS = 1600;
 /**
  * Driver inbox for /user/queue/solicitudes.
  *
- * The accept is a BID (rule C2): this hook only publishes `solicitud.accept`
- * and waits for the server-side arbiter. It never sets a winner itself; it
- * reacts to `request.taken` (won or lost) and `request.already-taken`.
+ * The accept is a BID (rule C2): this hook NEVER sets a winner itself. In demo
+ * mode it publishes `solicitud.accept` on the relay and reacts to
+ * `request.taken` (won or lost) and `request.already-taken`. Against the real
+ * backend (no `VITE_DEMO_MODE`) the accept/reject are REST commands
+ * (`POST /api/v1/solicitudes/{id}/accept|reject`), because the backend has no
+ * `@MessageMapping` for them; the SERVER's response is adopted as the truth
+ * (a win opens the mission, a 409 is shown as a lost/toasted outcome).
  */
 export function useSolicitudInbox(
   port: RealtimePort | null,
@@ -98,6 +110,7 @@ export function useSolicitudInbox(
   const [windowMs, setWindowMs] = useState(DEFAULT_WINDOW_MS);
   const [requestedAtMs, setRequestedAtMs] = useState<number | null>(null);
   const [phase, setPhase] = useState<SolicitudPhase>('idle');
+  const [accepting, setAccepting] = useState(false);
   const [outcomeMessage, setOutcomeMessage] = useState<string | null>(null);
   const [mission, setMission] = useState<Mission | null>(null);
 
@@ -105,6 +118,11 @@ export function useSolicitudInbox(
   const phaseRef = useRef<SolicitudPhase>('idle');
   const missionRef = useRef<Mission | null>(null);
   const positionRef = useRef<Ubicacion | null>(currentPosition);
+  /**
+   * Guards the REST accept against a double submit: a second click while the
+   * request is in flight would race two CAS bids and one would lose for nothing.
+   */
+  const acceptingRef = useRef(false);
   /**
    * Request id this unit has already won. The relay broadcasts
    * `request.already-taken` to every client, so without this guard the winner
@@ -119,6 +137,8 @@ export function useSolicitudInbox(
     broadcastRef.current = null;
     setBroadcast(null);
     setRequestedAtMs(null);
+    acceptingRef.current = false;
+    setAccepting(false);
     setPhase('idle');
     setOutcomeMessage(null);
   }, []);
@@ -127,6 +147,33 @@ export function useSolicitudInbox(
     broadcastRef.current = null;
     setBroadcast(null);
     setRequestedAtMs(null);
+    acceptingRef.current = false;
+    setAccepting(false);
+  }, []);
+
+  /**
+   * Opens the mission for a WIN. Shared by the realtime `request.taken` path
+   * (demo) and the REST accept path (backend): the server decided the winner in
+   * both cases, so the client only adopts it.
+   */
+  const winMission = useCallback((requestId: string, active: SolicitudBroadcastPayload) => {
+    wonRequestIdRef.current = requestId;
+    const scene = active.escena;
+    const from = positionRef.current ?? scene;
+    setPhase('assigned');
+    setOutcomeMessage('Te la asignaron');
+    setMission({
+      requestId,
+      zonaId: active.zonaId,
+      tipo: active.tipo,
+      nivel: active.nivel,
+      ...(scene ? { escena: scene } : {}),
+      // No scene means no honest ETA: 0 rather than an invented figure.
+      etaMinutes: from && scene ? etaMinutes(from, scene) : 0,
+      acceptedAt: Date.now(),
+      arrivedAt: null,
+      confirmedAt: null,
+    });
   }, []);
 
   /**
@@ -196,23 +243,7 @@ export function useSolicitudInbox(
           return;
         }
         if (payload.winner === ambulanceId) {
-          wonRequestIdRef.current = payload.requestId;
-          const scene = active.escena;
-          const from = positionRef.current ?? scene;
-          setPhase('assigned');
-          setOutcomeMessage('Te la asignaron');
-          setMission({
-            requestId: payload.requestId,
-            zonaId: active.zonaId,
-            tipo: active.tipo,
-            nivel: active.nivel,
-            ...(scene ? { escena: scene } : {}),
-            // No scene means no honest ETA: 0 rather than an invented figure.
-            etaMinutes: from && scene ? etaMinutes(from, scene) : 0,
-            acceptedAt: Date.now(),
-            arrivedAt: null,
-            confirmedAt: null,
-          });
+          winMission(payload.requestId, active);
         } else {
           setPhase('taken');
           setOutcomeMessage(`Tomada por ${payload.winner}`);
@@ -288,7 +319,7 @@ export function useSolicitudInbox(
         setMission(next);
       }
     },
-    [ambulanceId, announceArrival],
+    [ambulanceId, announceArrival, winMission],
   );
 
   useEffect(() => {
@@ -342,10 +373,56 @@ export function useSolicitudInbox(
 
   const accept = useCallback(() => {
     const active = broadcastRef.current;
-    if (!port || !active) {
+    if (!active) {
       return;
     }
-    // Submitting only: the driver has NOT won yet. Wait for the arbiter.
+    // The backend exposes accept/reject ONLY as REST: it has no @MessageMapping
+    // for them, so publishing on the port would reach nobody.
+    if (!isDemoMode()) {
+      if (acceptingRef.current) {
+        return;
+      }
+      acceptingRef.current = true;
+      setAccepting(true);
+      setPhase('submitting');
+      setOutcomeMessage('Enviando…');
+      void aceptarSolicitud(active.requestId, ambulanceId)
+        .then((outcome) => {
+          const broadcast = broadcastRef.current;
+          // The request moved on while the response was in flight: adopt nothing.
+          if (broadcast?.requestId !== active.requestId) {
+            return;
+          }
+          // The server is the source of truth. `winner=false` and the 409
+          // CAS-lost response both mean "someone else got it first".
+          if (outcome.winner) {
+            winMission(active.requestId, broadcast);
+          } else {
+            setPhase('taken');
+            setOutcomeMessage('Tomada por otra unidad');
+          }
+        })
+        .catch((error: unknown) => {
+          const broadcast = broadcastRef.current;
+          if (broadcast?.requestId !== active.requestId) {
+            return;
+          }
+          // A 409 is the backend denying or losing the race: show it honestly as
+          // a terminal outcome instead of leaving the card stuck on "Enviando…".
+          setPhase('rejected');
+          setOutcomeMessage(error instanceof Error ? error.message : 'No fue posible aceptar');
+        })
+        .finally(() => {
+          acceptingRef.current = false;
+          setAccepting(false);
+        });
+      return;
+    }
+
+    if (!port) {
+      return;
+    }
+    // Demo: submitting only — the driver has NOT won yet. Wait for the arbiter.
     setPhase('submitting');
     setOutcomeMessage('Enviando…');
     port.publish<SolicitudAcceptPayload>(DESTINATIONS.solicitudes, {
@@ -353,11 +430,38 @@ export function useSolicitudInbox(
       requestId: active.requestId,
       ambulanceId,
     });
-  }, [port, ambulanceId]);
+  }, [port, ambulanceId, winMission]);
 
   const reject = useCallback(() => {
     const active = broadcastRef.current;
-    if (!port || !active) {
+    if (!active) {
+      return;
+    }
+    // Backend: the decline is a REST command too. It leaves the request
+    // PENDIENTE for the other units (AC4), so this is fire-and-forget with the
+    // local rejection recorded once it lands.
+    if (!isDemoMode()) {
+      void rechazarSolicitud(active.requestId, ambulanceId)
+        .then(() => {
+          const broadcast = broadcastRef.current;
+          if (broadcast?.requestId !== active.requestId) {
+            return;
+          }
+          setPhase('rejected');
+          setOutcomeMessage('Solicitud rechazada');
+        })
+        .catch((error: unknown) => {
+          const broadcast = broadcastRef.current;
+          if (broadcast?.requestId !== active.requestId) {
+            return;
+          }
+          setPhase('rejected');
+          setOutcomeMessage(error instanceof Error ? error.message : 'No fue posible rechazar');
+        });
+      return;
+    }
+
+    if (!port) {
       dismiss();
       return;
     }
@@ -411,6 +515,7 @@ export function useSolicitudInbox(
     windowMs,
     requestedAtMs,
     phase,
+    accepting,
     outcomeMessage,
     mission,
     missionPhase,
