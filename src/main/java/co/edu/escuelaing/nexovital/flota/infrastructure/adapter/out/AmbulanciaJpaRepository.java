@@ -2,6 +2,9 @@ package co.edu.escuelaing.nexovital.flota.infrastructure.adapter.out;
 
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoAmbulancia;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -12,6 +15,28 @@ public interface AmbulanciaJpaRepository extends JpaRepository<AmbulanciaJpaEnti
     Optional<AmbulanciaJpaEntity> findByPlaca(String placa);
 
     List<AmbulanciaJpaEntity> findByEstadoAndZona(EstadoAmbulancia estado, String zona);
+
+    /**
+     * CAS real del estado de la unidad: UNA sola {@code UPDATE} condicionada a
+     * que la fila siga en {@code estadoEsperado}. Devuelve filas afectadas: 1 =
+     * un solo ganador aplicó el cambio, 0 = la unidad ya se movió (otra misión
+     * la ocupó, o ya fue liberada).
+     *
+     * <p>El {@code WHERE a.estado = :estadoEsperado} convierte el check-and-set
+     * en atómico: dos accepts concurrentes sobre la MISMA unidad no pueden ganar
+     * ambos. Sin esto, el read-modify-write dejaba al perdedor con la excepción
+     * de {@code @Version}, que el cliente veía como un 500 en vez del 409 del
+     * contrato.
+     *
+     * <p>{@code clearAutomatically} descarta la entidad cacheada, de modo que
+     * una lectura posterior vea el estado ya persistido.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE AmbulanciaJpaEntity a SET a.estado = :nuevoEstado, a.version = a.version + 1 "
+            + "WHERE a.id = :id AND a.estado = :estadoEsperado")
+    int transicionAtomicaEstado(@Param("id") UUID id,
+                                @Param("estadoEsperado") EstadoAmbulancia estadoEsperado,
+                                @Param("nuevoEstado") EstadoAmbulancia nuevoEstado);
 
     /**
      * The unit driven by a user. {@code findFirst} because the invariant is one

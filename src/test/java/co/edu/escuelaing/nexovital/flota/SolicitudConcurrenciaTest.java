@@ -1,6 +1,7 @@
 package co.edu.escuelaing.nexovital.flota;
 
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoAmbulancia;
+import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoSolicitud;
 import co.edu.escuelaing.nexovital.flota.domain.exception.AmbulanciaNoDisponibleException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoAsignableException;
 import co.edu.escuelaing.nexovital.flota.domain.model.ResultadoAceptarSolicitud;
@@ -113,6 +114,62 @@ class SolicitudConcurrenciaTest {
         }
     }
 
+    @Test
+    @DisplayName("DEBT5: dos solicitudes DISTINTAS sobre la MISMA unidad → una gana; la otra recibe AMBULANCIA_NO_DISPONIBLE")
+    void debt5_dosSolicitudesSobreLaMismaUnidad() throws Exception {
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            for (int ronda = 0; ronda < RONDAS; ronda++) {
+                String zona = "PruebaUnidad-" + UUID.randomUUID();
+                Map<UUID, UUID> unidades = sembrarUnidades(zona, 1);
+                UUID unidad = unidades.keySet().iterator().next();
+                UUID conductor = unidades.get(unidad);
+
+                // Two DIFFERENT requests in the zone: each one notifies the SAME
+                // unit, so each request's own CAS can win. The unit's row is the
+                // only thing that can pick a single winner.
+                UUID solicitudA = solicitarAmbulanciaUseCase
+                        .solicitar(UUID.randomUUID(), UUID.randomUUID(), zona, UUID.randomUUID(), null).getId();
+                UUID solicitudB = solicitarAmbulanciaUseCase
+                        .solicitar(UUID.randomUUID(), UUID.randomUUID(), zona, UUID.randomUUID(), null).getId();
+
+                CountDownLatch largada = new CountDownLatch(1);
+                Future<Throwable> futuroA = pool.submit(aceptarDeLaMismaUnidad(largada, solicitudA, unidad, conductor));
+                Future<Throwable> futuroB = pool.submit(aceptarDeLaMismaUnidad(largada, solicitudB, unidad, conductor));
+                largada.countDown();
+
+                List<Throwable> resultados = new ArrayList<>();
+                resultados.add(obtener(futuroA));
+                resultados.add(obtener(futuroB));
+
+                long ganadores = resultados.stream().filter(resultado -> resultado instanceof Ganador).count();
+                long conflictos = resultados.stream()
+                        .filter(resultado -> resultado instanceof AmbulanciaNoDisponibleException)
+                        .count();
+
+                assertEquals(1, ganadores,
+                        "ronda " + ronda + ": exactamente una solicitud ocupa la unidad: " + describir(resultados));
+                assertEquals(1, conflictos, "ronda " + ronda + ": la perdedora recibe el 409 "
+                        + "AMBULANCIA_NO_DISPONIBLE (nunca un 500): " + describir(resultados));
+
+                assertEquals(1, unidadesEnMision(unidades.keySet()),
+                        "ronda " + ronda + ": la unidad queda EN_MISION exactamente una vez");
+
+                long asignadas = List.of(solicitudA, solicitudB).stream()
+                        .map(id -> solicitudJpaRepository.findById(id).orElseThrow().getEstado())
+                        .filter(estado -> estado == EstadoSolicitud.ASIGNADA)
+                        .count();
+                assertEquals(1, asignadas,
+                        "ronda " + ronda + ": solo una solicitud queda ASIGNADA; la otra vuelve a PENDIENTE");
+
+                ambulanciaJpaRepository.deleteAllById(unidades.keySet());
+                solicitudJpaRepository.deleteAllById(List.of(solicitudA, solicitudB));
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
     /**
      * Fires one accept per task, cycling through the units, and returns what
      * each call produced: {@code null} for a plain loss, a {@link Ganador} for
@@ -152,6 +209,29 @@ class SolicitudConcurrenciaTest {
             }
         }
         return resultados;
+    }
+
+    /** One accept task for the same-unit race: both contenders target one unit. */
+    private Callable<Throwable> aceptarDeLaMismaUnidad(CountDownLatch largada, UUID solicitudId,
+                                                       UUID unidad, UUID conductor) {
+        return () -> {
+            largada.await(ESPERA_MAXIMA_SEGUNDOS, TimeUnit.SECONDS);
+            try {
+                ResultadoAceptarSolicitud resultado =
+                        aceptarSolicitudUseCase.aceptar(solicitudId, unidad, conductor);
+                return resultado.ganador() ? new Ganador() : new Perdedor();
+            } catch (RuntimeException e) {
+                return e;
+            }
+        };
+    }
+
+    private static Throwable obtener(Future<Throwable> futuro) throws Exception {
+        try {
+            return futuro.get(ESPERA_MAXIMA_SEGUNDOS, TimeUnit.SECONDS);
+        } catch (ExecutionException e) {
+            return e.getCause();
+        }
     }
 
     /**

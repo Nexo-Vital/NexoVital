@@ -85,7 +85,16 @@ public class AceptarSolicitudUseCaseImpl implements AceptarSolicitudUseCase {
 
         SolicitudAmbulancia asignada = solicitud.aceptar(ambulanciaId);
 
-        ambulanciaRepository.actualizarEstado(ambulanciaId, EstadoAmbulancia.EN_MISION);
+        // The unit's state change is ALSO a conditional update (D-F5/DEBT 5): the
+        // pre-check above is only a fast path, not the guarantee. Two DIFFERENT
+        // requests naming the SAME unit both win their own solicitud CAS, so the
+        // unit row decides: the first conditional UPDATE gets 1 row, the loser
+        // gets 0 and must be a 409, not a 500 from a @Version clash.
+        int unidadOcupada = ambulanciaRepository.transicionAtomicaEstado(
+                ambulanciaId, EstadoAmbulancia.DISPONIBLE, EstadoAmbulancia.EN_MISION);
+        if (unidadOcupada == 0) {
+            throw new AmbulanciaNoDisponibleException(ambulanciaId);
+        }
 
         eventPublisher.publishEvent(new SolicitudAsignadaEvent(
                 solicitudId, asignada.getEmergenciaId(), asignada.getZonaId(), ambulanciaId,

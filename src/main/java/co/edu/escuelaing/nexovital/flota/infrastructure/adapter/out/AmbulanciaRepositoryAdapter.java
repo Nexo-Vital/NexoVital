@@ -46,11 +46,8 @@ public class AmbulanciaRepositoryAdapter implements AmbulanciaRepository, FlotaQ
     }
 
     @Override
-    public void actualizarEstado(UUID id, EstadoAmbulancia estado) {
-        jpaRepository.findById(id).ifPresent(entity -> {
-            entity.setEstado(estado);
-            jpaRepository.save(entity);
-        });
+    public int transicionAtomicaEstado(UUID id, EstadoAmbulancia estadoEsperado, EstadoAmbulancia nuevoEstado) {
+        return jpaRepository.transicionAtomicaEstado(id, estadoEsperado, nuevoEstado);
     }
 
     @Override
