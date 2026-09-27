@@ -72,6 +72,12 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
     private static final String CIUDADANO_PASSWORD = "ciudadano123";
     private static final String CONDUCTOR = "conductor1@nexovital.co";
     private static final String CONDUCTOR_PASSWORD = "conductor123";
+    /** Help-center admin the request is addressed to; it owns the confirm. */
+    private static final String CENTRO_AYUDA = "rangel@nexovital.co";
+    private static final String CENTRO_AYUDA_PASSWORD = "rangel123";
+    /** A DIFFERENT help-center admin, for the negative confirm case. */
+    private static final String OTRO_CENTRO_AYUDA = "centro@nexovital.co";
+    private static final String OTRO_CENTRO_AYUDA_PASSWORD = "centro123";
 
     /** The five plates D-F6 seeds, one per conductor. */
     private static final List<String> PLACAS_SEMILLA =
@@ -492,12 +498,16 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
     void solicitanteRecibeElCicloYNoElDeclive() throws Exception {
         String ciudadano = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
         String conductor = tokenDe(CONDUCTOR, CONDUCTOR_PASSWORD);
+        // FIX (DEBT 4): the request is addressed to a concrete help center, and
+        // only that center may confirm, so the test confirms with its admin.
+        String centroAyuda = tokenDe(CENTRO_AYUDA, CENTRO_AYUDA_PASSWORD);
+        UUID centroAyudaId = usuarioDe(CENTRO_AYUDA).getId();
         String solicitanteId = usuarioDe(CIUDADANO).getId().toString();
         // The decline must come from the caller's own unit (FIX4); it does not
         // occupy it, so the same unit can then win the accept.
         UUID primera = unidadDelConductor;
         UUID segunda = unidadDelConductor;
-        String solicitudId = crearSolicitud(ciudadano, zona);
+        String solicitudId = crearSolicitud(ciudadano, zona, centroAyudaId);
 
         // 1) Creation (PENDIENTE) reached the requester on its own destination.
         List<PublicacionCapturada> alSolicitante =
@@ -533,15 +543,58 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
         assertEquals("ASIGNADA", estadoDe(alSolicitante.get(1)));
         assertEquals(segunda.toString(), ambulanciaAsignadaDe(alSolicitante.get(1)));
 
-        // 4) Confirmation (CONFIRMADA) reached the requester.
+        // 4) Confirmation (CONFIRMADA) reached the requester. Only the help
+        //    center the request was addressed to may confirm (DEBT 4).
         mockMvc.perform(post("/api/v1/solicitudes/{id}/confirmar", solicitudId)
-                        .header("Authorization", "Bearer " + ciudadano))
+                        .header("Authorization", "Bearer " + centroAyuda))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.estado").value("CONFIRMADA"));
 
         alSolicitante = pushPortDePrueba.haciaUsuario(solicitanteId, FlotaPushListener.DESTINO_SOLICITUDES);
         assertEquals(3, alSolicitante.size(), "el solicitante recibe la confirmación");
         assertEquals("CONFIRMADA", estadoDe(alSolicitante.get(2)));
+    }
+
+    // -----------------------------------------------------------------------
+    // Confirm authorization (DEBT 4): only the addressed help center confirms
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("DEBT4: un centro de ayuda DISTINTO al de la solicitud no puede confirmar (409)")
+    void debt4_confirmarConOtroCentroDevuelve409() throws Exception {
+        String ciudadano = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+        String conductor = tokenDe(CONDUCTOR, CONDUCTOR_PASSWORD);
+        String otroCentro = tokenDe(OTRO_CENTRO_AYUDA, OTRO_CENTRO_AYUDA_PASSWORD);
+        UUID centroAyudaId = usuarioDe(CENTRO_AYUDA).getId();
+        UUID unidad = unidadDelConductor;
+        String solicitudId = crearSolicitud(ciudadano, zona, centroAyudaId);
+
+        mockMvc.perform(post("/api/v1/solicitudes/{id}/accept", solicitudId)
+                        .header("Authorization", "Bearer " + conductor)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpoAmbulancia(unidad)))
+                .andExpect(status().isOk());
+
+        // The request was addressed to CENTRO_AYUDA, not to OTRO_CENTRO_AYUDA.
+        mockMvc.perform(post("/api/v1/solicitudes/{id}/confirmar", solicitudId)
+                        .header("Authorization", "Bearer " + otroCentro))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("SOLICITUD_NO_ASIGNABLE"));
+
+        // The refused call changed nothing: the request stays ASIGNADA.
+        assertEquals(EstadoSolicitud.ASIGNADA,
+                solicitudJpaRepository.findById(UUID.fromString(solicitudId)).orElseThrow().getEstado());
+    }
+
+    @Test
+    @DisplayName("DEBT4: un CIUDADANO ya no puede confirmar (403, el rol quedo acotado)")
+    void debt4_confirmarConRolIncorrectoDevuelve403() throws Exception {
+        String ciudadano = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+
+        mockMvc.perform(post("/api/v1/solicitudes/{id}/confirmar", UUID.randomUUID())
+                        .header("Authorization", "Bearer " + ciudadano))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("ACCESO_DENEGADO"));
     }
 
     // -----------------------------------------------------------------------
