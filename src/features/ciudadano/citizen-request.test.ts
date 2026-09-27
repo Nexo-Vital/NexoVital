@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
 import { MOCK_AMBULANCIAS } from '@/mocks/fixtures';
 import { DESTINATIONS } from '@/shared/realtime';
@@ -17,6 +17,16 @@ import { useCitizenRequestStore } from './citizen-request-store';
 
 /** Origin used by the page when the device gives no position (Suba). */
 const ORIGIN = { lat: 4.728, lng: -74.078 };
+
+/** Minimal Response stand-in: apiFetch only reads status, ok, headers.get, json. */
+function mockResponse(status: number, body: unknown): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: { get: () => null },
+    json: async () => body,
+  } as unknown as Response;
+}
 
 function amb(id: string, estado: AmbulanceState, lat: number, lng: number): Ambulancia {
   return {
@@ -148,15 +158,22 @@ describe('citizen request copy', () => {
 });
 
 describe('useCitizenRequestStore', () => {
+  beforeEach(() => {
+    // These cases exercise the DEMO path: the store must keep publishing on the
+    // relay instead of calling the backend.
+    vi.stubEnv('VITE_DEMO_MODE', '1');
+  });
+
   afterEach(() => {
     useCitizenRequestStore.getState().reset();
     useSolicitudesStore.getState().hydrate([]);
+    vi.unstubAllEnvs();
   });
 
-  it('publishes the broadcast, mirrors it in the registry and stores the search state', () => {
+  it('publishes the broadcast, mirrors it in the registry and stores the search state', async () => {
     const port = new FakeRealtimePort();
 
-    const started = useCitizenRequestStore.getState().start({
+    const started = await useCitizenRequestStore.getState().start({
       port,
       units: MOCK_AMBULANCIAS,
       origin: ORIGIN,
@@ -181,10 +198,10 @@ describe('useCitizenRequestStore', () => {
     );
   });
 
-  it('does not enter a search with zero available units and publishes nothing', () => {
+  it('does not enter a search with zero available units and publishes nothing', async () => {
     const port = new FakeRealtimePort();
 
-    const started = useCitizenRequestStore.getState().start({
+    const started = await useCitizenRequestStore.getState().start({
       port,
       units: allBusy(),
       origin: ORIGIN,
@@ -271,5 +288,117 @@ describe('useCitizenRequestStore', () => {
 
     expect(useCitizenRequestStore.getState().acceptedAt).toBeNull();
     expect(useCitizenRequestStore.getState().acceptedBy).toBeNull();
+  });
+});
+
+/** A server-shaped 201 body: the server owns id/estado/solicitadaEn/timeoutEn. */
+const REST_RESPONSE = {
+  id: '8b6f2f0e-0000-4000-8000-000000000042',
+  emergenciaId: 'REQ-FRONT-1',
+  estado: 'PENDIENTE',
+  centroAyudaId: 'CA-CRUE',
+  zonaId: '',
+  solicitadaEn: '2026-01-01T00:00:00.000Z',
+  timeoutEn: '2026-01-01T00:45:00.000Z',
+  ambulanciasNotificadas: ['A-07', 'A-12', 'A-03'],
+  ambulanciaAsignadaId: null,
+};
+
+describe('useCitizenRequestStore against the backend', () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    // Demo mode OFF: the store must create the request through REST.
+    vi.stubEnv('VITE_DEMO_MODE', '0');
+    localStorage.clear();
+    fetchMock.mockReset();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    useCitizenRequestStore.getState().reset();
+    useSolicitudesStore.getState().hydrate([]);
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('creates the request through REST and stores the server response', async () => {
+    fetchMock.mockResolvedValue(mockResponse(201, REST_RESPONSE));
+    const port = new FakeRealtimePort();
+
+    const started = await useCitizenRequestStore.getState().start({
+      port,
+      units: MOCK_AMBULANCIAS,
+      origin: ORIGIN,
+      now: 5000,
+    });
+
+    expect(started).toBe(true);
+    // The backend is the only source of truth: nothing is published on the relay.
+    expect(port.published).toHaveLength(0);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [path, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe('/api/v1/solicitudes');
+    expect(options.method).toBe('POST');
+    expect(JSON.parse(options.body as string)).toEqual({
+      emergenciaId: expect.any(String),
+      centroAyudaId: 'CA-CRUE',
+      zonaId: '',
+      timeoutEn: new Date(5000 + 45_000).toISOString(),
+    });
+
+    // The stored identity and state come from the SERVER response, not the local
+    // projection.
+    const state = useCitizenRequestStore.getState();
+    expect(state.phase).toBe('searching');
+    expect(state.requestId).toBe(REST_RESPONSE.id);
+    expect(state.startedAt).toBe(Date.parse(REST_RESPONSE.solicitadaEn));
+    expect(state.notifiedIds).toEqual(REST_RESPONSE.ambulanciasNotificadas);
+
+    const stored = useSolicitudesStore
+      .getState()
+      .items.find((item) => item.id === REST_RESPONSE.id);
+    expect(stored).toMatchObject({
+      estado: 'PENDING',
+      zonaId: '',
+      tipo: 'Solicitud de ambulancia',
+    });
+  });
+
+  it('stays idle when the backend rejects the creation', async () => {
+    fetchMock.mockResolvedValue(
+      mockResponse(409, {
+        codigo: 'AMBULANCIA_NO_DISPONIBLE',
+        mensaje: 'No hay ambulancias disponibles para atender la solicitud.',
+      }),
+    );
+    const port = new FakeRealtimePort();
+
+    const started = await useCitizenRequestStore.getState().start({
+      port,
+      units: MOCK_AMBULANCIAS,
+      origin: ORIGIN,
+    });
+
+    expect(started).toBe(false);
+    expect(useCitizenRequestStore.getState().phase).toBe('idle');
+    expect(useCitizenRequestStore.getState().requestId).toBeNull();
+    expect(port.published).toHaveLength(0);
+  });
+
+  it('drops a malformed response instead of storing a half request', async () => {
+    fetchMock.mockResolvedValue(mockResponse(201, { ok: true }));
+
+    const started = await useCitizenRequestStore.getState().start({
+      port: new FakeRealtimePort(),
+      units: MOCK_AMBULANCIAS,
+      origin: ORIGIN,
+    });
+
+    expect(started).toBe(false);
+    expect(useCitizenRequestStore.getState().phase).toBe('idle');
+    expect(useCitizenRequestStore.getState().requestId).toBeNull();
   });
 });

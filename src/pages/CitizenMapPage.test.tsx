@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ComponentProps } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useToastStore } from '@/components/ui/toast';
 import { ACCEPTANCE_POPUP_MS } from '@/features/ciudadano/AcceptancePopup';
 import { useCitizenRequestStore } from '@/features/ciudadano/citizen-request-store';
@@ -203,6 +203,13 @@ function renderPage(overrides: Partial<ComponentProps<typeof CitizenMapPage>> = 
 }
 
 describe('CitizenMapPage', () => {
+  beforeEach(() => {
+    // The citizen request/relay cases run the DEMO path: pin the build flag so
+    // the store publishes on the injected port instead of calling the backend.
+    // The few backend cases stub it back to '0' explicitly.
+    vi.stubEnv('VITE_DEMO_MODE', '1');
+  });
+
   afterEach(() => {
     cleanup();
     useFleetStore.getState().hydrate([]);
@@ -295,6 +302,49 @@ describe('CitizenMapPage', () => {
       type: 'solicitud.broadcast',
       notificadas: ['A-07', 'A-12', 'A-03'],
     });
+  });
+
+  it('asks the backend for the ambulance when demo mode is off', async () => {
+    vi.stubEnv('VITE_DEMO_MODE', '0');
+    const serverResponse = {
+      id: '8b6f2f0e-0000-4000-8000-000000000042',
+      emergenciaId: 'REQ-FRONT-1',
+      estado: 'PENDIENTE',
+      centroAyudaId: 'CA-CRUE',
+      zonaId: '',
+      solicitadaEn: '2026-01-01T00:00:00.000Z',
+      timeoutEn: '2026-01-01T00:45:00.000Z',
+      ambulanciasNotificadas: ['A-07', 'A-12', 'A-03'],
+      ambulanciaAsignadaId: null,
+    };
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(201, serverResponse));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const port = new FakeRealtimePort();
+      renderPage({ port, ambulancias: SEARCH_FLEET });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Pedir ambulancia' }));
+
+      await waitFor(() =>
+        expect(useCitizenRequestStore.getState().requestId).toBe(serverResponse.id),
+      );
+
+      // Created over REST, never published on the relay.
+      expect(port.published).toHaveLength(0);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [path, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(path).toBe('/api/v1/solicitudes');
+      expect(options.method).toBe('POST');
+
+      // The rail renders the server-assigned state and its notified units.
+      expect(screen.getByRole('heading', { name: 'Buscando ambulancia' })).toBeInTheDocument();
+      expect(screen.getByText('Ambulancia A-07')).toBeInTheDocument();
+      expect(useCitizenRequestStore.getState().notifiedIds).toEqual(
+        serverResponse.ambulanciasNotificadas,
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('does not call the demo fallback the real location while searching', () => {
@@ -1284,6 +1334,7 @@ describe('CitizenMapPage', () => {
         mensaje: 'No se pudo registrar la emergencia.',
       }),
     );
+    vi.stubEnv('VITE_DEMO_MODE', '0');
     vi.stubGlobal('fetch', fetchMock);
     try {
       renderPage();
@@ -1341,6 +1392,7 @@ describe('CitizenMapPage', () => {
         mensaje: 'No se pudo registrar la emergencia.',
       }),
     );
+    vi.stubEnv('VITE_DEMO_MODE', '0');
     vi.stubGlobal('fetch', fetchMock);
     try {
       renderPage();
