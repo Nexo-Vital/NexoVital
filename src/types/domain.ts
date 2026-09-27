@@ -225,9 +225,10 @@ export interface CentroAyuda {
   direccion?: string;
   /**
    * The backend map read-model groups each center under a zone by id (`zonaId`),
-   * and the same response carries the zones with that id. The map uses it to show
-   * the opened center's zone. Optional: the demo fixtures declare no zone, so a
-   * center without one simply draws none.
+   * and the same response carries the zones with that id. The association is
+   * preserved so a zone can be resolved on demand (`zoneForCentro`), but the map
+   * deliberately does not paint it on selection (U2 / AC-U2). Optional: the demo
+   * fixtures declare no zone, so a center without one simply has none.
    */
   zonaId?: string;
 }
@@ -236,10 +237,11 @@ export interface CentroAyuda {
  * Active zone as returned by `GET /api/v1/mapa` (the backend `mapa` read-model).
  *
  * `ubicacion` is the zone's reference point; `contorno` is the ordered list of
- * vertices that draws the zone as an AREA. The map paints that contour as a
- * Leaflet polygon — never as a point. `contorno` stays optional so a zone that
- * arrives without geometry paints nothing instead of an invented footprint (see
- * `zoneAreaPositions`).
+ * vertices that encloses the zone as an AREA. `contorno` stays optional so a
+ * zone that arrives without geometry has no footprint to paint instead of an
+ * invented one (see `zoneAreaPositions`). The citizen map does not currently
+ * paint zones: keeping the vertices is what lets an explicit zone layer be built
+ * later without losing the backend geometry.
  */
 export interface Zona {
   id: string;

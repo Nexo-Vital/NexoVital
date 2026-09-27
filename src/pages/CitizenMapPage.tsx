@@ -359,6 +359,14 @@ export default function CitizenMapPage({
     setLastDonation(null);
   }, []);
 
+  // U1 / D-U1: a click on the map background releases the center detail exactly
+  // like "Volver al mapa", and also drops a half-open donation picker so the
+  // rail really comes back instead of staying stuck behind the map.
+  const handleClearSelection = useCallback(() => {
+    setPickerOpen(false);
+    handleBackFromDetail();
+  }, [handleBackFromDetail]);
+
   // Confirming applies the donation and remembers the level the center moved
   // from, so the c9 card can say "Antes estaba en crítico". With the demo flag on
   // it mutates the front state; with it off it calls the real endpoint and the
@@ -501,6 +509,7 @@ export default function CitizenMapPage({
           ruta={ruta}
           ambulanceLabels={ambulanceLabels}
           onCenterChange={setMapCenter}
+          onClearSelection={handleClearSelection}
           onSelectAmbulance={() => undefined}
           onSelectEmergency={() => undefined}
           onSelectCentro={requestPhase === 'idle' ? openCenterDetail : undefined}

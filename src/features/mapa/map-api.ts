@@ -68,8 +68,9 @@ function toTipoCentroAyuda(value: string | null | undefined): TipoCentroAyuda | 
  * NOT_DECLARED through `centroSemaforo`, so a backend center honestly shows as
  * "sin declarar" until `recursos` (EP-03) exists. `tipo` IS carried now (AC3):
  * it was previously dropped at this boundary even though the wire always sent
- * it. `zonaId` IS preserved: it is how the map resolves the zone of the center
- * whose detail is open (`zoneForCentro`).
+ * it. `zonaId` IS preserved: it is how a center resolves its zone
+ * (`zoneForCentro`). The citizen map does not currently paint that zone on
+ * selection (U2), but dropping the id here would erase a real backend link.
  */
 export function mapaToCentros(mapa: MapaResponse): CentroAyuda[] {
   return mapa.centros.map((centro) => {

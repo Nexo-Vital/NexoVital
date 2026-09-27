@@ -3,15 +3,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import type {} from '@maplibre/maplibre-gl-leaflet';
 import L from 'leaflet';
 import { useEffect, useMemo, useState } from 'react';
-import {
-  MapContainer,
-  Marker,
-  Polygon,
-  Polyline,
-  useMap,
-  useMapEvents,
-  ZoomControl,
-} from 'react-leaflet';
+import { MapContainer, Marker, Polyline, useMap, useMapEvents, ZoomControl } from 'react-leaflet';
 import { filterByLevel, useLayersStore } from '@/features/mapa/layers-store';
 import { cn } from '@/lib/utils';
 import type { Ambulancia, CentroAyuda, Emergencia, Ubicacion, Zona } from '@/types/domain';
@@ -32,7 +24,6 @@ import {
 } from './markers';
 import { outerRingRadiusKm, radarRingsPixelDiameter } from './radar-rings';
 import type { Ruta } from './routing-api';
-import { zoneAreaPositions, zoneForCentro } from './zone-selection';
 
 /** The viewer's own unit, rendered apart from the fleet markers. */
 export interface SelfMarker {
@@ -68,10 +59,14 @@ interface MapCanvasProps {
   emergencias: Emergencia[];
   centros?: CentroAyuda[];
   /**
-   * Active zones (`GET /api/v1/mapa`). They are NEVER all painted: only the zone
-   * of the center whose detail is open is drawn, and only while it is open (see
-   * `selectedZoneArea`). The zone is painted as its real footprint — a Leaflet
-   * polygon built from the zone's `contorno` — never as a bare point.
+   * Active zones (`GET /api/v1/mapa`). Accepted so the pages keep passing the
+   * layer-filtered zones, but deliberately NOT painted: the product ask is that
+   * a zone never appears on its own, not even when a center is selected (U2 /
+   * AC-U2). `zoneForCentro` and `zoneAreaPositions` stay in `zone-selection.ts`
+   * as the tested derivations for an explicit zone layer that does not exist yet.
+   *
+   * Every zone in this list still counts in the page's "Zonas" filter chip; the
+   * map simply draws none of them.
    */
   zonas?: Zona[];
   selectedAmbulanceId?: string | null;
@@ -113,6 +108,13 @@ interface MapCanvasProps {
   selfRings?: boolean;
   /** Map click in lat/lng (used by tap-to-move while simulating). */
   onMapClick?: (ubicacion: Ubicacion) => void;
+  /**
+   * Fired on a click on the map BACKGROUND, never on a marker (Leaflet's
+   * `Marker` does not bubble its click: `bubblingMouseEvents: false`). The
+   * citizen map uses it to release the open center detail, so the panel cannot
+   * stay stuck over the rest of the UI.
+   */
+  onClearSelection?: () => void;
   /** Fired when a dragged self marker is released. */
   onSelfDragEnd?: (ubicacion: Ubicacion) => void;
   /** Reports the current map center so forms can offer "use map center". */
@@ -126,9 +128,18 @@ interface MapCanvasProps {
   onSelectCentro?: (id: string) => void;
 }
 
-function MapClickHandler({ onMapClick }: { onMapClick?: (ubicacion: Ubicacion) => void }) {
+function MapClickHandler({
+  onMapClick,
+  onClearSelection,
+}: {
+  onMapClick?: (ubicacion: Ubicacion) => void;
+  onClearSelection?: () => void;
+}) {
   useMapEvents({
-    click: (event) => onMapClick?.({ lat: event.latlng.lat, lng: event.latlng.lng }),
+    click: (event) => {
+      onMapClick?.({ lat: event.latlng.lat, lng: event.latlng.lng });
+      onClearSelection?.();
+    },
   });
   return null;
 }
@@ -274,7 +285,6 @@ export function MapCanvas({
   ambulancias,
   emergencias,
   centros = [],
-  zonas = [],
   selectedAmbulanceId = null,
   selectedCentroId = null,
   changedCentroId = null,
@@ -289,6 +299,7 @@ export function MapCanvas({
   ambulanceLabels,
   selfRings = false,
   onMapClick,
+  onClearSelection,
   onSelfDragEnd,
   onCenterChange,
   onSelectAmbulance,
@@ -304,24 +315,14 @@ export function MapCanvas({
     [emergencias, overlays.emergencias, visibleLevels],
   );
 
-  /** The center whose detail is open, if any: it is the only one that reveals a zone. */
-  const selectedCentro = useMemo(
-    () => centros.find((centro) => centro.id === selectedCentroId) ?? null,
-    [centros, selectedCentroId],
-  );
-
   /**
-   * The selected center's zone, resolved through its `zonaId`. Nothing is drawn
-   * by default — the mockup's map has no zones — so an idle map stays clean.
+   * Product decision (U2 / AC-U2): the map does NOT paint a zone derived from
+   * the selected center. Selecting a center only highlights its marker and
+   * focuses the map; the zone overlay was removed on purpose because it kept
+   * covering the screen and blocking the rest of the UI. `zoneForCentro` and
+   * `zoneAreaPositions` stay in `zone-selection.ts`, tested, ready for an
+   * explicit zone layer the product has not asked for yet.
    */
-  const selectedZone = useMemo(() => zoneForCentro(zonas, selectedCentro), [zonas, selectedCentro]);
-
-  /**
-   * The selected zone's contour as Leaflet positions, or null when the zone has
-   * no polygon to draw. `/api/v1/mapa` publishes each zone's `contorno`, so the
-   * opened center's zone is painted as an AREA and not as a point.
-   */
-  const selectedZoneArea = useMemo(() => zoneAreaPositions(selectedZone), [selectedZone]);
 
   /**
    * Citizen search radar: only while a search is open AND at least one alerted
@@ -348,24 +349,7 @@ export function MapCanvas({
       <ZoomControl position="bottomright" />
       <FocusController focus={focus} />
       <CenterReporter onCenterChange={onCenterChange} />
-      <MapClickHandler onMapClick={onMapClick} />
-
-      {/*
-        The OPENED center's zone ONLY, painted as an AREA. Zones are not drawn by
-        default (the mockup's map has none): an idle map stays clean. When a
-        center is selected, its own zone appears as a Leaflet polygon built from
-        its contour — `/api/v1/mapa` publishes the ordered vertices that enclose
-        the zone. A zone with no usable contour paints nothing (`zoneAreaPositions`):
-        never draw an area the data does not have.
-      */}
-      {selectedZoneArea && (
-        <Polygon
-          key={selectedZone?.id}
-          positions={selectedZoneArea}
-          className="nv-zone-area"
-          interactive={false}
-        />
-      )}
+      <MapClickHandler onMapClick={onMapClick} onClearSelection={onClearSelection} />
 
       {visibleEmergencies.map((emergency) => (
         <Marker
