@@ -78,6 +78,14 @@ export interface Ambulancia {
   zona: string;
   /** UI convenience: assigned driver display name. */
   driverName: string;
+  /**
+   * Driver user id the unit is linked to, as the backend exposes it
+   * (`Ambulancia.conductorId` -> `AmbulanciaDto.conductorId`). Backend-only: a
+   * driver resolves its OWN unit by matching this against the session user id,
+   * which is what lets the real winner UUID match the driver's unit (FIX3). It
+   * is absent for demo fixtures and for a unit created in the fleet manager.
+   */
+  conductorId?: string;
   /** UI convenience: position source once the unit reports over /topic/flota. */
   source?: 'device' | 'simulated';
   /** UI convenience: last reported heading, degrees clockwise from north. */

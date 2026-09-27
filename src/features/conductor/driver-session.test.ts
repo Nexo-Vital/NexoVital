@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { DEMO_ACCOUNTS } from '@/mocks/demo-users';
 import { MOCK_AMBULANCIAS } from '@/mocks/fixtures';
-import { FALLBACK_DRIVER_AMBULANCE_ID, resolveDriverAmbulanceId } from './driver-session';
+import {
+  FALLBACK_DRIVER_AMBULANCE_ID,
+  resolveDriverAmbulanceId,
+  resolveDriverAmbulanceIdFromFleet,
+} from './driver-session';
 
 describe('resolveDriverAmbulanceId', () => {
   it('gives each seeded demo conductor a distinct unit', () => {
@@ -30,5 +34,33 @@ describe('resolveDriverAmbulanceId', () => {
     expect(resolveDriverAmbulanceId('not-a-driver')).toBe(FALLBACK_DRIVER_AMBULANCE_ID);
     expect(resolveDriverAmbulanceId(null)).toBe(FALLBACK_DRIVER_AMBULANCE_ID);
     expect(resolveDriverAmbulanceId(undefined)).toBe(FALLBACK_DRIVER_AMBULANCE_ID);
+  });
+});
+
+describe('resolveDriverAmbulanceIdFromFleet', () => {
+  const REAL_DRIVER = 'e1b0f0c4-0000-4000-8000-0000000000d1';
+
+  // The real backend serves real ambulance UUIDs, not the demo A-xx labels.
+  const realFleet = [
+    { id: '8b6f2f0e-0000-4000-8000-0000000000a1', conductorId: 'otro-conductor' },
+    { id: '8b6f2f0e-0000-4000-8000-0000000000a2', conductorId: REAL_DRIVER },
+  ];
+
+  it('resolves the unit whose conductorId is the session user', () => {
+    expect(resolveDriverAmbulanceIdFromFleet(realFleet, REAL_DRIVER)).toBe(
+      '8b6f2f0e-0000-4000-8000-0000000000a2',
+    );
+  });
+
+  it('returns null when no unit belongs to the driver', () => {
+    expect(resolveDriverAmbulanceIdFromFleet(realFleet, 'conductor-sin-unidad')).toBeNull();
+    expect(resolveDriverAmbulanceIdFromFleet(realFleet, null)).toBeNull();
+    expect(resolveDriverAmbulanceIdFromFleet(realFleet, undefined)).toBeNull();
+  });
+
+  it('never matches a unit with no driver to a driver', () => {
+    // A unit without conductorId (JSON null / absent) must not be claimed.
+    const fleet = [{ id: 'unit-sin-conductor' }, { id: 'unit-sin-conductor-2' }];
+    expect(resolveDriverAmbulanceIdFromFleet(fleet, REAL_DRIVER)).toBeNull();
   });
 });

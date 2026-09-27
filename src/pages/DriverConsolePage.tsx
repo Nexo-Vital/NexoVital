@@ -9,12 +9,16 @@ import {
 } from '@/features/ciudadano/citizen-view';
 import { DriverRail } from '@/features/conductor/DriverRail';
 import { useDriverAlertsStore } from '@/features/conductor/driver-alerts-store';
-import { resolveDriverAmbulanceId } from '@/features/conductor/driver-session';
+import {
+  resolveDriverAmbulanceId,
+  resolveDriverAmbulanceIdFromFleet,
+} from '@/features/conductor/driver-session';
 import { DRIVER_STATUS_META, type DriverStatus } from '@/features/conductor/driver-status';
 import { SolicitudSheet } from '@/features/conductor/SolicitudSheet';
 import { useSolicitudInbox } from '@/features/conductor/use-solicitud-inbox';
 import { useEmergencyStore } from '@/features/emergencias/emergency-store';
 import { useEmergencySync } from '@/features/emergencias/use-emergency-sync';
+import { fetchFlota } from '@/features/flota/fleet-api';
 import { useFleetStore } from '@/features/flota/fleet-store';
 import { useFleetSync } from '@/features/flota/use-fleet-sync';
 import { LocationPermissionDialog } from '@/features/geolocalizacion/LocationPermissionDialog';
@@ -42,6 +46,7 @@ import {
   MOCK_EMERGENCIAS,
   MOCK_SOLICITUDES,
 } from '@/mocks/fixtures';
+import { isDemoMode } from '@/services/apiClient';
 import {
   DESTINATIONS,
   getRealtimePort,
@@ -89,7 +94,17 @@ export default function DriverConsolePage({
   solicitudes = MOCK_SOLICITUDES,
 }: DriverConsolePageProps) {
   const userId = useSessionStore((state) => state.user?.id);
-  const unitId = ambulanceId ?? resolveDriverAmbulanceId(userId);
+  /**
+   * The driver's OWN unit. An explicit `ambulanceId` prop (tests, demo) wins; in
+   * demo mode the mock session mapping resolves it; against a real backend the
+   * unit is resolved from the server's fleet by `conductorId` (FIX3), because the
+   * winner the server pushes is a real ambulance id the demo labels cannot match.
+   * Until the fleet arrives there is no unit yet, so the map/rail degrade
+   * honestly instead of binding the driver to an invented one.
+   */
+  const [serverUnitId, setServerUnitId] = useState<string | null>(null);
+  const demo = isDemoMode();
+  const unitId = ambulanceId ?? (demo ? resolveDriverAmbulanceId(userId) : (serverUnitId ?? ''));
 
   const location = useDeviceLocation();
   const [online, setOnline] = useState(false);
@@ -103,6 +118,31 @@ export default function DriverConsolePage({
   useEffect(() => {
     useFleetStore.getState().hydrate(ambulancias);
   }, [ambulancias]);
+  // Real backend: read the fleet so the driver can resolve its OWN unit from the
+  // server's `conductorId` link. The fixtures are never substituted on error: a
+  // failed read leaves the unit unresolved and the UI says so.
+  useEffect(() => {
+    if (demo || ambulanceId !== undefined) {
+      return;
+    }
+    let active = true;
+    fetchFlota()
+      .then((unidades) => {
+        if (!active) {
+          return;
+        }
+        useFleetStore.getState().hydrate(unidades);
+        setServerUnitId(resolveDriverAmbulanceIdFromFleet(unidades, userId));
+      })
+      .catch(() => {
+        if (active) {
+          setServerUnitId(null);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [demo, ambulanceId, userId]);
   useEffect(() => {
     useEmergencyStore.getState().hydrate(MOCK_EMERGENCIAS);
   }, []);
