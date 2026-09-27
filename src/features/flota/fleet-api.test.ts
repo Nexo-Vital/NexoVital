@@ -1,8 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setToken } from '@/services/apiClient';
-import { fetchFlota, fromWireAmbulancia } from './fleet-api';
-
-const DRIVER = '8b6f2f0e-0000-4000-8000-0000000000d1';
+import { fetchFlota, fetchMiAmbulancia, fromWireAmbulancia } from './fleet-api';
 
 /** A live-shaped unit as `GET /flota/ambulancias` returns it. */
 const WIRE_UNIT = {
@@ -11,7 +9,6 @@ const WIRE_UNIT = {
   estado: 'DISPONIBLE',
   ubicacion: { lat: 4.745, lng: -74.095 },
   zona: 'Suba',
-  conductorId: DRIVER,
 };
 
 function mockResponse(status: number, body: unknown): Response {
@@ -32,12 +29,12 @@ describe('fromWireAmbulancia', () => {
       ubicacion: { lat: 4.745, lng: -74.095 },
       zona: 'Suba',
       driverName: '',
-      conductorId: DRIVER,
     });
   });
 
-  it('omits conductorId when the unit has no driver, instead of inventing one', () => {
-    const mapped = fromWireAmbulancia({ ...WIRE_UNIT, conductorId: null });
+  it('never invents a conductorId: the general projection does not carry one', () => {
+    // Even if a server sends one, the general read-model must not disclose it.
+    const mapped = fromWireAmbulancia({ ...WIRE_UNIT, conductorId: 'driver-1' });
     expect(mapped).not.toBeNull();
     expect(mapped?.conductorId).toBeUndefined();
   });
@@ -74,7 +71,7 @@ describe('fetchFlota', () => {
     expect(path).toBe('/api/v1/flota/ambulancias');
     expect(options.method ?? 'GET').toBe('GET');
     expect(flota).toHaveLength(1);
-    expect(flota[0]?.conductorId).toBe(DRIVER);
+    expect(flota[0]?.conductorId).toBeUndefined();
   });
 
   it('drops a malformed unit without dropping the whole fleet', async () => {
@@ -84,5 +81,38 @@ describe('fetchFlota', () => {
 
     expect(flota).toHaveLength(1);
     expect(flota[0]?.id).toBe(WIRE_UNIT.id);
+  });
+});
+
+describe('fetchMiAmbulancia', () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    localStorage.clear();
+    fetchMock.mockReset();
+    vi.stubGlobal('fetch', fetchMock);
+    setToken('jwt.test');
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('GETs the server-scoped /mia resource and maps the caller unit', async () => {
+    fetchMock.mockResolvedValue(mockResponse(200, WIRE_UNIT));
+
+    const mia = await fetchMiAmbulancia();
+
+    const [path, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe('/api/v1/flota/ambulancias/mia');
+    expect(options.method ?? 'GET').toBe('GET');
+    expect(mia?.id).toBe(WIRE_UNIT.id);
+  });
+
+  it('returns null for JSON null (driver without a unit) instead of inventing one', async () => {
+    fetchMock.mockResolvedValue(mockResponse(200, null));
+
+    await expect(fetchMiAmbulancia()).resolves.toBeNull();
   });
 });

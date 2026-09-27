@@ -51,6 +51,7 @@ import {
   unlockSound,
 } from './request-sound';
 import type { DriverMissionPhase, Mission, SolicitudPhase } from './use-solicitud-inbox';
+import { UNIT_UNRESOLVED_REASON } from './use-solicitud-inbox';
 
 /** Panel shell shared by the three rail blocks: same card as the citizen rail. */
 function RailPanel({ label, children }: { label: string; children: ReactNode }) {
@@ -417,6 +418,12 @@ interface RequestCardProps {
   etaMin: number | null;
   requestedAtMs: number | null;
   unitId: string;
+  /**
+   * False while the driver's OWN unit is unresolved (off-demo, before the
+   * server answers). Accept/Reject send `ambulanciaId`, so they stay disabled
+   * and the card says why instead of firing an empty id (FIX B).
+   */
+  unitResolved: boolean;
   onAccept: () => void;
   onReject: () => void;
   onTimeout: () => void;
@@ -438,6 +445,7 @@ function RequestCard({
   etaMin,
   requestedAtMs,
   unitId,
+  unitResolved,
   onAccept,
   onReject,
   onTimeout,
@@ -514,10 +522,18 @@ function RequestCard({
 
       {(phase === 'idle' || isSubmitting) && (
         <div className="flex flex-col gap-2">
+          {/* FIX B: an unresolved unit means there is no `ambulanciaId` to send,
+              so both actions stay disabled with an honest reason instead of
+              letting the backend drop the request on a 400. */}
+          {!unitResolved && (
+            <p className="rounded-nv-md bg-nv-mint p-3 text-nv-navy-400 text-xs leading-[18px]">
+              {UNIT_UNRESOLVED_REASON}
+            </p>
+          )}
           <button
             type="button"
             onClick={onAccept}
-            disabled={isSubmitting}
+            disabled={isSubmitting || !unitResolved}
             className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md bg-nv-navy px-5 font-semibold text-sm text-white disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Check className="size-5" aria-hidden />
@@ -526,7 +542,7 @@ function RequestCard({
           <button
             type="button"
             onClick={onReject}
-            disabled={isSubmitting}
+            disabled={isSubmitting || !unitResolved}
             className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md border-[1.5px] border-nv-line bg-white px-5 font-semibold text-nv-navy text-sm disabled:cursor-not-allowed disabled:opacity-60"
           >
             <X className="size-5" aria-hidden />
@@ -759,6 +775,8 @@ interface RequestPanelProps {
   /** When the request was raised; drives the "Solicitada" row. */
   requestedAtMs: number | null;
   unitId: string;
+  /** False while the driver's own unit is unresolved; disables accept/reject (FIX B). */
+  unitResolved: boolean;
   onAccept: () => void;
   onReject: () => void;
   onTimeout: () => void;

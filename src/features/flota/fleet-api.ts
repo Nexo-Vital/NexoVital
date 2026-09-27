@@ -11,8 +11,10 @@ const ESTADO_TO_AMBULANCE_STATE: Record<string, AmbulanceState> = {
 
 /**
  * Unit exactly as `GET /api/v1/flota/ambulancias` returns it (backend
- * `AmbulanciaDto`): identity, state, position, zone and the driver user id the
- * unit is linked to. The driver resolves its OWN unit from `conductorId`.
+ * `AmbulanciaDto`): identity, state, position and zone. The driver id is
+ * deliberately NOT part of this projection (the read is authenticated for every
+ * role), so a driver resolves its OWN unit from `GET
+ * /api/v1/flota/ambulancias/mia` instead.
  */
 export interface AmbulanciaDto {
   id: string;
@@ -20,8 +22,6 @@ export interface AmbulanciaDto {
   estado: string;
   ubicacion: Ubicacion;
   zona: string;
-  /** Driver user id the unit belongs to; JSON `null` when it has none. */
-  conductorId?: string | null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -38,14 +38,13 @@ function isEstado(value: unknown): value is AmbulanceState {
  * whole fleet (the boundary convention shared with `fromWireInventario`).
  *
  * `modelo`/`tipo`/`driverName` are not part of the DTO: they stay absent (the UI
- * omits them) instead of being invented. `conductorId` is carried when present
- * so a driver can recognise its own unit (FIX3).
+ * omits them) instead of being invented.
  */
 export function fromWireAmbulancia(value: unknown): Ambulancia | null {
   if (!isRecord(value)) {
     return null;
   }
-  const { id, placa, estado, ubicacion, zona, conductorId } = value;
+  const { id, placa, estado, ubicacion, zona } = value;
   if (typeof id !== 'string' || id.length === 0) {
     return null;
   }
@@ -69,7 +68,6 @@ export function fromWireAmbulancia(value: unknown): Ambulancia | null {
     ubicacion: { lat: ubicacion.lat, lng: ubicacion.lng },
     zona,
     driverName: '',
-    ...(typeof conductorId === 'string' ? { conductorId } : {}),
   };
 }
 
@@ -84,4 +82,16 @@ export async function fetchFlota(): Promise<Ambulancia[]> {
     return [];
   }
   return dtos.map(fromWireAmbulancia).filter((unidad): unidad is Ambulancia => unidad !== null);
+}
+
+/**
+ * Reads the authenticated driver's OWN unit from the server-scoped
+ * `GET /api/v1/flota/ambulancias/mia`. The backend answers with the caller's
+ * unit or JSON `null` when the driver has none, so `null` is a valid "no unit"
+ * result and never an invented unit. This replaces resolving the unit from the
+ * general fleet list, which no longer exposes any driver id (FIX3).
+ */
+export async function fetchMiAmbulancia(): Promise<Ambulancia | null> {
+  const dto = await apiFetch<unknown>('/flota/ambulancias/mia');
+  return fromWireAmbulancia(dto);
 }

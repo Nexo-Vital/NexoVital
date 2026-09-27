@@ -27,14 +27,14 @@ export function resolveDriverAmbulanceId(userId: string | null | undefined): str
 }
 
 /**
- * Resolves the driver's OWN unit from the real fleet: the unit whose
- * `conductorId` is the session user id. Against a real backend the winner the
- * server pushes is a real ambulance UUID, so the demo labels above cannot match
- * it; this link (`Ambulancia.conductorId`, served as `AmbulanciaDto.conductorId`)
- * is what makes the winning driver recognise itself.
+ * Resolves the driver's OWN unit from a fleet list by matching `conductorId`.
  *
- * Returns `null` when the fleet has no unit for this driver, so the caller keeps
- * its honest fallback instead of binding the driver to a unit that is not theirs.
+ * <p>Superseded off-demo (FIX3): the general fleet read-model no longer exposes
+ * any driver id, so the driver's unit comes from the server-scoped
+ * `GET /api/v1/flota/ambulancias/mia` (`fetchMiAmbulancia`). This helper is kept
+ * for demo fixtures and its own unit tests; it is no longer the page's path.
+ *
+ * Returns `null` when the fleet has no unit for this driver.
  */
 export function resolveDriverAmbulanceIdFromFleet(
   unidades: { id: string; conductorId?: string }[],

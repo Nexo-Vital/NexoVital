@@ -79,11 +79,11 @@ export interface Ambulancia {
   /** UI convenience: assigned driver display name. */
   driverName: string;
   /**
-   * Driver user id the unit is linked to, as the backend exposes it
-   * (`Ambulancia.conductorId` -> `AmbulanciaDto.conductorId`). Backend-only: a
-   * driver resolves its OWN unit by matching this against the session user id,
-   * which is what lets the real winner UUID match the driver's unit (FIX3). It
-   * is absent for demo fixtures and for a unit created in the fleet manager.
+   * Driver user id the unit is linked to. It is NOT part of the general fleet
+   * read-model anymore (FIX3): that projection is visible to every authenticated
+   * role, so it must not disclose driver ids. The driver's own unit is read from
+   * the server-scoped `GET /api/v1/flota/ambulancias/mia`. This field survives
+   * for demo fixtures and the mock fleet resolver only.
    */
   conductorId?: string;
   /** UI convenience: position source once the unit reports over /topic/flota. */

@@ -8,7 +8,7 @@ import {
   type SolicitudDirectPayload,
 } from '@/shared/realtime';
 import { FakeRealtimePort } from '@/test/fake-realtime-port';
-import { useSolicitudInbox } from './use-solicitud-inbox';
+import { UNIT_UNRESOLVED_REASON, useSolicitudInbox } from './use-solicitud-inbox';
 
 const BROADCAST: SolicitudBroadcastPayload = {
   type: 'solicitud.broadcast',
@@ -576,6 +576,72 @@ describe('useSolicitudInbox against the backend (no demo mode)', () => {
     expect(port.published).toHaveLength(0);
     expect(result.current.phase).toBe('rejected');
     expect(result.current.outcomeMessage).toBe('Solicitud rechazada');
+  });
+
+  it('FIX B: refuses to accept or reject while the own unit is unresolved', async () => {
+    enableBackend();
+    const port = new FakeRealtimePort();
+    // Empty ambulance id: off-demo this is "the server has not resolved my unit".
+    const { result } = renderHook(() => useSolicitudInbox(port, '', { lat: 4.6, lng: -74.1 }));
+
+    // The backend delivers a per-user WIRE frame (no L3 filter), which is exactly
+    // the case where an unresolved unit would otherwise bid with an empty id.
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, {
+        solicitudId: REAL_REQUEST,
+        emergenciaId: 'EMG-002',
+        zonaId: 'Kennedy',
+        estado: 'PENDIENTE',
+        ambulanciasNotificadas: [REAL_UNIT],
+        ambulanciaAsignadaId: null,
+      }),
+    );
+    expect(result.current.broadcast?.requestId).toBe(REAL_REQUEST);
+
+    await act(async () => {
+      result.current.accept();
+    });
+
+    // No 400: nothing is sent, the card stays open with the honest reason.
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.current.phase).toBe('idle');
+    expect(result.current.outcomeMessage).toBe(UNIT_UNRESOLVED_REASON);
+
+    await act(async () => {
+      result.current.reject();
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.current.phase).toBe('idle');
+  });
+
+  it('declares arrival through REST and adopts the server milestone', async () => {
+    enableBackend();
+    fetchMock.mockResolvedValue(
+      mockResponse(200, { ...acceptBody(true).solicitud, estado: 'ASIGNADA' }),
+    );
+    const { port, result } = setupBackend();
+
+    act(() => port.emit(DESTINATIONS.solicitudes, REAL_BROADCAST));
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, {
+        type: 'request.taken',
+        requestId: REAL_REQUEST,
+        winner: REAL_UNIT,
+      }),
+    );
+    expect(result.current.missionPhase).toBe('en_route');
+
+    await act(async () => {
+      result.current.declareArrival();
+    });
+
+    const [path, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe(`/api/v1/solicitudes/${REAL_REQUEST}/llegada`);
+    expect(options.method).toBe('POST');
+    expect(JSON.parse(options.body as string)).toEqual({ ambulanciaId: REAL_UNIT });
+    // The SERVER confirmed the milestone, so the mission advances locally.
+    expect(result.current.missionPhase).toBe('arrived');
+    expect(result.current.mission?.arrivedAt).toBeGreaterThan(0);
   });
 
   it('FIX3: the driver gets the mission when the server winner is its OWN real unit', async () => {

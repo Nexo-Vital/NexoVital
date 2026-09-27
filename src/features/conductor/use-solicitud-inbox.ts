@@ -17,9 +17,18 @@ import {
 } from '@/shared/realtime';
 import type { EmergencyLevel, Ubicacion } from '@/types/domain';
 import { playRequestDing } from './request-sound';
-import { aceptarSolicitud, rechazarSolicitud } from './solicitud-api';
+import { aceptarSolicitud, declararLlegada, rechazarSolicitud } from './solicitud-api';
 
 export type SolicitudPhase = 'idle' | 'submitting' | 'assigned' | 'taken' | 'rejected' | 'timeout';
+
+/**
+ * Honest reason shown while the driver's own unit is not resolved yet. Off-demo
+ * the unit comes from the server, so until that read lands there is no unit id
+ * to send: accepting or rejecting then would 400 and silently drop the request.
+ * The inbox refuses to act and the card shows this instead (FIX B).
+ */
+export const UNIT_UNRESOLVED_REASON =
+  'Todavía no podemos identificar tu ambulancia. Espera un momento e inténtalo de nuevo.';
 
 /**
  * Mission lifecycle after this unit won the request. The client never sets a
@@ -379,6 +388,13 @@ export function useSolicitudInbox(
     // The backend exposes accept/reject ONLY as REST: it has no @MessageMapping
     // for them, so publishing on the port would reach nobody.
     if (!isDemoMode()) {
+      // FIX B: without a resolved unit the POST would carry an empty
+      // `ambulanciaId` and the backend would answer 400, silently dropping the
+      // request. Refuse honestly instead and keep the card open.
+      if (!ambulanceId) {
+        setOutcomeMessage(UNIT_UNRESOLVED_REASON);
+        return;
+      }
       if (acceptingRef.current) {
         return;
       }
@@ -441,6 +457,11 @@ export function useSolicitudInbox(
     // PENDIENTE for the other units (AC4), so this is fire-and-forget with the
     // local rejection recorded once it lands.
     if (!isDemoMode()) {
+      // FIX B: same guard as accept — no unit, no reject.
+      if (!ambulanceId) {
+        setOutcomeMessage(UNIT_UNRESOLVED_REASON);
+        return;
+      }
       void rechazarSolicitud(active.requestId, ambulanceId)
         .then(() => {
           const broadcast = broadcastRef.current;
@@ -483,11 +504,42 @@ export function useSolicitudInbox(
 
   const declareArrival = useCallback(() => {
     const active = missionRef.current;
-    if (!port || !active) {
+    if (!active) {
       return;
     }
-    // Publish only: the mission advances when the relay echoes `request.arrived`,
-    // so this client never decides the state on its own (server is the truth).
+    // Backend: arrival is a REST command, because there is no @MessageMapping
+    // inbound. The SERVER's response is adopted: on 200 the milestone is real,
+    // so the mission advances locally without waiting for a push (the arrival
+    // push targets the requester, not this driver).
+    if (!isDemoMode()) {
+      if (!ambulanceId) {
+        setOutcomeMessage(UNIT_UNRESOLVED_REASON);
+        return;
+      }
+      void declararLlegada(active.requestId, ambulanceId)
+        .then(() => {
+          const current = missionRef.current;
+          if (current?.requestId !== active.requestId || current.arrivedAt !== null) {
+            return;
+          }
+          const next = { ...current, arrivedAt: Date.now() };
+          missionRef.current = next;
+          setMission(next);
+        })
+        .catch((error: unknown) => {
+          setOutcomeMessage(
+            error instanceof Error ? error.message : 'No fue posible declarar la llegada',
+          );
+        });
+      return;
+    }
+
+    if (!port) {
+      return;
+    }
+    // Demo: publish only — the mission advances when the relay echoes
+    // `request.arrived`, so this client never decides the state on its own
+    // (server is the truth). This branch is unchanged.
     port.publish<SolicitudLlegadaPayload>(DESTINATIONS.solicitudes, {
       type: 'solicitud.llegada',
       requestId: active.requestId,

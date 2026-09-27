@@ -9,16 +9,13 @@ import {
 } from '@/features/ciudadano/citizen-view';
 import { DriverRail } from '@/features/conductor/DriverRail';
 import { useDriverAlertsStore } from '@/features/conductor/driver-alerts-store';
-import {
-  resolveDriverAmbulanceId,
-  resolveDriverAmbulanceIdFromFleet,
-} from '@/features/conductor/driver-session';
+import { resolveDriverAmbulanceId } from '@/features/conductor/driver-session';
 import { DRIVER_STATUS_META, type DriverStatus } from '@/features/conductor/driver-status';
 import { SolicitudSheet } from '@/features/conductor/SolicitudSheet';
 import { useSolicitudInbox } from '@/features/conductor/use-solicitud-inbox';
 import { useEmergencyStore } from '@/features/emergencias/emergency-store';
 import { useEmergencySync } from '@/features/emergencias/use-emergency-sync';
-import { fetchFlota } from '@/features/flota/fleet-api';
+import { fetchFlota, fetchMiAmbulancia } from '@/features/flota/fleet-api';
 import { useFleetStore } from '@/features/flota/fleet-store';
 import { useFleetSync } from '@/features/flota/use-fleet-sync';
 import { LocationPermissionDialog } from '@/features/geolocalizacion/LocationPermissionDialog';
@@ -97,14 +94,17 @@ export default function DriverConsolePage({
   /**
    * The driver's OWN unit. An explicit `ambulanceId` prop (tests, demo) wins; in
    * demo mode the mock session mapping resolves it; against a real backend the
-   * unit is resolved from the server's fleet by `conductorId` (FIX3), because the
-   * winner the server pushes is a real ambulance id the demo labels cannot match.
-   * Until the fleet arrives there is no unit yet, so the map/rail degrade
-   * honestly instead of binding the driver to an invented one.
+   * unit comes from the server-scoped `GET /flota/ambulancias/mia` (FIX3),
+   * because the general fleet list no longer exposes any driver id. Until that
+   * read lands there is no unit yet, so the map/rail degrade honestly and the
+   * inbox refuses to accept/reject on an unresolved unit (FIX B) instead of
+   * sending an empty id.
    */
   const [serverUnitId, setServerUnitId] = useState<string | null>(null);
   const demo = isDemoMode();
   const unitId = ambulanceId ?? (demo ? resolveDriverAmbulanceId(userId) : (serverUnitId ?? ''));
+  /** Off-demo the unit comes from the server: an empty id means "not resolved". */
+  const unitResolved = unitId !== '';
 
   const location = useDeviceLocation();
   const [online, setOnline] = useState(false);
@@ -118,9 +118,10 @@ export default function DriverConsolePage({
   useEffect(() => {
     useFleetStore.getState().hydrate(ambulancias);
   }, [ambulancias]);
-  // Real backend: read the fleet so the driver can resolve its OWN unit from the
-  // server's `conductorId` link. The fixtures are never substituted on error: a
-  // failed read leaves the unit unresolved and the UI says so.
+  // Real backend: read the fleet so the driver's map shows the other units, and
+  // read the driver's OWN unit from the server-scoped `/mia` resource. The
+  // fixtures are never substituted on error: a failed read leaves the unit
+  // unresolved and the UI says so.
   useEffect(() => {
     if (demo || ambulanceId !== undefined) {
       return;
@@ -128,11 +129,19 @@ export default function DriverConsolePage({
     let active = true;
     fetchFlota()
       .then((unidades) => {
-        if (!active) {
-          return;
+        if (active) {
+          useFleetStore.getState().hydrate(unidades);
         }
-        useFleetStore.getState().hydrate(unidades);
-        setServerUnitId(resolveDriverAmbulanceIdFromFleet(unidades, userId));
+      })
+      .catch(() => {
+        // The map's fleet feed is optional here: the own-unit read below is what
+        // the driver needs, so a fleet read failure never blocks it.
+      });
+    fetchMiAmbulancia()
+      .then((mia) => {
+        if (active) {
+          setServerUnitId(mia?.id ?? null);
+        }
       })
       .catch(() => {
         if (active) {
@@ -142,7 +151,7 @@ export default function DriverConsolePage({
     return () => {
       active = false;
     };
-  }, [demo, ambulanceId, userId]);
+  }, [demo, ambulanceId]);
   useEffect(() => {
     useEmergencyStore.getState().hydrate(MOCK_EMERGENCIAS);
   }, []);
@@ -199,9 +208,11 @@ export default function DriverConsolePage({
   const missionActive = inbox.mission !== null && !requestOpen;
 
   // U6: the tapped request is actionable only while it is the inbox's open
-  // broadcast. The accept/reject actions act on that one, so the sheet disables
-  // them (with a reason) for any other row instead of silently mis-firing.
+  // broadcast AND the driver's own unit is resolved. The accept/reject actions
+  // send `ambulanciaId`, so without a resolved unit they must stay disabled
+  // (FIX B) instead of firing an empty id.
   const selectedIsActive =
+    unitResolved &&
     selectedSolicitud !== null &&
     inbox.broadcast?.requestId === selectedSolicitud.id &&
     requestOpen;
@@ -475,6 +486,7 @@ export default function DriverConsolePage({
           etaMin: requestEta,
           requestedAtMs: inbox.requestedAtMs,
           unitId,
+          unitResolved,
           onAccept: inbox.accept,
           onReject: inbox.reject,
           onTimeout: inbox.notifyTimeout,
