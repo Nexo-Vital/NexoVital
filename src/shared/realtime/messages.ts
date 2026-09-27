@@ -11,17 +11,23 @@ import type {
  *
  * Destinations mirror the STOMP contract served by the backend (`/ws`), wired
  * by `StompRealtimeAdapter`:
- *   /topic/emergencias  - new / updated emergency
- *   /topic/flota       - live fleet positions
- *   /topic/suministros - inventory + traffic light
- *   /queue/solicitudes - broadcast requests (driver inbox)
- *   /topic/map.events  - map element lifecycle (zones and aid centers)
+ *   /topic/emergencias       - new / updated emergency
+ *   /topic/flota             - live fleet positions
+ *   /topic/suministros       - inventory + traffic light
+ *   /user/queue/solicitudes  - per-user request inbox (driver broadcasts)
+ *   /topic/map.events        - map element lifecycle (zones and aid centers)
+ *
+ * The request inbox is a USER destination, not a shared `/queue`: with Spring's
+ * simple broker a `/queue` with N subscribers delivers round-robin to ONE, which
+ * would break the broadcast. The backend `flota` module publishes one copy per
+ * notified unit with `convertAndSendToUser` (D-F1), so a driver subscribes to
+ * `/user/queue/solicitudes` and receives only its own copy.
  */
 export const DESTINATIONS = {
   flota: '/topic/flota',
   emergencias: '/topic/emergencias',
   suministros: '/topic/suministros',
-  solicitudes: '/queue/solicitudes',
+  solicitudes: '/user/queue/solicitudes',
   mapa: '/topic/map.events',
 } as const;
 
@@ -152,7 +158,7 @@ export interface ItemInventarioPayload {
 }
 
 /**
- * Request lifecycle on /queue/solicitudes.
+ * Request lifecycle on /user/queue/solicitudes.
  *
  * C2 (domain rule): a request is BROADCAST to N units and the FIRST accept wins,
  * decided server-side. The client only ever PUBLISHES an accept bid; it never
@@ -198,7 +204,13 @@ export interface SolicitudBroadcastPayload {
    * CRUE always carries the emergency's real level.
    */
   nivel?: EmergencyLevel;
-  escena: Ubicacion;
+  /**
+   * Requester scene. Optional on purpose: the backend `flota` push carries no
+   * coordinates (see `SolicitudWireFrame`), so the front resolves them from the
+   * emergency store when it can and leaves the field absent when it cannot,
+   * instead of inventing a point on the map.
+   */
+  escena?: Ubicacion;
   /** ISO timestamp when the accept window closes. */
   timeoutEn: string;
   notificadas: string[];
@@ -220,7 +232,8 @@ export interface SolicitudDirectPayload {
   zonaId: string;
   tipo: string;
   nivel: EmergencyLevel;
-  escena: Ubicacion;
+  /** Optional for the same reason as the broadcast payload: not a wire field. */
+  escena?: Ubicacion;
   timeoutEn: string;
   notificadas: string[];
   mode: 'direct';
@@ -323,3 +336,42 @@ export type SolicitudPayload =
   | RequestCancelledPayload
   | RequestArrivedPayload
   | RequestConfirmedPayload;
+
+/**
+ * Request lifecycle literal as the backend `flota` module speaks it.
+ * Mirrors `EstadoSolicitud` (`domain/enums/EstadoSolicitud.java`) exactly.
+ */
+export type EstadoSolicitudWire =
+  | 'PENDIENTE'
+  | 'ASIGNADA'
+  | 'CONFIRMADA'
+  | 'TOMADA'
+  | 'RECHAZADA'
+  | 'TIMEOUT';
+
+/**
+ * Request frame the backend `flota` module pushes to `/user/queue/solicitudes`.
+ *
+ * It is the JSON of `FlotaPushListener.SolicitudPushPayload`:
+ * `{solicitudId, emergenciaId, zonaId, estado, ambulanciasNotificadas,
+ * ambulanciaAsignadaId}`. Two things set it apart from the front's
+ * `SolicitudPayload` union:
+ *
+ *   - it has NO `type` discriminant: the lifecycle is in `estado`;
+ *   - it carries NO scene (`escena`), no request type label, no severity and no
+ *     accept deadline. The front resolves the scene/type/level from the
+ *     emergency (`emergenciaId`) when it has it, and degrades honestly when it
+ *     does not.
+ *
+ * `fromWireSolicitud` validates this shape and returns null on a malformed
+ * frame; the union is then built by `solicitudFrameFromWire`.
+ */
+export interface SolicitudWireFrame {
+  solicitudId: string;
+  emergenciaId: string;
+  zonaId: string;
+  estado: EstadoSolicitudWire;
+  ambulanciasNotificadas: string[];
+  /** Winner unit, or null while the request is still PENDIENTE. */
+  ambulanciaAsignadaId: string | null;
+}

@@ -1,5 +1,12 @@
 import { useEffect } from 'react';
-import { DESTINATIONS, type RealtimePort } from '@/shared/realtime';
+import { useEmergencyStore } from '@/features/emergencias/emergency-store';
+import {
+  DESTINATIONS,
+  fromWireSolicitud,
+  type RealtimePort,
+  type SolicitudWireFrame,
+} from '@/shared/realtime';
+import type { SolicitudAmbulancia } from '@/types/domain';
 import { type SolicitudRequestPayload, toSolicitud } from './solicitud-form';
 import { useSolicitudesStore } from './solicitudes-store';
 
@@ -19,9 +26,33 @@ function isRequestFrame(payload: Record<string, unknown>): boolean {
 }
 
 /**
- * Keeps the CRUE request registry in sync with /queue/solicitudes:
- *   - a published request (broadcast or direct) is upserted as PENDING, so a
- *     request created on another client appears here too;
+ * Registry row from a backend `flota` frame. The wire carries no request type
+ * label or deadline, so `tipo` is resolved from the emergency when the store
+ * knows it and `timeoutEn` stays empty rather than being invented.
+ */
+function solicitudFromWire(frame: SolicitudWireFrame): SolicitudAmbulancia {
+  const emergency =
+    useEmergencyStore.getState().items.find((item) => item.id === frame.emergenciaId) ?? null;
+  return {
+    id: frame.solicitudId,
+    emergenciaId: frame.emergenciaId,
+    estado: 'PENDING',
+    centroAyudaId: '',
+    zonaId: frame.zonaId,
+    tipo: emergency?.descripcion ?? '',
+    solicitadaEn: new Date().toISOString(),
+    timeoutEn: '',
+    ambulanciasNotificadas: frame.ambulanciasNotificadas,
+    notifiedCount: frame.ambulanciasNotificadas.length,
+    ambulanciaAsignadaId: frame.ambulanciaAsignadaId,
+  };
+}
+
+/**
+ * Keeps the CRUE request registry in sync with /user/queue/solicitudes:
+ *   - a published request (broadcast or direct, demo shape or backend wire
+ *     frame) is upserted as PENDING, so a request created on another client
+ *     appears here too;
  *   - `request.taken` applies the arbiter decision (the CRUE never picks it);
  *   - `request.arrived` records the winning unit's arrival milestone;
  *   - `request.confirmed` closes the request as CONFIRMED;
@@ -33,10 +64,30 @@ export function useSolicitudRegistrySync(port: RealtimePort | null): void {
     if (!port) {
       return;
     }
-    return port.subscribe(DESTINATIONS.solicitudes, (payload) => {
-      if (!isRecord(payload)) {
+    return port.subscribe<unknown>(DESTINATIONS.solicitudes, (raw) => {
+      if (!isRecord(raw)) {
         return;
       }
+
+      // Backend `flota` wire frame first: it has no `type` and its lifecycle
+      // lives in `estado`. A malformed frame is dropped by the validator.
+      const wire = fromWireSolicitud(raw);
+      if (wire) {
+        if (wire.estado === 'PENDIENTE') {
+          useSolicitudesStore.getState().upsert(solicitudFromWire(wire));
+          return;
+        }
+        if (wire.estado === 'ASIGNADA' && wire.ambulanciaAsignadaId) {
+          useSolicitudesStore.getState().markTaken(wire.solicitudId, wire.ambulanciaAsignadaId);
+          return;
+        }
+        if (wire.estado === 'CONFIRMADA') {
+          useSolicitudesStore.getState().markConfirmed(wire.solicitudId);
+        }
+        return;
+      }
+
+      const payload = raw;
       if (
         (payload.type === 'solicitud.broadcast' || payload.type === 'solicitud.direct') &&
         isRequestFrame(payload)

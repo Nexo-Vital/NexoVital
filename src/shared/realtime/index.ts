@@ -28,4 +28,9 @@ export function resetRealtimePort(): void {
 
 export * from './messages';
 export type { RealtimeHandler, RealtimePort, RealtimeState } from './port';
+export {
+  fromWireSolicitud,
+  solicitudFrameFromWire,
+  type WireSolicitudContext,
+} from './solicitud-wire';
 export { DevRelayAdapter, StompRealtimeAdapter };
