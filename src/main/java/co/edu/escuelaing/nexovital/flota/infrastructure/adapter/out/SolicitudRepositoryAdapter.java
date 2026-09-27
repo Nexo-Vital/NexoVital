@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -60,6 +61,22 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
     @Transactional
     public int transicionAtomicaLlegada(UUID idSolicitud, Instant llegadaEn) {
         return jpaRepository.transicionAtomicaLlegada(idSolicitud, llegadaEn);
+    }
+
+    @Override
+    public List<SolicitudAmbulancia> listarPendientesVencidas(Instant ahora) {
+        return jpaRepository
+                .findTop200ByEstadoAndTimeoutEnBeforeOrderByTimeoutEnAsc(EstadoSolicitud.PENDIENTE, ahora)
+                .stream()
+                .map(SolicitudRepositoryAdapter::toDomain)
+                .toList();
+    }
+
+    @Override
+    @Transactional
+    public int transicionAtomicaExpirar(UUID idSolicitud, EstadoSolicitud estadoEsperado,
+                                        EstadoSolicitud nuevoEstado, Instant ahora) {
+        return jpaRepository.transicionAtomicaExpirar(idSolicitud, estadoEsperado, nuevoEstado, ahora);
     }
 
     private static SolicitudAmbulancia toDomain(SolicitudJpaEntity entity) {

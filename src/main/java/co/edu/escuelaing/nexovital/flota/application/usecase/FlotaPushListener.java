@@ -4,6 +4,7 @@ import co.edu.escuelaing.nexovital.flota.domain.event.FlotaActualizadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudAsignadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudConfirmadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudCreadaEvent;
+import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudExpiradaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudLlegadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudRechazadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.model.Ambulancia;
@@ -124,6 +125,23 @@ public class FlotaPushListener {
                 evento.solicitudId(), evento.emergenciaId(), evento.zonaId(),
                 "CONFIRMADA", List.of(), evento.ambulanciaId(), false);
         publicarAlConductor(evento.ambulanciaId(), payload);
+        publicarAlSolicitante(evento.solicitanteId(), payload);
+    }
+
+    /**
+     * The request expired with no winner: the requester is told so their screen
+     * leaves the search instead of promising a window that never closed, and
+     * each notified unit is told so the stale notification drops. TIMEOUT is the
+     * whole-request state, so it is never a per-unit decline.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void alExpirarSolicitud(SolicitudExpiradaEvent evento) {
+        SolicitudPushPayload payload = new SolicitudPushPayload(
+                evento.solicitudId(), evento.emergenciaId(), evento.zonaId(),
+                "TIMEOUT", evento.ambulanciasNotificadas(), null, false);
+        for (UUID ambulanciaId : evento.ambulanciasNotificadas()) {
+            publicarAlConductor(ambulanciaId, payload);
+        }
         publicarAlSolicitante(evento.solicitanteId(), payload);
     }
 

@@ -152,7 +152,19 @@ public final class SolicitudAmbulancia {
     }
 
     public boolean estaVencida() {
-        return estado == EstadoSolicitud.PENDIENTE && timeoutEn.isBefore(Instant.now());
+        return estaVencida(Instant.now());
+    }
+
+    /**
+     * Expiry is about the request as a whole: it only holds while the request is
+     * still PENDIENTE (no unit accepted within the notification window). Once a
+     * winner is assigned, the window no longer applies. The instant is injected
+     * so the scheduler can evaluate it against the application clock.
+     *
+     * @param ahora instant used as "now"
+     */
+    public boolean estaVencida(Instant ahora) {
+        return estado == EstadoSolicitud.PENDIENTE && timeoutEn.isBefore(ahora);
     }
 
     /** @return true when this unit was part of the broadcast (AC1 / L3 filter). */

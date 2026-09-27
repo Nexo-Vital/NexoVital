@@ -4,6 +4,7 @@ import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoSolicitud;
 import co.edu.escuelaing.nexovital.flota.domain.model.SolicitudAmbulancia;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -33,4 +34,19 @@ public interface SolicitudRepository {
      * caller treats it as a no-op).
      */
     int transicionAtomicaLlegada(UUID idSolicitud, Instant llegadaEn);
+
+    /**
+     * PENDING requests whose accept window already elapsed, oldest first and
+     * bounded so the expiry transaction stays small.
+     */
+    List<SolicitudAmbulancia> listarPendientesVencidas(Instant ahora);
+
+    /**
+     * CAS de expiración: UNA sola UPDATE que cierra la solicitud solo si sigue
+     * PENDIENTE Y su {@code timeoutEn} ya pasó. Devuelve filas afectadas: 1 =
+     * este llamador la expiró, 0 = otro la atendió o expiró primero. Es
+     * idempotente y no compite con el accept: ambos son UPDATE condicionados.
+     */
+    int transicionAtomicaExpirar(UUID idSolicitud, EstadoSolicitud estadoEsperado,
+                                 EstadoSolicitud nuevoEstado, Instant ahora);
 }
