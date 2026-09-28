@@ -56,6 +56,8 @@ function solicitudFromWire(frame: SolicitudWireFrame): SolicitudAmbulancia {
  *   - `request.taken` applies the arbiter decision (the CRUE never picks it);
  *   - `request.arrived` records the winning unit's arrival milestone;
  *   - `request.confirmed` closes the request as CONFIRMED;
+ *   - `request.expired` (backend TIMEOUT) and `request.closed` (backend TOMADA)
+ *     are terminal: the request is no longer active and is dropped;
  *   - `request.cancelled` drops a withdrawn request, so the coordinator does not
  *     keep seeing as pending a request nobody is asking for anymore.
  */
@@ -89,6 +91,12 @@ export function useSolicitudRegistrySync(port: RealtimePort | null): void {
         }
         if (wire.estado === 'CONFIRMADA') {
           useSolicitudesStore.getState().markConfirmed(wire.solicitudId);
+          return;
+        }
+        if (wire.estado === 'TIMEOUT' || wire.estado === 'TOMADA') {
+          // Terminal whole-request states: the request is no longer active, so
+          // the card is dropped instead of lingering as a stale Pending one.
+          useSolicitudesStore.getState().remove(wire.solicitudId);
         }
         return;
       }
@@ -120,6 +128,14 @@ export function useSolicitudRegistrySync(port: RealtimePort | null): void {
         return;
       }
       if (payload.type === 'request.cancelled' && typeof payload.requestId === 'string') {
+        useSolicitudesStore.getState().remove(payload.requestId);
+        return;
+      }
+      if (
+        (payload.type === 'request.expired' || payload.type === 'request.closed') &&
+        typeof payload.requestId === 'string'
+      ) {
+        // Terminal states: the request is no longer active, so drop the card.
         useSolicitudesStore.getState().remove(payload.requestId);
       }
     });

@@ -365,6 +365,34 @@ describe('useCitizenRequestStore', () => {
     expect(useCitizenRequestStore.getState().acceptedAt).toBeNull();
     expect(useCitizenRequestStore.getState().acceptedBy).toBeNull();
   });
+
+  it('closes an accepted request on the backend TOMADA without inventing a confirmation', () => {
+    useCitizenRequestStore
+      .getState()
+      .start({ port: new FakeRealtimePort(), units: MOCK_AMBULANCIAS, origin: ORIGIN });
+    const requestId = useCitizenRequestStore.getState().requestId ?? '';
+    useCitizenRequestStore.getState().endOnTaken(requestId, 'A-12');
+
+    useCitizenRequestStore.getState().endOnClosed(requestId);
+
+    expect(useCitizenRequestStore.getState().phase).toBe('closed');
+    // The citizen never confirmed: the close must not fabricate an instant.
+    expect(useCitizenRequestStore.getState().confirmedAt).toBeNull();
+  });
+
+  it('expires the search on the backend TIMEOUT, only for OUR request', () => {
+    useCitizenRequestStore
+      .getState()
+      .start({ port: new FakeRealtimePort(), units: MOCK_AMBULANCIAS, origin: ORIGIN });
+    const requestId = useCitizenRequestStore.getState().requestId ?? '';
+
+    // Another request's expiry never affects ours.
+    useCitizenRequestStore.getState().endOnExpired('REQ-OTHER');
+    expect(useCitizenRequestStore.getState().phase).toBe('searching');
+
+    useCitizenRequestStore.getState().endOnExpired(requestId);
+    expect(useCitizenRequestStore.getState().phase).toBe('expired');
+  });
 });
 
 /** A server-shaped 201 body: the server owns id/estado/solicitadaEn/timeoutEn. */

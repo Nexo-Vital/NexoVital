@@ -337,7 +337,9 @@ function CompletedPanel({
       at: acceptedAt,
     },
     { text: 'La ambulancia llegó', at: arrivedAt },
-    { text: 'Confirmaste la llegada', at: confirmedAt },
+    // Only when the citizen really confirmed: a backend close without their
+    // confirmation must not claim the step happened.
+    ...(confirmedAt !== null ? [{ text: 'Confirmaste la llegada', at: confirmedAt }] : []),
   ];
 
   return (
@@ -353,6 +355,38 @@ function CompletedPanel({
           </div>
         </div>
         <TrackingTimeline entries={entries} label="Línea de tiempo de tu solicitud" />
+      </RailPanel>
+      <button
+        type="button"
+        onClick={onBackToMap}
+        className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md bg-nv-navy px-5 font-semibold text-sm text-white"
+      >
+        <MapPin className="size-5" aria-hidden />
+        Volver al mapa
+      </button>
+    </>
+  );
+}
+
+/**
+ * Backend `TIMEOUT` panel: no unit was ever assigned and the request expired.
+ * It states plainly that the request is no longer active and offers the same
+ * honest exit as the other panels ("Volver al mapa"), so the citizen is not left
+ * staring at a search that will never resolve.
+ */
+function ExpiredPanel({ onBackToMap }: { onBackToMap: () => void }) {
+  return (
+    <>
+      <RailPanel label="Solicitud expirada">
+        <div className="flex items-center gap-3">
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-nv-red-soft text-nv-red-600">
+            <Clock className="size-5" aria-hidden />
+          </span>
+          <div className="min-w-0">
+            <h3 className="font-semibold text-[17px]">Nadie atendió tu solicitud</h3>
+            <p className="text-nv-navy-400 text-xs">La solicitud expiró y ya no está activa</p>
+          </div>
+        </div>
       </RailPanel>
       <button
         type="button"
@@ -386,6 +420,17 @@ export function CitizenRequestRail({
   onCancel,
   onBackToMap,
 }: CitizenRequestRailProps) {
+  if (phase === 'expired') {
+    return (
+      <aside
+        aria-label="Panel del ciudadano"
+        className="flex flex-col gap-4 lg:min-h-0 lg:overflow-y-auto"
+      >
+        <ExpiredPanel onBackToMap={onBackToMap} />
+      </aside>
+    );
+  }
+
   if (acceptedBy && (phase === 'accepted' || phase === 'arrived' || phase === 'closed')) {
     const assignedUnit = units.find((unit) => unit.id === acceptedBy) ?? null;
     return (

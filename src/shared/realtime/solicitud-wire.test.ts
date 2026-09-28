@@ -134,11 +134,17 @@ describe('solicitudFrameFromWire', () => {
     });
   });
 
-  it('returns null for lifecycle states the driver copy cannot act on', () => {
+  it('maps TOMADA to request.closed and TIMEOUT to request.expired', () => {
     const taken = validWire({ ...PENDIENTE, estado: 'TOMADA' });
     const timeout = validWire({ ...PENDIENTE, estado: 'TIMEOUT' });
-    expect(solicitudFrameFromWire(taken, CONTEXT)).toBeNull();
-    expect(solicitudFrameFromWire(timeout, CONTEXT)).toBeNull();
+    expect(solicitudFrameFromWire(taken, CONTEXT)).toEqual({
+      type: 'request.closed',
+      requestId: PENDIENTE.solicitudId,
+    });
+    expect(solicitudFrameFromWire(timeout, CONTEXT)).toEqual({
+      type: 'request.expired',
+      requestId: PENDIENTE.solicitudId,
+    });
   });
 
   it('maps an arrival-flagged frame to request.arrived, keeping the estado out of it', () => {

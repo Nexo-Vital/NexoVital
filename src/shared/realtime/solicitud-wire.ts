@@ -110,7 +110,8 @@ export interface WireSolicitudContext {
  *   ASIGNADA   -> request.taken        (this per-user copy IS the winner)
  *   CONFIRMADA -> request.confirmed    (citizen closed the loop)
  *   RECHAZADA  -> request.rejected     (this driver's decline was recorded)
- *   TOMADA / TIMEOUT -> null           (not actionable on the driver's own copy)
+ *   TOMADA     -> request.closed       (service finished; drop the stale card)
+ *   TIMEOUT    -> request.expired      (no winner; the request is no longer active)
  *
  * A frame flagged `llegada` is the arrival milestone the winning unit emits:
  * it becomes `request.arrived` regardless of the lifecycle `estado` (which
@@ -161,6 +162,10 @@ export function solicitudFrameFromWire(
         rejected: context.ownAmbulanceId,
         reason: 'rejected',
       };
+    case 'TOMADA':
+      return { type: 'request.closed', requestId: frame.solicitudId };
+    case 'TIMEOUT':
+      return { type: 'request.expired', requestId: frame.solicitudId };
     default:
       return null;
   }

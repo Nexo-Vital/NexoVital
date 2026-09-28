@@ -219,6 +219,7 @@ export default function CitizenMapPage({
   const accepted = requestPhase === 'accepted';
   const arrived = requestPhase === 'arrived';
   const closed = requestPhase === 'closed';
+  const expired = requestPhase === 'expired';
   // The c4/c5/c6 rail replaces the search for good once a unit is assigned.
   const assigned = accepted || arrived || closed;
 
@@ -471,7 +472,9 @@ export default function CitizenMapPage({
             ? 'Tu ambulancia llegó'
             : closed
               ? 'Solicitud atendida'
-              : 'Mapa de operación';
+              : expired
+                ? 'Solicitud expirada'
+                : 'Mapa de operación';
   const subtitle =
     detailCentro && showDetail
       ? detailDonation
@@ -526,8 +529,10 @@ export default function CitizenMapPage({
         />
         <CitizenMapLegend counts={counts} units={fleet} />
 
-        {/* `C.c6`: the closing toast. It exists only once the request is closed. */}
-        {closed && (
+        {/* `C.c6`: the closing toast. It exists only once the citizen actually
+            confirmed; a backend close that skipped their confirmation must not
+            claim it happened. */}
+        {closed && confirmedAt !== null && (
           <div className="pointer-events-none absolute inset-x-0 top-5 z-[1000] flex justify-center px-3">
             <div className="flex items-center gap-2.5 rounded-nv-md bg-nv-navy px-4 py-3 font-medium text-sm text-white shadow-nv-float">
               <span className="grid size-7 shrink-0 place-items-center rounded-full bg-nv-lime text-nv-navy">

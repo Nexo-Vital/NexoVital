@@ -313,6 +313,24 @@ export function useSolicitudInbox(
         return;
       }
 
+      if (payload.type === 'request.expired' || payload.type === 'request.closed') {
+        // The request is no longer active: TIMEOUT (it expired with no winner)
+        // or TOMADA (the service was finished). Either way this inbox must stop
+        // offering a mission nobody is asking for anymore. Only OUR open
+        // broadcast reacts; the mission close is driven by finishService.
+        if (broadcastRef.current?.requestId !== payload.requestId) {
+          return;
+        }
+        broadcastRef.current = null;
+        wonRequestIdRef.current = null;
+        setBroadcast(null);
+        setDeadlineMs(null);
+        setRequestedAtMs(null);
+        setPhase('idle');
+        setOutcomeMessage(null);
+        return;
+      }
+
       if (payload.type === 'request.arrived') {
         const active = missionRef.current;
         // Only OUR mission reacts, and only the FIRST arrival: a repeated event

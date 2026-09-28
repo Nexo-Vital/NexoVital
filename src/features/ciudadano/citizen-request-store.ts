@@ -30,9 +30,17 @@ import {
 /**
  * The citizen's own request lifecycle. `accepted` -> `arrived` -> `closed` is
  * driven ONLY by the relay's events (`request.taken`, `request.arrived`,
- * `request.confirmed`); the citizen's confirm publishes and waits.
+ * `request.confirmed`); the citizen's confirm publishes and waits. `expired` is
+ * the terminal backend `TIMEOUT`: the request was never taken and is no longer
+ * active.
  */
-export type CitizenRequestPhase = 'idle' | 'searching' | 'accepted' | 'arrived' | 'closed';
+export type CitizenRequestPhase =
+  | 'idle'
+  | 'searching'
+  | 'accepted'
+  | 'arrived'
+  | 'closed'
+  | 'expired';
 
 interface CitizenRequestState {
   phase: CitizenRequestPhase;
@@ -76,6 +84,10 @@ interface CitizenRequestState {
   confirmArrival: (port: RealtimePort | null) => void;
   /** Applies the relay's confirmation; idempotent, closes the request. */
   endOnConfirmed: (requestId: string) => void;
+  /** Applies the backend `TIMEOUT`; the request expired and is no longer active. */
+  endOnExpired: (requestId: string) => void;
+  /** Applies the backend `TOMADA` close when the citizen did not confirm it. */
+  endOnClosed: (requestId: string) => void;
   /** Drops the search state without publishing (e.g. after an accept). */
   reset: () => void;
 }
@@ -282,6 +294,33 @@ export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => 
     set({ phase: 'closed', confirmedAt: Date.now() });
   },
 
+  endOnExpired: (requestId) => {
+    const state = get();
+    // Only OUR open search expires, and only once: the backend emits TIMEOUT
+    // while the request is still PENDIENTE (no winner), so anything already
+    // accepted/arrived/closed is untouched.
+    if (state.requestId !== requestId || state.phase !== 'searching') {
+      return;
+    }
+    set({ phase: 'expired' });
+  },
+
+  endOnClosed: (requestId) => {
+    const state = get();
+    // The backend `TOMADA` close. In the normal loop the citizen already closed
+    // it via `request.confirmed` (endOnConfirmed), so this is a no-op then; it
+    // covers the case where the driver finished without the citizen confirming
+    // and the rail would otherwise stay in 'accepted'/'arrived'. `confirmedAt`
+    // is never invented: the citizen did not confirm.
+    if (
+      state.requestId !== requestId ||
+      (state.phase !== 'accepted' && state.phase !== 'arrived' && state.phase !== 'closed')
+    ) {
+      return;
+    }
+    set({ phase: 'closed' });
+  },
+
   reset: () => set({ ...IDLE_STATE }),
 }));
 
@@ -306,6 +345,16 @@ function applyCitizenFrame(payload: SolicitudPayload): void {
   }
   if (payload.type === 'request.confirmed') {
     store.endOnConfirmed(payload.requestId);
+    return;
+  }
+  if (payload.type === 'request.expired') {
+    // Backend TIMEOUT: the request expired with no winner and is no longer active.
+    store.endOnExpired(payload.requestId);
+    return;
+  }
+  if (payload.type === 'request.closed') {
+    // Backend TOMADA: the attended service was finished.
+    store.endOnClosed(payload.requestId);
   }
 }
 
@@ -317,8 +366,9 @@ function applyCitizenFrame(payload: SolicitudPayload): void {
  * Two shapes share the destination. The dev relay sends the union frames with a
  * `type`. The backend `flota` module sends its own shape (no `type`, lifecycle
  * in `estado`), so it is reconciled first through the shared `solicitud-wire`
- * mapping: `ASIGNADA` becomes an acceptance and `CONFIRMADA` a confirmation,
- * and `PENDIENTE` becomes a broadcast this sync deliberately ignores.
+ * mapping: `ASIGNADA` becomes an acceptance, `CONFIRMADA` a confirmation,
+ * `TIMEOUT` an expiry and `TOMADA` a close; `PENDIENTE` becomes a broadcast this
+ * sync deliberately ignores.
  */
 export function useCitizenRequestSync(port: RealtimePort | null): void {
   useEffect(() => {

@@ -189,7 +189,9 @@ export type SolicitudType =
   | 'request.rejected'
   | 'request.cancelled'
   | 'request.arrived'
-  | 'request.confirmed';
+  | 'request.confirmed'
+  | 'request.expired'
+  | 'request.closed';
 
 export interface SolicitudBroadcastPayload {
   type: 'solicitud.broadcast';
@@ -289,6 +291,26 @@ export interface RequestConfirmedPayload {
   requestId: string;
 }
 
+/**
+ * The request expired with no winner (backend `TIMEOUT`). It is a
+ * WHOLE-REQUEST state, not a per-unit decline: the request is no longer active,
+ * so every consumer must drop it instead of offering a mission nobody asked for
+ * anymore.
+ */
+export interface RequestExpiredPayload {
+  type: 'request.expired';
+  requestId: string;
+}
+
+/**
+ * The attended service was finished (backend `TOMADA`). The request is closed
+ * and no longer active; it must not linger as a stale card.
+ */
+export interface RequestClosedPayload {
+  type: 'request.closed';
+  requestId: string;
+}
+
 export interface SolicitudRejectPayload {
   type: 'solicitud.reject';
   requestId: string;
@@ -335,7 +357,9 @@ export type SolicitudPayload =
   | RequestRejectedPayload
   | RequestCancelledPayload
   | RequestArrivedPayload
-  | RequestConfirmedPayload;
+  | RequestConfirmedPayload
+  | RequestExpiredPayload
+  | RequestClosedPayload;
 
 /**
  * Request lifecycle literal as the backend `flota` module speaks it.
