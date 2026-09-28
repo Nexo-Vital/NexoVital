@@ -14,6 +14,7 @@ import type {
  *   /topic/emergencias       - new / updated emergency
  *   /topic/flota             - live fleet positions
  *   /topic/suministros       - inventory + traffic light
+ *   /topic/alerts            - shortage alerts raised by a rejected dispatch
  *   /user/queue/solicitudes  - per-user request inbox (driver broadcasts)
  *   /topic/map.events        - map element lifecycle (zones and aid centers)
  *
@@ -27,6 +28,7 @@ export const DESTINATIONS = {
   flota: '/topic/flota',
   emergencias: '/topic/emergencias',
   suministros: '/topic/suministros',
+  alertas: '/topic/alerts',
   solicitudes: '/user/queue/solicitudes',
   mapa: '/topic/map.events',
 } as const;
@@ -155,6 +157,28 @@ export interface ItemInventarioPayload {
   disponible: number;
   requerido: number;
   semaforo: SemaforoWire;
+}
+
+/**
+ * Shortage alert published on /topic/alerts when a rejected dispatch CREATES or
+ * UPDATES the demand of a center's item. It mirrors the backend projection
+ * `AlertaEscasezPushListener.AlertaEscasezPushPayload`: resource, demand, the
+ * stock seen at rejection and the current missing quantity (`faltante`).
+ *
+ * The alert's activity is a function of the stock and the map only exposes its
+ * alert projection through `GET /api/v1/mapa`, so this channel does not carry
+ * the center's read-model: a consumer uses the frame as the signal to re-read
+ * the map. There is no envelope: the backend publishes the bare projection
+ * (`AlertaEscasezPushListener` calls `pushPort.publicar(DESTINO_ALERTAS, ...)`).
+ */
+export interface AlertaEscasezPayload {
+  centroAcopioId: string;
+  itemId: string;
+  nombre: string;
+  cantidadSolicitada: number;
+  disponibleActual: number;
+  faltante: number;
+  creadaEn: string;
 }
 
 /**

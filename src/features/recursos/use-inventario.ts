@@ -4,6 +4,7 @@ import type { RealtimePort } from '@/shared/realtime';
 import type { CentroAyuda } from '@/types/domain';
 import { fetchInventario } from './inventory-api';
 import { useInventarioStore } from './inventory-store';
+import { useAlertasEscasezSync } from './use-alertas-escasez-sync';
 import { useSuministrosSync } from './use-suministros-sync';
 
 /**
@@ -16,14 +17,15 @@ import { useSuministrosSync } from './use-suministros-sync';
  * Una lectura fallida no se falsea: el centro conserva sus items actuales, que
  * en modo backend significa "nada declarado todavía".
  *
- * `onInventarioChange` se dispara tras cada UPSERT de `/topic/suministros`: el
- * consumidor puede re-leer la proyección de alertas del mapa, que depende del
- * stock pero no viaja por este canal.
+ * `onReadModelChange` se dispara tras cada UPSERT de `/topic/suministros` y tras
+ * cada frame de `/topic/alerts`: el consumidor puede re-leer la proyección de
+ * alertas del mapa, que depende del stock o de una demanda rechazada pero no
+ * viaja por el canal de inventario.
  */
 export function useInventario(
   centros: CentroAyuda[],
   port: RealtimePort | null,
-  onInventarioChange?: () => void,
+  onReadModelChange?: () => void,
 ): void {
   const demo = isDemoMode();
   const hydrate = useInventarioStore((state) => state.hydrate);
@@ -33,7 +35,11 @@ export function useInventario(
   const centroIds = useMemo(() => centros.map((centro) => centro.id).join(','), [centros]);
   const loaded = useRef<Set<string>>(new Set());
 
-  useSuministrosSync(demo ? null : port, onInventarioChange);
+  useSuministrosSync(demo ? null : port, onReadModelChange);
+  // Un despacho RECHAZADO no mueve el stock (el CAS revierte), pero deja o sube
+  // una alerta que solo `GET /api/v1/mapa` proyecta: este canal es la señal para
+  // volver a leerla, en vivo, sin esperar a un movimiento de inventario.
+  useAlertasEscasezSync(demo ? null : port, onReadModelChange);
 
   useEffect(() => {
     if (demo || centroIds === '') {
