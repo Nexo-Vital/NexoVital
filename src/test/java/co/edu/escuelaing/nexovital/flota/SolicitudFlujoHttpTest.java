@@ -686,6 +686,28 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
     }
 
     // -----------------------------------------------------------------------
+    // Invalid body (UUID parse failure): the envelope, not Spring's raw 400
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Un emergenciaId que no es UUID responde 400 con el envelope {codigo, mensaje}")
+    void cuerpoConEmergenciaIdNoUuidDevuelveEnvelope() throws Exception {
+        String ciudadano = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+
+        // "EMG-002" cannot bind to the record's `UUID emergenciaId`, so the
+        // failure happens before the handler: the advice must answer the same
+        // {codigo, mensaje} envelope the controllers use, not Spring's raw 400.
+        mockMvc.perform(post("/api/v1/solicitudes")
+                        .header("Authorization", "Bearer " + ciudadano)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"emergenciaId\":\"EMG-002\",\"centroAyudaId\":\""
+                                + UUID.randomUUID() + "\",\"zonaId\":\"" + zona + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("DATOS_INVALIDOS"))
+                .andExpect(jsonPath("$.mensaje").isNotEmpty());
+    }
+
+    // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 
