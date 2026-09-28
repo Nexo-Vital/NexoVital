@@ -171,14 +171,15 @@ public class SecurityConfig {
                         // fail-closed; without it, /finalizar would be denied.
                         .requestMatchers(HttpMethod.POST, "/api/v1/solicitudes/*/finalizar")
                                 .hasAuthority("ROLE_CONDUCTOR")
-                        // Confirm the assigned unit (EP-04): the help center that
-                        // the request was addressed to closes the assignment. The
-                        // authority is narrowed to that role (the story's actor);
-                        // the use case additionally verifies the caller IS the
-                        // request's own centroAyudaId. Declared explicitly because
-                        // the chain is fail-closed.
+                        // Confirm the assigned unit (EP-04): the requester (the
+                        // citizen who raised the request) closes the loop. The
+                        // request's aid center is an organization id the principal
+                        // cannot resolve, so the actor is the citizen and the use
+                        // case additionally verifies the caller IS the request's
+                        // own solicitanteId. Declared explicitly because the chain
+                        // is fail-closed.
                         .requestMatchers(HttpMethod.POST, "/api/v1/solicitudes/*/confirmar")
-                                .hasAuthority("ROLE_ADMIN_CENTRO_AYUDA")
+                                .hasAuthority("ROLE_CIUDADANO")
                         // Fail-closed standard: an operation that is not declared here is
                         // denied, never silently open to every authenticated role. A new
                         // operation must add its own declaration (matcher or

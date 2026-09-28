@@ -288,18 +288,20 @@ public class SolicitudController {
     }
 
     /**
-     * The help center (the authenticated user) confirms the assigned unit.
+     * The requester (the citizen who raised the request) confirms the assigned
+     * unit. The request's aid center is an organization id the principal cannot
+     * resolve, so the caller is bound to the request's own {@code solicitanteId}.
      *
      * @return 200 with the CONFIRMED request; 404
      *         {@code SOLICITUD_NO_ENCONTRADA}; 409 {@code SOLICITUD_NO_ASIGNABLE}
-     *         if it is not ASIGNADA or the caller is not the addressed help
-     *         center; 500 {@code ERROR_CONFIRMACION_SOLICITUD}
+     *         if it is not ASIGNADA or the caller is not the requester; 500
+     *         {@code ERROR_CONFIRMACION_SOLICITUD}
      */
     @PostMapping("/{id}/confirmar")
     public ResponseEntity<Object> confirmar(@PathVariable UUID id) {
         try {
-            UUID centroAyudaId = usuarioAutenticadoId();
-            SolicitudAmbulancia confirmada = confirmarSolicitudUseCase.confirmar(id, centroAyudaId);
+            UUID solicitanteId = usuarioAutenticadoId();
+            SolicitudAmbulancia confirmada = confirmarSolicitudUseCase.confirmar(id, solicitanteId);
             return ResponseEntity.ok(SolicitudAmbulanciaDto.fromDomain(confirmada));
         } catch (SolicitudNoEncontradaException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
