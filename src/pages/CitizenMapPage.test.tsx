@@ -258,6 +258,25 @@ describe('CitizenMapPage', () => {
     expect(within(rail).getByRole('heading', { name: 'Centros de acopio' })).toBeInTheDocument();
   });
 
+  it('demo: hydrates the fixtures when no fleet prop is injected', () => {
+    render(
+      <CitizenMapPage
+        port={new FakeRealtimePort()}
+        emergencias={[]}
+        solicitudes={[]}
+        centrosAyuda={[]}
+      />,
+    );
+
+    // The demo build has no backend path: the fixtures ARE the fleet, exactly as
+    // before, and the legend counts them.
+    expect(useFleetStore.getState().units.map((unit) => unit.id)).toEqual(
+      MOCK_AMBULANCIAS.map((unit) => unit.id),
+    );
+    expect(legendValue('Disponible')).toBe('3');
+    expect(legendValue('Ocupada')).toBe('2');
+  });
+
   it('enables "Pedir ambulancia" and "Donar suministros" when data can back them', () => {
     renderPage({
       ambulancias: [amb('A-07', 'AVAILABLE')],

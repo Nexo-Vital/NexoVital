@@ -1,5 +1,6 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useFleetStore } from '@/features/flota/fleet-store';
 import type { MapaResponse } from '@/features/mapa/map-api';
 import { setToken } from '@/services/apiClient';
 import { FakeRealtimePort } from '@/test/fake-realtime-port';
@@ -82,6 +83,51 @@ function markerByLabel(container: HTMLElement, label: string): HTMLElement {
   }
   return marker;
 }
+
+/** The count rendered next to a legend label. */
+function legendValue(label: string): string {
+  const legend = screen.getByRole('complementary', { name: 'Leyenda del mapa' });
+  const row = within(legend).getByText(label).closest('li');
+  if (!row) {
+    throw new Error(`legend row "${label}" not found`);
+  }
+  return row.querySelector('b')?.textContent ?? '';
+}
+
+/**
+ * Real backend fleet shape (`GET /api/v1/flota/ambulancias`): uuid ids and ABC
+ * plates, three free and one occupied. No id can collide with a fixture id.
+ */
+const WIRE_FLEET = [
+  {
+    id: '8b6f2f0e-0000-4000-8000-000000000101',
+    placa: 'ABC101',
+    estado: 'DISPONIBLE',
+    ubicacion: { lat: 4.7411, lng: -74.0811 },
+    zona: 'Suba',
+  },
+  {
+    id: '8b6f2f0e-0000-4000-8000-000000000202',
+    placa: 'ABC202',
+    estado: 'DISPONIBLE',
+    ubicacion: { lat: 4.745, lng: -74.095 },
+    zona: 'Suba',
+  },
+  {
+    id: '8b6f2f0e-0000-4000-8000-000000000303',
+    placa: 'ABC303',
+    estado: 'DISPONIBLE',
+    ubicacion: { lat: 4.72, lng: -74.06 },
+    zona: 'Suba',
+  },
+  {
+    id: '8b6f2f0e-0000-4000-8000-000000000404',
+    placa: 'ABC404',
+    estado: 'EN_MISION',
+    ubicacion: { lat: 4.76, lng: -74.075 },
+    zona: 'Suba',
+  },
+];
 
 /** The zone-area polygons currently painted on the map (expected: none). */
 function zoneAreas(container: HTMLElement): Element[] {
@@ -191,5 +237,66 @@ describe('CitizenMapPage against /api/v1/mapa', () => {
     expect(
       screen.getByRole('heading', { level: 1, name: 'Mapa de operación' }),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * Off demo mode the citizen legend is a view of the REAL fleet: the page hydrates
+ * from `GET /api/v1/flota/ambulancias` and never injects the fixtures, so no mock
+ * id can mix with a backend id and the legend counts exactly what the backend has.
+ */
+describe('CitizenMapPage fleet source off demo mode', () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    vi.stubEnv('VITE_DEMO_MODE', '0');
+    localStorage.clear();
+    fetchMock.mockReset();
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/flota/ambulancias')) {
+        return Promise.resolve(mockResponse(200, WIRE_FLEET));
+      }
+      if (url.includes('/inventario')) {
+        return Promise.resolve(mockResponse(200, []));
+      }
+      return Promise.resolve(mockResponse(200, RESPONSE));
+    });
+    setToken('jwt.test');
+  });
+
+  afterEach(() => {
+    cleanup();
+    useFleetStore.getState().hydrate([]);
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('hydrates the fleet from the backend and leaks no fixture id', async () => {
+    render(
+      <CitizenMapPage
+        port={new FakeRealtimePort()}
+        emergencias={[]}
+        solicitudes={[]}
+        centrosAyuda={[]}
+      />,
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/flota/ambulancias',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer jwt.test' }),
+      }),
+    );
+
+    await waitFor(() => expect(legendValue('Disponible')).toBe('3'));
+    expect(legendValue('Ocupada')).toBe('1');
+
+    expect(useFleetStore.getState().units.map((unit) => unit.id)).toEqual(
+      WIRE_FLEET.map((unit) => unit.id),
+    );
+    expect(useFleetStore.getState().units.some((unit) => unit.id.startsWith('A-'))).toBe(false);
   });
 });

@@ -37,6 +37,7 @@ import {
 } from '@/features/emergencias/emergency-api';
 import { useEmergencyStore } from '@/features/emergencias/emergency-store';
 import { useEmergencySync } from '@/features/emergencias/use-emergency-sync';
+import { fetchFlota } from '@/features/flota/fleet-api';
 import { useFleetStore } from '@/features/flota/fleet-store';
 import { useFleetSync } from '@/features/flota/use-fleet-sync';
 import { LocationPermissionDialog } from '@/features/geolocalizacion/LocationPermissionDialog';
@@ -115,21 +116,52 @@ interface CitizenMapPageProps {
  * centered on the citizen, and a rail with the role actions, the nearest units
  * and the aid centers.
  *
- * Data path is identical to the CRUE room: fixtures hydrate the zustand stores
- * and the realtime layer UPSERTs remote changes on top. No network call is added
- * here, which is what makes the same screen work against the real backend and in
- * the demo build (whose network path is compiled out).
+ * The demo flag selects the fleet source, the same discipline `useMapData` uses:
+ * in the demo build the fixtures hydrate the zustand stores, and off demo mode the
+ * real `GET /api/v1/flota/ambulancias` snapshot does. The realtime layer UPSERTs
+ * remote changes on top of whichever base was loaded.
  */
 export default function CitizenMapPage({
-  ambulancias = MOCK_AMBULANCIAS,
+  ambulancias,
   emergencias = MOCK_EMERGENCIAS,
   solicitudes = MOCK_SOLICITUDES,
   centrosAyuda = MOCK_CENTROS_AYUDA,
   port = getRealtimePort(),
 }: CitizenMapPageProps) {
+  const demo = isDemoMode();
+
+  /*
+    Fleet hydration is source-selected, never a silent mock base:
+    - an injected list (tests, explicit callers) is the source when provided;
+    - demo mode hydrates the fixtures, exactly as before;
+    - off demo mode the backend snapshot REPLACES the store, so no fixture id can
+      ever mix with a backend id. A failed read leaves the store as-is
+      (`hydrate` is never called with fixtures), and the legend then states the
+      honest count it has instead of a mocked one.
+  */
   useEffect(() => {
-    useFleetStore.getState().hydrate(ambulancias);
-  }, [ambulancias]);
+    if (ambulancias !== undefined) {
+      useFleetStore.getState().hydrate(ambulancias);
+      return;
+    }
+    if (demo) {
+      useFleetStore.getState().hydrate(MOCK_AMBULANCIAS);
+      return;
+    }
+    let active = true;
+    fetchFlota()
+      .then((unidades) => {
+        if (active) {
+          useFleetStore.getState().hydrate(unidades);
+        }
+      })
+      .catch(() => {
+        // The backend is the only fleet source off demo: no fixture fallback.
+      });
+    return () => {
+      active = false;
+    };
+  }, [ambulancias, demo]);
   useEffect(() => {
     useEmergencyStore.getState().hydrate(emergencias);
   }, [emergencias]);
