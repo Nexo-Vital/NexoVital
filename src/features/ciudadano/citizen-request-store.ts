@@ -24,6 +24,7 @@ import {
   buildCitizenBroadcast,
   CITIZEN_REQUEST_LABEL,
   CITIZEN_REQUEST_REASONS,
+  isUuid,
   latestActiveEmergency,
   nearestCentro,
 } from './citizen-request';
@@ -166,6 +167,11 @@ export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => 
     // placeholder and a blank zone are all rejected by the backend (400) — so
     // the request is only sent when there is something real to point at.
     //
+    // Presence is NOT enough: both ids must actually be UUIDs, because that is
+    // what the backend's `java.util.UUID` fields parse. A leftover fixture id
+    // (`EMG-002`, `CA-LA-GAITANA`) passes a bare truthiness check and is what
+    // produced a raw 400; this guard is the defense in depth that never sends it.
+    //
     // Before anything is sent, the persisted session must still belong to this
     // screen. Another tab can replace `nexovital.token` while this citizen screen
     // stays mounted; `apiFetch` would then authenticate with a FOREIGN token and
@@ -183,6 +189,11 @@ export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => 
     const centro = nearestCentro(centros, origin);
     if (!centro) {
       set({ ...IDLE_STATE, startError: CITIZEN_REQUEST_REASONS.noCenter });
+      return false;
+    }
+    // Never POST an id the backend cannot deserialize as a UUID.
+    if (!isUuid(emergency.id) || !isUuid(centro.id)) {
+      set({ ...IDLE_STATE, startError: CITIZEN_REQUEST_REASONS.notServerData });
       return false;
     }
     // The backend resolves the zone when the emergency is reported; the chosen

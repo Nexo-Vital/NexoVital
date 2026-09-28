@@ -14,6 +14,7 @@ import {
   citizenSceneLabel,
   countAvailableUnits,
   formatUnitList,
+  isUuid,
   latestActiveEmergency,
   nearestAvailableUnits,
   nearestCentro,
@@ -153,6 +154,25 @@ describe('nearestCentro', () => {
 
   it('returns null when the map holds no center', () => {
     expect(nearestCentro([], ORIGIN)).toBeNull();
+  });
+});
+
+describe('isUuid', () => {
+  it('accepts a canonical 36-char UUID, any version', () => {
+    expect(isUuid('0b6f2f0e-1111-4000-8000-0000000000aa')).toBe(true);
+    expect(isUuid('8B6F2F0E-0000-4000-8000-000000000101')).toBe(true);
+  });
+
+  it('rejects the fixture ids that caused the raw 400', () => {
+    // `EMG-002` is what reached POST /solicitudes before this guard; `CA-CRUE`
+    // and a local `REQ-…` are the same class of non-server id.
+    expect(isUuid('EMG-002')).toBe(false);
+    expect(isUuid('CA-CRUE')).toBe(false);
+    expect(isUuid('REQ-ABC123')).toBe(false);
+    expect(isUuid('')).toBe(false);
+    // A near-miss must not pass: wrong length, a non-hex char, missing segments.
+    expect(isUuid('0b6f2f0e-1111-4000-8000-0000000000')).toBe(false);
+    expect(isUuid('0b6f2f0e-1111-4000-8000-0000000000zz')).toBe(false);
   });
 });
 
@@ -543,6 +563,39 @@ describe('useCitizenRequestStore against the backend', () => {
     expect(started).toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(useCitizenRequestStore.getState().startError).toBe(CITIZEN_REQUEST_REASONS.noCenter);
+  });
+
+  it('never sends a non-UUID emergency id (the fixture EMG-002 that caused the raw 400)', async () => {
+    const started = await useCitizenRequestStore.getState().start({
+      port: new FakeRealtimePort(),
+      units: MOCK_AMBULANCIAS,
+      origin: ORIGIN,
+      emergencies: [emergencia({ id: 'EMG-002', zonaId: 'Kennedy' })],
+      centros: [centroAyuda(CENTRO_ID, 4.729, -74.078, 'ZONA-SUBA')],
+    });
+
+    expect(started).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(useCitizenRequestStore.getState().phase).toBe('idle');
+    expect(useCitizenRequestStore.getState().startError).toBe(
+      CITIZEN_REQUEST_REASONS.notServerData,
+    );
+  });
+
+  it('never sends a non-UUID center id (a leftover fixture center)', async () => {
+    const started = await useCitizenRequestStore.getState().start({
+      port: new FakeRealtimePort(),
+      units: MOCK_AMBULANCIAS,
+      origin: ORIGIN,
+      emergencies: [emergencia()],
+      centros: [centroAyuda('CA-LA-GAITANA', 4.729, -74.078, 'ZONA-SUBA')],
+    });
+
+    expect(started).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(useCitizenRequestStore.getState().startError).toBe(
+      CITIZEN_REQUEST_REASONS.notServerData,
+    );
   });
 
   it('does not send with a foreign persisted token and reports the session change honestly', async () => {

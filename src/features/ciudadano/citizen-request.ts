@@ -31,8 +31,22 @@ export const CITIZEN_REQUEST_REASONS = {
   noZone:
     'La emergencia no tiene zona y ningún centro cercano declara una. No se puede enviar la solicitud.',
   noUnits: 'No hay ambulancias disponibles en este momento.',
+  // The defense-in-depth reason: a pick that is not a real server record (e.g. a
+  // leftover fixture id like `EMG-002` or `CA-LA-GAITANA`) must never be POSTed.
+  notServerData:
+    'La emergencia o el centro seleccionados no son registros válidos del servidor. Vuelve a cargar el mapa e inténtalo de nuevo.',
   failed: 'No se pudo enviar la solicitud. Intenta de nuevo.',
 } as const;
+
+/**
+ * True for a canonical RFC 4122 UUID (any version). The backend's
+ * `emergenciaId`/`centroAyudaId` are `java.util.UUID`, so anything else
+ * (`EMG-002`, `CA-CRUE`) is rejected with a 400 before the handler even runs.
+ * Used as the last guard before the request is sent: presence is not validity.
+ */
+export function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
 
 /** Coordinates as the citizen subtitle writes them; no reverse geocoding. */
 export function formatCoordinates(position: Ubicacion): string {
