@@ -78,6 +78,7 @@ vi.mock('@/features/mapa/use-map-data', () => ({
     zonas: [],
     loading: false,
     error: null,
+    refresh: () => undefined,
   }),
 }));
 

@@ -194,7 +194,10 @@ export default function CitizenMapPage({
   // Inventory (EP-03): with the demo flag off the items come from the backend
   // (REST snapshot + `/topic/suministros` upserts); with it on the fixtures
   // already carry them, so the store stays empty and the merge is a no-op.
-  useInventario(mapa.centros, port);
+  // `mapa.refresh` re-reads the map read-model on every inventory event so the
+  // centres' active-alert projection (only exposed by `/api/v1/mapa`) stays in
+  // sync when a donation clears demand or a rejection raised it.
+  useInventario(mapa.centros, port, mapa.refresh);
   const inventario = useInventarioStore((state) => state.itemsByCentro);
 
   // Donations MUTATE the front state on top of that inventory-backed base:

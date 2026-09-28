@@ -1,5 +1,5 @@
 import { act, cleanup, renderHook } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DESTINATIONS } from '@/shared/realtime';
 import { FakeRealtimePort } from '@/test/fake-realtime-port';
 import { useInventarioStore } from './inventory-store';
@@ -57,5 +57,18 @@ describe('useSuministrosSync', () => {
     act(() => port.emit(DESTINATIONS.suministros, null));
 
     expect(items()).toEqual([]);
+  });
+
+  it('notifies the caller once per accepted item, so it can re-read dependent projections', () => {
+    const port = new FakeRealtimePort();
+    const onUpsert = vi.fn();
+    renderHook(() => useSuministrosSync(port, onUpsert));
+
+    act(() => port.emit(DESTINATIONS.suministros, wire()));
+    expect(onUpsert).toHaveBeenCalledTimes(1);
+
+    // A malformed frame changes no inventory, so it must not trigger a re-read.
+    act(() => port.emit(DESTINATIONS.suministros, { semaforo: 'ROJO' }));
+    expect(onUpsert).toHaveBeenCalledTimes(1);
   });
 });

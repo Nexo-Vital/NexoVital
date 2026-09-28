@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { isDemoMode } from '@/services/apiClient';
 import {
   DESTINATIONS,
@@ -19,6 +19,18 @@ export interface MapData {
   loading: boolean;
   /** Honest failure message; the fixtures are NEVER substituted on error. */
   error: string | null;
+}
+
+/**
+ * The map read-model plus an on-demand refresh.
+ *
+ * The snapshot also carries each center's active shortage alert, whose activity
+ * is a function of current stock. The inventory channel says WHEN stock changed
+ * but does not carry alerts, so the owner of this hook calls `refresh` on an
+ * inventory event to bring the alert projection back in sync without a reload.
+ */
+export interface MapDataResult extends MapData {
+  refresh: () => void;
 }
 
 const NO_DATA: MapData = { centros: [], zonas: [], loading: false, error: null };
@@ -151,46 +163,67 @@ function applyMapaPayload(current: MapData, payload: Record<string, unknown>): M
  * effect — and only off demo mode — so demo mode never even constructs a
  * transport.
  */
-export function useMapData(fallbackCentros: CentroAyuda[], port?: RealtimePort): MapData {
+export function useMapData(fallbackCentros: CentroAyuda[], port?: RealtimePort): MapDataResult {
   const demo = isDemoMode();
   const [remote, setRemote] = useState<MapData>(() => ({ ...NO_DATA, loading: !demo }));
+  // Monotonic id of the latest snapshot read: a response from an older read (or
+  // from an unmounted hook) is discarded instead of overwriting newer state.
+  const readId = useRef(0);
 
-  useEffect(() => {
+  // Snapshot half: reads `GET /api/v1/mapa` and maps it into the domain. Exposed
+  // as `refresh`, and re-run by the effect below on mount and on a demo flip.
+  const load = useCallback(() => {
     if (demo) {
       return;
     }
-    const realtime = port ?? getRealtimePort();
-    let active = true;
+    const runId = readId.current + 1;
+    readId.current = runId;
     setRemote((current) => ({ ...current, loading: true, error: null }));
     fetchMapa()
       .then((mapa) => {
-        if (!active) {
+        if (readId.current !== runId) {
           return;
         }
         setRemote({ centros: mapaToCentros(mapa), zonas: mapa.zonas, loading: false, error: null });
       })
       .catch(() => {
-        if (!active) {
+        if (readId.current !== runId) {
           return;
         }
         setRemote({ ...NO_DATA, error: 'No se pudo cargar el mapa.' });
       });
+  }, [demo]);
 
-    const unsubscribe = realtime.subscribe(DESTINATIONS.mapa, (payload) => {
+  useEffect(() => {
+    if (demo) {
+      return;
+    }
+    load();
+    return () => {
+      // Invalidate any in-flight read when the hook unmounts or the mode flips.
+      readId.current += 1;
+    };
+  }, [demo, load]);
+
+  // Subscription half: the snapshot gives late joiners the current state and
+  // every later delta is UPSERTed in place. Kept apart from the snapshot read so
+  // `refresh` never drops the live subscription (which would miss any event
+  // published during the re-subscribe gap).
+  useEffect(() => {
+    if (demo) {
+      return;
+    }
+    const realtime = port ?? getRealtimePort();
+    return realtime.subscribe(DESTINATIONS.mapa, (payload) => {
       if (!isRecord(payload)) {
         return;
       }
       setRemote((current) => applyMapaPayload(current, payload));
     });
-
-    return () => {
-      active = false;
-      unsubscribe();
-    };
   }, [demo, port]);
 
   if (demo) {
-    return { centros: fallbackCentros, zonas: [], loading: false, error: null };
+    return { centros: fallbackCentros, zonas: [], loading: false, error: null, refresh: load };
   }
-  return remote;
+  return { ...remote, refresh: load };
 }

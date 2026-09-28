@@ -15,8 +15,16 @@ import { useSuministrosSync } from './use-suministros-sync';
  *
  * Una lectura fallida no se falsea: el centro conserva sus items actuales, que
  * en modo backend significa "nada declarado todavía".
+ *
+ * `onInventarioChange` se dispara tras cada UPSERT de `/topic/suministros`: el
+ * consumidor puede re-leer la proyección de alertas del mapa, que depende del
+ * stock pero no viaja por este canal.
  */
-export function useInventario(centros: CentroAyuda[], port: RealtimePort | null): void {
+export function useInventario(
+  centros: CentroAyuda[],
+  port: RealtimePort | null,
+  onInventarioChange?: () => void,
+): void {
   const demo = isDemoMode();
   const hydrate = useInventarioStore((state) => state.hydrate);
 
@@ -25,7 +33,7 @@ export function useInventario(centros: CentroAyuda[], port: RealtimePort | null)
   const centroIds = useMemo(() => centros.map((centro) => centro.id).join(','), [centros]);
   const loaded = useRef<Set<string>>(new Set());
 
-  useSuministrosSync(demo ? null : port);
+  useSuministrosSync(demo ? null : port, onInventarioChange);
 
   useEffect(() => {
     if (demo || centroIds === '') {

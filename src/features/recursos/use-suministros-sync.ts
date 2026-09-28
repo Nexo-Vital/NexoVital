@@ -11,8 +11,12 @@ import { useInventarioStore } from './inventory-store';
  *
  * La validación pasa por `fromWireInventario`, que traduce el `semaforo`
  * español y descarta los frames malformados en vez de romper la UI.
+ *
+ * `onUpsert` avisa a quien lo pase de que el inventario cambió: el dueño del
+ * read-model del mapa lo usa para re-leer la proyección de alertas, cuya
+ * actividad depende del stock y solo se expone por `GET /api/v1/mapa`.
  */
-export function useSuministrosSync(port: RealtimePort | null): void {
+export function useSuministrosSync(port: RealtimePort | null, onUpsert?: () => void): void {
   const upsert = useInventarioStore((state) => state.upsert);
 
   useEffect(() => {
@@ -23,7 +27,8 @@ export function useSuministrosSync(port: RealtimePort | null): void {
       const item = fromWireInventario(payload);
       if (item) {
         upsert(item);
+        onUpsert?.();
       }
     });
-  }, [port, upsert]);
+  }, [port, upsert, onUpsert]);
 }
