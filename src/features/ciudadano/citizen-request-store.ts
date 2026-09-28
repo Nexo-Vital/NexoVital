@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { create } from 'zustand';
-import { solicitarAmbulancia } from '@/features/solicitudes/solicitud-api';
+import { toast } from '@/components/ui/toast';
+import { confirmarSolicitud, solicitarAmbulancia } from '@/features/solicitudes/solicitud-api';
 import {
   nextRequestId,
   SOLICITUD_TIMEOUT_MS,
@@ -236,12 +237,34 @@ export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => 
     if (!requestId || phase !== 'arrived') {
       return;
     }
-    // Publish only: the request closes when the relay echoes `request.confirmed`,
-    // so the client never decides the outcome on its own.
-    port?.publish<SolicitudConfirmarPayload>(DESTINATIONS.solicitudes, {
-      type: 'solicitud.confirmar',
-      requestId,
-    });
+    // Demo: publish only; the request closes when the relay echoes
+    // `request.confirmed`, so the client never decides the outcome on its own.
+    if (isDemoMode()) {
+      port?.publish<SolicitudConfirmarPayload>(DESTINATIONS.solicitudes, {
+        type: 'solicitud.confirmar',
+        requestId,
+      });
+      return;
+    }
+    // Backend: confirmation is REST (there is no @MessageMapping inbound) and the
+    // SERVER's response is adopted as the truth. A failure is never silent: the
+    // backend's message is surfaced and the request stays open for a retry.
+    void confirmarSolicitud(requestId)
+      .then((solicitud) => {
+        const state = get();
+        if (state.requestId !== requestId) {
+          return;
+        }
+        useSolicitudesStore.getState().upsert(solicitud);
+        state.endOnConfirmed(requestId);
+      })
+      .catch((error: unknown) => {
+        toast(
+          error instanceof Error && error.message
+            ? error.message
+            : 'No fue posible confirmar la llegada.',
+        );
+      });
   },
 
   endOnConfirmed: (requestId) => {

@@ -143,3 +143,27 @@ export async function solicitarAmbulancia(
   }
   return solicitud;
 }
+
+/**
+ * Confirms the assigned unit through `POST /api/v1/solicitudes/{id}/confirmar`.
+ *
+ * The `flota` controller exposes the operation with NO body (a `@PathVariable`
+ * only) and the requirement is derived from the authenticated user, so nothing
+ * is sent. The backend answers `200` with the now-CONFIRMADA request, validated
+ * through the shared `fromWireSolicitudAmbulancia`; the caller adopts the
+ * server's request instead of a blind cast.
+ *
+ * `ApiError` is intentionally NOT caught here: the caller decides what to show
+ * (404 unknown request, 409 already moved or not the requester, 403 wrong role).
+ */
+export async function confirmarSolicitud(requestId: string): Promise<SolicitudAmbulancia> {
+  const response = await apiFetch<unknown>(`/solicitudes/${requestId}/confirmar`, {
+    method: 'POST',
+  });
+
+  const solicitud = fromWireSolicitudAmbulancia(response);
+  if (!solicitud) {
+    throw new Error('El servidor devolvió una solicitud con una forma inesperada.');
+  }
+  return solicitud;
+}

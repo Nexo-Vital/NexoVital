@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useToastStore } from '@/components/ui/toast';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
 import { MOCK_AMBULANCIAS } from '@/mocks/fixtures';
 import { DESTINATIONS } from '@/shared/realtime';
@@ -393,6 +394,7 @@ describe('useCitizenRequestStore against the backend', () => {
   afterEach(() => {
     useCitizenRequestStore.getState().reset();
     useSolicitudesStore.getState().hydrate([]);
+    useToastStore.setState({ toasts: [] });
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
     localStorage.clear();
@@ -553,5 +555,82 @@ describe('useCitizenRequestStore against the backend', () => {
     expect(useCitizenRequestStore.getState().startError).toBe(
       'El servidor devolvió una solicitud con una forma inesperada.',
     );
+  });
+
+  it('confirms the arrival through REST, adopts the server close and never publishes', async () => {
+    const port = new FakeRealtimePort();
+    fetchMock.mockResolvedValueOnce(mockResponse(201, REST_RESPONSE));
+    await useCitizenRequestStore.getState().start({
+      port,
+      units: MOCK_AMBULANCIAS,
+      origin: ORIGIN,
+      emergencies: [emergencia()],
+      centros: [centroAyuda(CENTRO_ID, 4.729, -74.078, 'ZONA-SUBA')],
+    });
+    const requestId = REST_RESPONSE.id;
+    const winner = '8b6f2f0e-0000-4000-8000-0000000000a2';
+    useCitizenRequestStore.getState().endOnTaken(requestId, winner);
+    useCitizenRequestStore.getState().applyArrived(requestId);
+    expect(useCitizenRequestStore.getState().phase).toBe('arrived');
+
+    fetchMock.mockClear();
+    fetchMock.mockResolvedValueOnce(
+      mockResponse(200, {
+        ...REST_RESPONSE,
+        estado: 'CONFIRMADA',
+        ambulanciaAsignadaId: winner,
+      }),
+    );
+
+    useCitizenRequestStore.getState().confirmArrival(port);
+
+    await vi.waitFor(() => {
+      expect(useCitizenRequestStore.getState().phase).toBe('closed');
+    });
+
+    const [path, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe(`/api/v1/solicitudes/${requestId}/confirmar`);
+    expect(options.method).toBe('POST');
+    // The controller takes no body: nothing is sent.
+    expect(options.body).toBeUndefined();
+    // Off-demo nothing is published on the relay.
+    expect(port.published).toHaveLength(0);
+    expect(useSolicitudesStore.getState().items.find((item) => item.id === requestId)?.estado).toBe(
+      'CONFIRMED',
+    );
+  });
+
+  it('does not fail silently when the backend refuses the confirmation', async () => {
+    const port = new FakeRealtimePort();
+    fetchMock.mockResolvedValueOnce(mockResponse(201, REST_RESPONSE));
+    await useCitizenRequestStore.getState().start({
+      port,
+      units: MOCK_AMBULANCIAS,
+      origin: ORIGIN,
+      emergencies: [emergencia()],
+      centros: [centroAyuda(CENTRO_ID, 4.729, -74.078, 'ZONA-SUBA')],
+    });
+    const requestId = REST_RESPONSE.id;
+    useCitizenRequestStore.getState().endOnTaken(requestId, 'winner');
+    useCitizenRequestStore.getState().applyArrived(requestId);
+
+    fetchMock.mockClear();
+    fetchMock.mockResolvedValueOnce(
+      mockResponse(409, {
+        codigo: 'SOLICITUD_NO_ASIGNABLE',
+        mensaje: 'La solicitud ya no admite esa transición.',
+      }),
+    );
+
+    useCitizenRequestStore.getState().confirmArrival(port);
+
+    await vi.waitFor(() => {
+      expect(useToastStore.getState().toasts).toHaveLength(1);
+    });
+    expect(useToastStore.getState().toasts[0].message).toBe(
+      'La solicitud ya no admite esa transición.',
+    );
+    // The failure changed nothing: the request stays open for a retry.
+    expect(useCitizenRequestStore.getState().phase).toBe('arrived');
   });
 });
