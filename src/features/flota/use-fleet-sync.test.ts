@@ -70,6 +70,30 @@ describe('useFleetSync', () => {
     expect(units().map((item) => item.id)).toEqual(['AMB-99']);
   });
 
+  it('applies a state-only frame (Spanish enum, no position) to a known unit', () => {
+    useFleetStore.setState({ units: [NEW_UNIT] });
+    const port = new FakeRealtimePort();
+    renderHook(() => useFleetSync(port));
+
+    // The backend's `FlotaActualizadaEvent` frame: `ambulanciaId` + Spanish
+    // enum, no `ubicacion`. Assignment must flip the unit to ASSIGNED.
+    act(() => port.emit(DESTINATIONS.flota, { ambulanciaId: 'AMB-11', estado: 'EN_MISION' }));
+
+    const unit = units()[0];
+    expect(unit?.estado).toBe('ASSIGNED');
+    // The state change carries no position, so the known one is preserved.
+    expect(unit?.ubicacion).toEqual(NEW_UNIT.ubicacion);
+  });
+
+  it('ignores a state-only frame for an unknown unit (nothing to anchor)', () => {
+    const port = new FakeRealtimePort();
+    renderHook(() => useFleetSync(port));
+
+    act(() => port.emit(DESTINATIONS.flota, { ambulanciaId: 'AMB-77', estado: 'EN_MISION' }));
+
+    expect(units()).toHaveLength(0);
+  });
+
   it('removes a unit on fleet.delete', () => {
     useFleetStore.setState({ units: [NEW_UNIT] });
     const port = new FakeRealtimePort();
