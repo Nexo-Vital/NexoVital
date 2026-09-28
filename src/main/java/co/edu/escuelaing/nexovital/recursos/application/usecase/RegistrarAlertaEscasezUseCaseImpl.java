@@ -3,6 +3,7 @@ package co.edu.escuelaing.nexovital.recursos.application.usecase;
 import co.edu.escuelaing.nexovital.recursos.domain.model.AlertaEscasez;
 import co.edu.escuelaing.nexovital.recursos.domain.port.in.RegistrarAlertaEscasezUseCase;
 import co.edu.escuelaing.nexovital.recursos.domain.port.out.AlertaEscasezRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,16 +33,27 @@ import java.util.UUID;
  * </ul>
  * Whether an alert is active depends on the stock at read time, so it is not a
  * stored flag: it is computed by {@link AlertaEscasez#estaActiva(int)}.
+ *
+ * <p><b>Realtime push.</b> Whenever the alert is actually persisted, this method
+ * publishes an {@link AlertaEscasezRegistradaEvento}. Because the publish happens
+ * INSIDE this {@code REQUIRES_NEW} transaction, the {@code AFTER_COMMIT} listener
+ * ({@link AlertaEscasezPushListener}) fires when the ALERT commits, before the
+ * dispatch rolls back. A rejection that changes nothing (an active alert with a
+ * same-or-smaller demand) issues no write and therefore no event.
  */
 @Service
 public class RegistrarAlertaEscasezUseCaseImpl implements RegistrarAlertaEscasezUseCase {
 
     private final AlertaEscasezRepository alertaEscasezRepository;
     private final Clock clock;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public RegistrarAlertaEscasezUseCaseImpl(AlertaEscasezRepository alertaEscasezRepository, Clock clock) {
+    public RegistrarAlertaEscasezUseCaseImpl(AlertaEscasezRepository alertaEscasezRepository,
+                                             Clock clock,
+                                             ApplicationEventPublisher eventPublisher) {
         this.alertaEscasezRepository = alertaEscasezRepository;
         this.clock = clock;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -51,7 +63,8 @@ public class RegistrarAlertaEscasezUseCaseImpl implements RegistrarAlertaEscasez
         Optional<AlertaEscasez> existente = alertaEscasezRepository.buscarMayorDemanda(centroAcopioId, itemId);
 
         if (existente.isEmpty()) {
-            alertaEscasezRepository.guardar(AlertaEscasez.crear(centroAcopioId, itemId, nombre, cantidadSolicitada, ahora));
+            publicar(alertaEscasezRepository.guardar(
+                    AlertaEscasez.crear(centroAcopioId, itemId, nombre, cantidadSolicitada, ahora)), disponibleActual);
             return;
         }
 
@@ -63,11 +76,20 @@ public class RegistrarAlertaEscasezUseCaseImpl implements RegistrarAlertaEscasez
             // hammering the same row.
             AlertaEscasez peor = actual.conMayorDemanda(cantidadSolicitada);
             if (peor != actual) {
-                alertaEscasezRepository.guardar(peor);
+                publicar(alertaEscasezRepository.guardar(peor), disponibleActual);
             }
             return;
         }
         // The previous shortage was covered; this rejection opens a new one.
-        alertaEscasezRepository.guardar(actual.reactivar(cantidadSolicitada, ahora));
+        publicar(alertaEscasezRepository.guardar(actual.reactivar(cantidadSolicitada, ahora)), disponibleActual);
+    }
+
+    /**
+     * Publishes the alert only after it was persisted. The event is bound to the
+     * current ({@code REQUIRES_NEW}) transaction, so its {@code AFTER_COMMIT}
+     * listener runs when the alert commits, never on the dispatch rollback.
+     */
+    private void publicar(AlertaEscasez alerta, int disponibleActual) {
+        eventPublisher.publishEvent(new AlertaEscasezRegistradaEvento(alerta, disponibleActual));
     }
 }

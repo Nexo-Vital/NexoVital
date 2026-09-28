@@ -1,5 +1,6 @@
 package co.edu.escuelaing.nexovital.recursos;
 
+import co.edu.escuelaing.nexovital.recursos.application.usecase.AlertaEscasezPushListener;
 import co.edu.escuelaing.nexovital.recursos.domain.exception.StockInsuficienteException;
 import co.edu.escuelaing.nexovital.recursos.domain.model.AlertaEscasez;
 import co.edu.escuelaing.nexovital.recursos.domain.port.in.DespacharStockUseCase;
@@ -11,6 +12,8 @@ import co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.out.ItemInven
 import co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.out.ItemInventarioJpaRepository;
 import co.edu.escuelaing.nexovital.support.LoginTestBase;
 import co.edu.escuelaing.nexovital.support.PushPortDePruebaConfig;
+import co.edu.escuelaing.nexovital.support.PushPortDePruebaConfig.PublicacionCapturada;
+import co.edu.escuelaing.nexovital.support.PushPortDePruebaConfig.PushPortDePrueba;
 import co.edu.escuelaing.nexovital.support.TestClockConfig;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.Organizacion;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.TipoOrganizacion;
@@ -34,6 +37,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -97,6 +101,9 @@ class AlertaEscasezTest extends LoginTestBase {
     @Autowired
     private ItemInventarioJpaRepository itemInventarioJpaRepository;
 
+    @Autowired
+    private PushPortDePrueba pushPortDePrueba;
+
     private UUID centroId;
 
     @BeforeEach
@@ -140,6 +147,57 @@ class AlertaEscasezTest extends LoginTestBase {
         assertEquals(centroId, alerta.getCentroAcopioId(), "la alerta debe apuntar al centro que rechazó");
         assertEquals(8, alerta.getCantidadSolicitada(), "la alerta guarda la demanda solicitada, no el déficit");
         assertTrue(alerta.getNombre().startsWith(PREFIJO_PRUEBA), "la alerta debe nombrar el recurso");
+    }
+
+    // -----------------------------------------------------------------------
+    // Realtime: creating/updating the alert publishes AFTER its commit
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("push: crear la alerta publica en /topic/alerts tras el commit de su transaccion REQUIRES_NEW")
+    void crearLaAlertaPublicaEnElTopicoPostCommit() throws Exception {
+        pushPortDePrueba.limpiar();
+        UUID itemId = sembrarItem(5);
+        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+
+        mockMvc.perform(despachoHttp(itemId, 8, token))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("STOCK_INSUFICIENTE"));
+
+        PublicacionCapturada publicacion =
+                pushPortDePrueba.ultimaHacia(AlertaEscasezPushListener.DESTINO_ALERTAS);
+        assertNotNull(publicacion,
+                "crear la alerta debe publicar en " + AlertaEscasezPushListener.DESTINO_ALERTAS);
+        assertInstanceOf(AlertaEscasezPushListener.AlertaEscasezPushPayload.class, publicacion.payload(),
+                "el payload es la proyeccion de la alerta ya armada por el modulo");
+
+        AlertaEscasezPushListener.AlertaEscasezPushPayload payload =
+                (AlertaEscasezPushListener.AlertaEscasezPushPayload) publicacion.payload();
+        assertEquals(centroId, payload.centroAcopioId(), "la alerta publicada apunta al centro que rechazo");
+        assertEquals(itemId, payload.itemId(), "la alerta publicada nombra el recurso rechazado");
+        assertTrue(payload.nombre().startsWith(PREFIJO_PRUEBA), "la alerta publicada lleva el nombre del recurso");
+        assertEquals(8, payload.cantidadSolicitada(), "publica la demanda solicitada, no el deficit");
+        assertEquals(5, payload.disponibleActual(), "publica el stock visto al rechazar");
+        assertEquals(3, payload.faltante(), "el faltante publicado es la necesidad actual: 8 - 5 = 3");
+    }
+
+    @Test
+    @DisplayName("push: un rechazo que NO cambia la alerta (demanda ya mayor) no vuelve a publicar")
+    void elRechazoQueNoCambiaLaAlertaNoRepublica() throws Exception {
+        pushPortDePrueba.limpiar();
+        UUID itemId = sembrarItem(0);
+        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+
+        // First rejection creates the alert (demand 20) and publishes once.
+        mockMvc.perform(despachoHttp(itemId, 20, token)).andExpect(status().isConflict());
+        // Second rejection asks for LESS: FA-4 keeps the larger demand, no write.
+        mockMvc.perform(despachoHttp(itemId, 5, token)).andExpect(status().isConflict());
+
+        long emitidas = pushPortDePrueba.publicaciones().stream()
+                .filter(publicacion -> AlertaEscasezPushListener.DESTINO_ALERTAS.equals(publicacion.destino()))
+                .count();
+        assertEquals(1, emitidas,
+                "solo el rechazo que Persiste la alerta emite; el que no la cambia no republica");
     }
 
     // -----------------------------------------------------------------------
