@@ -1,4 +1,4 @@
-import type { Ambulancia, CentroAyuda, Zona } from '@/types/domain';
+import type { Ambulancia, CentroAyuda } from '@/types/domain';
 
 /**
  * Citizen map layer filter (presentation only).
@@ -10,24 +10,22 @@ import type { Ambulancia, CentroAyuda, Zona } from '@/types/domain';
  * which is exactly what the acceptance criterion forbids (AC2).
  */
 
-/** The three layer kinds the citizen map mixes together. */
-export type MapFilterLayer = 'ZONA' | 'CENTRO' | 'AMBULANCIA';
+/** The two layer kinds the citizen map mixes together. */
+export type MapFilterLayer = 'CENTRO' | 'AMBULANCIA';
 
 /** Stable order for the control; also the source of truth for iteration. */
-export const MAP_FILTER_LAYERS: MapFilterLayer[] = ['ZONA', 'CENTRO', 'AMBULANCIA'];
+export const MAP_FILTER_LAYERS: MapFilterLayer[] = ['CENTRO', 'AMBULANCIA'];
 
-/** `true` means the layer is painted. All three start visible. */
+/** `true` means the layer is painted. Both start visible. */
 export type MapFilterState = Record<MapFilterLayer, boolean>;
 
 export const DEFAULT_MAP_FILTER: MapFilterState = {
-  ZONA: true,
   CENTRO: true,
   AMBULANCIA: true,
 };
 
-/** The three layer lists the citizen map reads, kept separate from their stores. */
+/** The two layer lists the citizen map reads, kept separate from their stores. */
 export interface MapLayerData {
-  zonas: Zona[];
   centros: CentroAyuda[];
   ambulancias: Ambulancia[];
 }
@@ -50,7 +48,6 @@ export function toggleMapFilter(filter: MapFilterState, layer: MapFilterLayer): 
  */
 export function applyMapFilter(filter: MapFilterState, layers: MapLayerData): MapLayerData {
   return {
-    zonas: filter.ZONA ? layers.zonas : [],
     centros: filter.CENTRO ? layers.centros : [],
     ambulancias: filter.AMBULANCIA ? layers.ambulancias : [],
   };
@@ -59,7 +56,6 @@ export function applyMapFilter(filter: MapFilterState, layers: MapLayerData): Ma
 /** Counts each layer's items so the control is never opaque. Pure. */
 export function countMapLayers(layers: MapLayerData): MapFilterCounts {
   return {
-    ZONA: layers.zonas.length,
     CENTRO: layers.centros.length,
     AMBULANCIA: layers.ambulancias.length,
   };
@@ -71,9 +67,10 @@ export const MAP_FILTER_STORAGE_KEY = 'nexovital.map-filter';
 /**
  * Reads the persisted choice, falling back to all-visible. A missing or stale
  * payload never hides a layer the user did not turn off: unknown fields are
- * dropped and missing ones default to visible. There is no shared
- * `usePersistentState` hook in this repo, so this mirrors the read/parse shape
- * `layers-store` already uses (`readPersistedLayers`).
+ * dropped and missing ones default to visible. A `ZONA` entry persisted before
+ * zones became point reports is such an unknown field and is ignored. There is
+ * no shared `usePersistentState` hook in this repo, so this mirrors the
+ * read/parse shape `layers-store` already uses (`readPersistedLayers`).
  */
 export function readPersistedMapFilter(): MapFilterState {
   if (typeof window === 'undefined') {

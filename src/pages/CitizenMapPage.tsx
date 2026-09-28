@@ -85,7 +85,7 @@ import type {
 /**
  * Emergencies are LIVE ALERTS, not a decorative map layer, so the citizen map
  * paints them from the store and deliberately keeps them OUTSIDE the layer
- * filter: `applyMapFilter` only knows `{zonas, centros, ambulancias}` and would
+ * filter: `applyMapFilter` only knows `{centros, ambulancias}` and would
  * drop them. Hiding an active alert is a safety anti-pattern ("la alerta no se
  * pierde"), so there is no empty-constant short-circuit here.
  */
@@ -181,10 +181,7 @@ export default function CitizenMapPage({
   // is toggled back on (AC2). It is persisted so a refresh does not reset it,
   // following the same plain-localStorage pattern `layers-store` already uses.
   const [mapFilter, setMapFilter] = useState<MapFilterState>(readPersistedMapFilter);
-  const mapLayers = useMemo(
-    () => ({ zonas: mapa.zonas, centros, ambulancias: fleet }),
-    [mapa.zonas, centros, fleet],
-  );
+  const mapLayers = useMemo(() => ({ centros, ambulancias: fleet }), [centros, fleet]);
   // What the map is allowed to paint: hidden layers arrive as empty lists.
   const visibleMapLayers = useMemo(
     () => applyMapFilter(mapFilter, mapLayers),
@@ -519,7 +516,6 @@ export default function CitizenMapPage({
           ambulancias={visibleMapLayers.ambulancias}
           emergencias={emergencies}
           centros={visibleMapLayers.centros}
-          zonas={visibleMapLayers.zonas}
           center={selfPosition}
           focus={showDetail && detailCentro ? detailCentro.ubicacion : null}
           self={self}

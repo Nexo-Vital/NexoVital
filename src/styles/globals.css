@@ -427,14 +427,6 @@
     transform: rotate(-45deg);
   }
 
-  /* ---- active-zone area: the opened center's zone, painted as a polygon ---- */
-  .nv-zone-area {
-    stroke: var(--nv-teal);
-    stroke-width: 2;
-    fill: var(--nv-teal);
-    fill-opacity: 0.25;
-  }
-
   /* ---- ambulance pin: 40px circle, badge bottom-right ---- */
   .nv-marker--unit {
     width: 40px;

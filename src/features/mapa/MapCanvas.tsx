@@ -3,18 +3,10 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import type {} from '@maplibre/maplibre-gl-leaflet';
 import L from 'leaflet';
 import { useEffect, useMemo, useState } from 'react';
-import {
-  MapContainer,
-  Marker,
-  Polygon,
-  Polyline,
-  useMap,
-  useMapEvents,
-  ZoomControl,
-} from 'react-leaflet';
+import { MapContainer, Marker, Polyline, useMap, useMapEvents, ZoomControl } from 'react-leaflet';
 import { filterByLevel, useLayersStore } from '@/features/mapa/layers-store';
 import { cn } from '@/lib/utils';
-import type { Ambulancia, CentroAyuda, Emergencia, Ubicacion, Zona } from '@/types/domain';
+import type { Ambulancia, CentroAyuda, Emergencia, Ubicacion } from '@/types/domain';
 import {
   BASE_LAYERS,
   type BaseLayer,
@@ -32,7 +24,6 @@ import {
 } from './markers';
 import { outerRingRadiusKm, radarRingsPixelDiameter } from './radar-rings';
 import type { Ruta } from './routing-api';
-import { zoneAreaPositions } from './zone-selection';
 
 /** The viewer's own unit, rendered apart from the fleet markers. */
 export interface SelfMarker {
@@ -67,18 +58,6 @@ interface MapCanvasProps {
   ambulancias: Ambulancia[];
   emergencias: Emergencia[];
   centros?: CentroAyuda[];
-  /**
-   * Active zones the map is allowed to paint (`GET /api/v1/mapa`), already
-   * filtered by the page's "Zonas" layer toggle. The map paints EVERY zone it
-   * receives: the "Zonas" filter is the ONLY switch that turns them on or off.
-   * A zone is a real footprint — a Leaflet polygon built from its `contorno` —
-   * never a bare point, and a zone with no usable contour paints nothing.
-   *
-   * INVARIANT (U2 / AC-U2): painting is driven by this layer, NEVER by the
-   * selected center. Selecting a center only highlights its marker; it must not
-   * add, reveal or remove a zone.
-   */
-  zonas?: Zona[];
   selectedAmbulanceId?: string | null;
   selectedCentroId?: string | null;
   /** Center that just changed level, drawn with the mockup's "changed" halo. */
@@ -311,7 +290,6 @@ export function MapCanvas({
   ambulancias,
   emergencias,
   centros = [],
-  zonas = [],
   selectedAmbulanceId = null,
   selectedCentroId = null,
   changedCentroId = null,
@@ -344,23 +322,6 @@ export function MapCanvas({
   );
 
   /**
-   * The zones the "Zonas" filter let through, as paintable Leaflet areas. A
-   * zone with no usable contour is dropped by `zoneAreaPositions` (never invent
-   * a footprint), and the resulting list is derived ONLY from the layer prop:
-   * the selected center is deliberately not part of this computation (U2b).
-   */
-  const zoneAreas = useMemo(
-    () =>
-      zonas
-        .map((zona) => ({ id: zona.id, positions: zoneAreaPositions(zona) }))
-        .filter(
-          (entry): entry is { id: string; positions: [number, number][] } =>
-            entry.positions !== null,
-        ),
-    [zonas],
-  );
-
-  /**
    * Citizen search radar: only while a search is open AND at least one alerted
    * unit is on the map. The outer radius is the real distance to the farthest
    * one, so an idle map (or one whose alert reached no drawn unit) draws no ring.
@@ -386,22 +347,6 @@ export function MapCanvas({
       <FocusController focus={focus} onFocusApplied={onFocusApplied} />
       <CenterReporter onCenterChange={onCenterChange} />
       <MapClickHandler onMapClick={onMapClick} onClearSelection={onClearSelection} />
-
-      {/*
-        U2b: the "Zonas" layer paints every zone it receives as its real area
-        footprint. This is independent of the selection: a selected center never
-        adds, reveals or removes a zone. The page turns the layer off by handing
-        this prop an empty list (`applyMapFilter`), so the toggle is the only
-        switch. A zone with no usable contour painted nothing instead.
-      */}
-      {zoneAreas.map((zone) => (
-        <Polygon
-          key={zone.id}
-          positions={zone.positions}
-          className="nv-zone-area"
-          interactive={false}
-        />
-      ))}
 
       {visibleEmergencies.map((emergency) => (
         <Marker

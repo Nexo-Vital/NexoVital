@@ -26,11 +26,6 @@ import {
   type RequestMarker,
   type SelfMarker,
 } from '@/features/mapa/MapCanvas';
-import {
-  applyMapFilter,
-  type MapFilterState,
-  readPersistedMapFilter,
-} from '@/features/mapa/map-filter';
 import { useMapData } from '@/features/mapa/use-map-data';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
 import { useSolicitudRegistrySync } from '@/features/solicitudes/use-solicitud-registry-sync';
@@ -170,16 +165,6 @@ export default function DriverConsolePage({
   // Zones and centers come from the shared map source: the fixtures with the
   // demo flag on, `GET /api/v1/mapa` with it off (never a silent fallback).
   const mapa = useMapData(centrosAyuda);
-
-  // U2b: the "Zonas" LAYER filter is the only switch that paints zones. Selection
-  // never does. The choice is read once from the same persisted shape the citizen
-  // map writes, and applied ONLY to the props the map receives, so a zone hidden
-  // here stays in the source ready to paint the moment the layer is back on.
-  const [mapFilter] = useState<MapFilterState>(readPersistedMapFilter);
-  const visibleMapLayers = useMemo(
-    () => applyMapFilter(mapFilter, { zonas: mapa.zonas, centros: mapa.centros, ambulancias: [] }),
-    [mapFilter, mapa.zonas, mapa.centros],
-  );
 
   // The rail reads the driver's own unit straight from the store (the self marker
   // stands in for it on the map, so `fleet` below excludes it).
@@ -428,7 +413,6 @@ export default function DriverConsolePage({
           ambulancias={fleet}
           emergencias={emergencies}
           centros={mapa.centros}
-          zonas={visibleMapLayers.zonas}
           center={effectivePosition ?? CITIZEN_FALLBACK_POSITION}
           focus={mapFocus ?? (hasCentered ? null : effectivePosition)}
           onFocusApplied={() => setMapFocus(null)}

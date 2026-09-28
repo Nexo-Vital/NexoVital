@@ -246,10 +246,10 @@ export interface CentroAyuda {
  *
  * `ubicacion` is the zone's reference point; `contorno` is the ordered list of
  * vertices that encloses the zone as an AREA. `contorno` stays optional so a
- * zone that arrives without geometry has no footprint to paint instead of an
- * invented one (see `zoneAreaPositions`). The citizen map does not currently
- * paint zones: keeping the vertices is what lets an explicit zone layer be built
- * later without losing the backend geometry.
+ * zone that arrives without geometry has no footprint instead of an invented
+ * one. The map does not paint zones: "zonas afectadas" are point reports (a
+ * single incident), and keeping the vertices is what lets an explicit zone layer
+ * be built later without losing the backend geometry.
  */
 export interface Zona {
   id: string;

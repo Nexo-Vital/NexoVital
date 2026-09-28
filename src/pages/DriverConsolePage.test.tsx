@@ -3,7 +3,6 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useToastStore } from '@/components/ui/toast';
 import { useDriverAlertsStore } from '@/features/conductor/driver-alerts-store';
-import { DEFAULT_MAP_FILTER, MAP_FILTER_STORAGE_KEY } from '@/features/mapa/map-filter';
 import { MOCK_CENTROS_AYUDA, MOCK_SOLICITUDES } from '@/mocks/fixtures';
 import { DESTINATIONS, type SolicitudBroadcastPayload } from '@/shared/realtime';
 import { FakeRealtimePort } from '@/test/fake-realtime-port';
@@ -22,12 +21,10 @@ vi.mock('@/features/mapa/MapCanvas', () => ({
     ruta?: { geometria?: unknown[] } | null;
     notifiedAmbulanceIds?: readonly string[];
     focus?: { lat: number; lng: number } | null;
-    zonas?: { id: string }[];
   }) => (
     <div
       data-testid="map-canvas"
       data-centers={props.centros?.length ?? 0}
-      data-zonas={(props.zonas ?? []).map((zone) => zone.id).join(',')}
       data-self-label={props.self?.label ?? ''}
       data-self-sim={props.self?.simulated ? 'yes' : 'no'}
       data-request-label={props.request?.label ?? ''}
@@ -44,24 +41,11 @@ vi.mock('@/features/mapa/MapCanvas', () => ({
 
 // The map data source is the only network path in this screen; it is stubbed to
 // the injected fixtures so the mocked suite keeps testing the page without
-// setting the demo flag and without touching the backend. It also carries one
-// zone so the "Zonas" layer (U2b) has something real to paint when it is on.
+// setting the demo flag and without touching the backend.
 vi.mock('@/features/mapa/use-map-data', () => ({
   useMapData: (fallbackCentros: unknown[]) => ({
     centros: fallbackCentros,
-    zonas: [
-      {
-        id: 'Z-SUBA',
-        nombre: 'Suba',
-        ubicacion: { lat: 4.742, lng: -74.09 },
-        contorno: [
-          { lat: 4.79, lng: -74.1 },
-          { lat: 4.795, lng: -74.05 },
-          { lat: 4.755, lng: -74.032 },
-          { lat: 4.7, lng: -74.05 },
-        ],
-      },
-    ],
+    zonas: [],
     loading: false,
     error: null,
   }),
@@ -131,9 +115,6 @@ describe('DriverConsolePage', () => {
     // relay instead of calling the backend (FIX1). The REST path is covered by
     // DriverConsolePage.remote.test.tsx.
     vi.stubEnv('VITE_DEMO_MODE', '1');
-    // The map layer filter persists to localStorage; every case starts from the
-    // documented default (all layers visible) so no case leaks a filter.
-    window.localStorage.setItem(MAP_FILTER_STORAGE_KEY, JSON.stringify(DEFAULT_MAP_FILTER));
   });
 
   afterEach(() => {
@@ -805,25 +786,6 @@ describe('DriverConsolePage', () => {
 
     const card = within(driverRail()).getByRole('region', { name: 'Solicitud de ambulancia' });
     expect(dataRowValue(card, 'Distancia')).toBe('12,8 km · 29 min');
-  });
-
-  it('U2b: paints zones only while the "Zonas" filter is on', () => {
-    const renderWithZoneFilter = (enabled: boolean) => {
-      const filter = { ...DEFAULT_MAP_FILTER, ZONA: enabled };
-      window.localStorage.setItem(MAP_FILTER_STORAGE_KEY, JSON.stringify(filter));
-      const { container } = render(
-        <DriverConsolePage port={new FakeRealtimePort()} ambulanceId="A-07" />,
-      );
-      return container.querySelector('[data-testid="map-canvas"]');
-    };
-
-    // "Zonas" off: the page hands the map an empty zone list, so nothing paints.
-    expect(renderWithZoneFilter(false)).toHaveAttribute('data-zonas', '');
-    cleanup();
-
-    // "Zonas" on (the default): the page hands the map the real zones it got from
-    // the map source, and it did not require selecting any center.
-    expect(renderWithZoneFilter(true)).toHaveAttribute('data-zonas', 'Z-SUBA');
   });
 
   it('U5: lists every request from the real registry, never just one', () => {

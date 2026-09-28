@@ -177,14 +177,13 @@ function AidCenterRow({ centro, onSelect }: { centro: CentroAyuda; onSelect: () 
 
 /** Spanish labels for the map layer toggles (the rail is a citizen surface). */
 const MAP_FILTER_LABELS: Record<MapFilterLayer, string> = {
-  ZONA: 'Zonas',
   CENTRO: 'Centros',
   AMBULANCIA: 'Ambulancias',
 };
 
 /**
- * Map layer filter control (FD-2). Three INDEPENDENT toggles, so the citizen can
- * isolate a kind ("solo ambulancias" = the other two off) or combine them.
+ * Map layer filter control (FD-2). Two INDEPENDENT toggles, so the citizen can
+ * isolate a kind ("solo ambulancias" = centers off) or combine them.
  *
  * The control only reports the choice; the page applies it to what the map
  * paints, so no filtering logic lives here. The controls are never hidden, and

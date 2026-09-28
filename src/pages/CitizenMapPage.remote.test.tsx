@@ -83,16 +83,16 @@ function markerByLabel(container: HTMLElement, label: string): HTMLElement {
   return marker;
 }
 
-/** The zone-area polygons currently painted on the map. */
+/** The zone-area polygons currently painted on the map (expected: none). */
 function zoneAreas(container: HTMLElement): Element[] {
   return Array.from(container.querySelectorAll('path.nv-zone-area'));
 }
 
 /**
  * End-to-end of the new source, without the demo flag: the citizen screen has to
- * request `GET /api/v1/mapa`, paint the backend's centers as UNDECLARED (no
- * inventory is invented) and paint the backend zones as area contours while the
- * "Zonas" layer is on.
+ * request `GET /api/v1/mapa` and paint the backend's centers as UNDECLARED (no
+ * inventory is invented). The backend still sends zones in the payload, but the
+ * map must NOT paint them: "zonas afectadas" are point reports, not areas.
  */
 describe('CitizenMapPage against /api/v1/mapa', () => {
   const fetchMock = vi.fn();
@@ -117,7 +117,7 @@ describe('CitizenMapPage against /api/v1/mapa', () => {
     localStorage.clear();
   });
 
-  it('paints the backend centers and the zones while the "Zonas" layer is on', async () => {
+  it('paints the backend centers and no zone polygons', async () => {
     const { container } = render(
       <CitizenMapPage
         port={new FakeRealtimePort()}
@@ -143,24 +143,23 @@ describe('CitizenMapPage against /api/v1/mapa', () => {
     // stays off with its reason instead of opening an empty screen.
     expect(screen.getByRole('button', { name: 'Donar suministros' })).toBeDisabled();
 
-    // U2b: the "Zonas" layer is on by default, so BOTH backend zones paint as
-    // their area contour (the assertion is inside `waitFor` because the zone
-    // polygons are Leaflet DOM painted after mount).
-    await waitFor(() => expect(zoneAreas(container)).toHaveLength(2));
+    // The payload carries TWO zones, yet the map paints NONE: a zone is a point
+    // report, never an area footprint. This is the regression this change locks.
+    await waitFor(() => expect(screen.getByText('3 sin declarar')).toBeInTheDocument());
+    expect(zoneAreas(container)).toHaveLength(0);
 
-    // U2 / AC-U2 + U2b: opening a center whose payload DOES carry a `zonaId` does
-    // NOT add a third zone. Painting is the layer's job; selection never derives
-    // one. The pin is RE-QUERIED INSIDE the retry and clicked there (a stale node
-    // click flakes under full-suite load); the detail panel opening proves the
-    // click landed.
+    // Opening a center whose payload DOES carry a `zonaId` still paints no zone:
+    // selection never derived one, and now neither does the layer. The pin is
+    // RE-QUERIED INSIDE the retry and clicked there (a stale node click flakes
+    // under full-suite load); the detail panel opening proves the click landed.
     await waitFor(() => {
       fireEvent.click(markerByLabel(container, 'Suba Norte'));
       expect(
         screen.getByRole('heading', { level: 1, name: 'Centro de acopio' }),
       ).toBeInTheDocument();
     });
-    // Still exactly the layer's two zones: the selection added none.
-    expect(zoneAreas(container)).toHaveLength(2);
+    // Still no zone footprint after the selection.
+    expect(zoneAreas(container)).toHaveLength(0);
   });
 
   it('AC-U1: a background click closes the open center detail', async () => {

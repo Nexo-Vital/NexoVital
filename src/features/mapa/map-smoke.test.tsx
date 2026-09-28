@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CENTER_LEVEL_STYLE } from '@/features/ciudadano/citizen-view';
 import { ALL_LEVELS, DEFAULT_OVERLAYS, useLayersStore } from '@/features/mapa/layers-store';
@@ -15,17 +15,6 @@ function resetLayers() {
     visibleLevels: [...ALL_LEVELS],
   });
 }
-
-/** The Suba contour the backend publishes: a closed polygon, not a single point. */
-const SUBA_CONTOUR = [
-  { lat: 4.79, lng: -74.1 },
-  { lat: 4.795, lng: -74.05 },
-  { lat: 4.755, lng: -74.032 },
-  { lat: 4.7, lng: -74.05 },
-  { lat: 4.685, lng: -74.075 },
-  { lat: 4.735, lng: -74.135 },
-  { lat: 4.775, lng: -74.125 },
-];
 
 function markerLabels(container: HTMLElement): string[] {
   return Array.from(container.querySelectorAll('.nv-marker__label')).map(
@@ -53,55 +42,6 @@ function renderMapWithCenters(onSelectCentro: (id: string) => void) {
       onSelectAmbulance={() => undefined}
       onSelectEmergency={() => undefined}
       onSelectCentro={onSelectCentro}
-    />,
-  );
-}
-
-function renderMapWithZones() {
-  return render(
-    <MapCanvas
-      ambulancias={[]}
-      emergencias={[]}
-      zonas={[
-        {
-          id: 'Z-SUBA',
-          nombre: 'Suba',
-          ubicacion: { lat: 4.742, lng: -74.09 },
-          contorno: SUBA_CONTOUR,
-        },
-      ]}
-      onSelectAmbulance={() => undefined}
-      onSelectEmergency={() => undefined}
-    />,
-  );
-}
-
-/** The same zones, but with the center that owns one of them selected. */
-function renderMapWithSelectedZone() {
-  return render(
-    <MapCanvas
-      ambulancias={[]}
-      emergencias={[]}
-      centros={[
-        {
-          id: 'ORG-SUBA',
-          nombre: 'Acopio Suba Norte',
-          zonaId: 'Z-SUBA',
-          ubicacion: { lat: 4.742, lng: -74.09 },
-          items: [],
-        },
-      ]}
-      zonas={[
-        {
-          id: 'Z-SUBA',
-          nombre: 'Suba',
-          ubicacion: { lat: 4.742, lng: -74.09 },
-          contorno: SUBA_CONTOUR,
-        },
-      ]}
-      selectedCentroId="ORG-SUBA"
-      onSelectAmbulance={() => undefined}
-      onSelectEmergency={() => undefined}
     />,
   );
 }
@@ -452,35 +392,23 @@ describe('MapCanvas smoke', () => {
     expect(onSelectCentro).toHaveBeenCalledWith('CA-SUBA-NORTE');
   });
 
-  it('U2b: paints every zone the layer carries, as a real area footprint', () => {
-    const { container } = renderMapWithZones();
-
-    // The "Zonas" layer is ON (the page hands the map its filtered zones), so
-    // the zone paints as its contour polygon, never as a bare point.
-    expect(container.querySelectorAll('path.nv-zone-area').length).toBe(1);
-  });
-
-  it('U2b: never derives a zone from the selected center', () => {
-    // The layer carries a zone, so it paints — that is the layer's rule, not the
-    // selection's. Proving the two are separate needs the opposite case too.
-    const { container } = renderMapWithSelectedZone();
-    expect(container.querySelectorAll('path.nv-zone-area').length).toBe(1);
-
-    // A selected center with the "Zonas" layer empty paints NOTHING: selection
-    // can never reveal a zone the filter did not let through.
-    cleanup();
-    const { container: empty } = render(
+  it('never paints a zone area: "zonas afectadas" are point reports, not polygons', () => {
+    // The map draws markers, never zone footprints, even with a center that
+    // declares a zone selected. Regression guard: the removed `.nv-zone-area`
+    // polygon and its CSS rule must never come back to the map.
+    const { container } = render(
       <MapCanvas
         ambulancias={[]}
         emergencias={[]}
         centros={MOCK_CENTROS_AYUDA}
         selectedCentroId="CA-SUBA-NORTE"
-        zonas={[]}
         onSelectAmbulance={() => undefined}
         onSelectEmergency={() => undefined}
       />,
     );
-    expect(empty.querySelector('path.nv-zone-area')).toBeNull();
+
+    expect(container.querySelectorAll('path.nv-zone-area')).toHaveLength(0);
+    expect(GLOBALS_CSS).not.toContain('nv-zone-area');
   });
 
   it('clears the selection on a background click, never on a marker click', () => {

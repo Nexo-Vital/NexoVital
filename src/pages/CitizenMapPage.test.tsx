@@ -23,7 +23,6 @@ import type {
   Emergencia,
   InventarioItem,
   TrafficLight,
-  Zona,
 } from '@/types/domain';
 import CitizenMapPage from './CitizenMapPage';
 
@@ -41,7 +40,6 @@ vi.mock('@/features/mapa/MapCanvas', () => ({
     requestConnector?: { dashed?: boolean } | null;
     ambulancias?: { id: string }[];
     centros?: { id: string }[];
-    zonas?: { id: string }[];
     emergencias?: { id: string }[];
     onClearSelection?: () => void;
   }) => (
@@ -56,7 +54,6 @@ vi.mock('@/features/mapa/MapCanvas', () => ({
       data-connector-dashed={props.requestConnector?.dashed === false ? 'no' : 'yes'}
       data-ambulancias={JSON.stringify((props.ambulancias ?? []).map((item) => item.id))}
       data-centros={JSON.stringify((props.centros ?? []).map((item) => item.id))}
-      data-zonas={JSON.stringify((props.zonas ?? []).map((item) => item.id))}
       data-emergencias={JSON.stringify((props.emergencias ?? []).map((item) => item.id))}
     >
       {/* Stands in for a click on the map BACKGROUND: the page only wires the
@@ -71,17 +68,14 @@ vi.mock('@/features/mapa/MapCanvas', () => ({
   ),
 }));
 
-// Zones are served by the map-data source (mocked below). A `vi.hoisted` holder
-// lets a case push a zone in before rendering without re-mocking the module.
-const { mockMapZonas } = vi.hoisted(() => ({ mockMapZonas: [] as Zona[] }));
-
 // The map data source is the only network path in these screens; it is stubbed
 // to the injected fixtures so the mocked suite keeps testing the pages without
-// setting the demo flag and without touching the backend.
+// setting the demo flag and without touching the backend. The backend still
+// sends zones in its payload, but the map does not paint them.
 vi.mock('@/features/mapa/use-map-data', () => ({
   useMapData: (fallbackCentros: unknown[]) => ({
     centros: fallbackCentros,
-    zonas: mockMapZonas,
+    zonas: [],
     loading: false,
     error: null,
   }),
@@ -181,20 +175,6 @@ function amb(id: string, estado: AmbulanceState, latOffset = 0.01): Ambulancia {
   };
 }
 
-/** A zone served by the map-data source (needs a contour to be paint-ready). */
-function zona(id: string, lat: number, lng: number): Zona {
-  return {
-    id,
-    nombre: `Zona ${id}`,
-    ubicacion: { lat, lng },
-    contorno: [
-      { lat, lng },
-      { lat: lat + 0.01, lng },
-      { lat, lng: lng + 0.01 },
-    ],
-  };
-}
-
 /** Three available units nearest to Suba, plus the two occupied ones. */
 const SEARCH_FLEET = [
   amb('A-07', 'AVAILABLE', 0.002),
@@ -250,7 +230,6 @@ describe('CitizenMapPage', () => {
     useToastStore.setState({ toasts: [] });
     // The map layer filter is persisted; clear it so a case cannot leak either.
     window.localStorage.removeItem(MAP_FILTER_STORAGE_KEY);
-    mockMapZonas.length = 0;
     // Back to "no route": a case that resolved one never leaks into another.
     mockFetchRuta.mockReset();
     mockFetchRuta.mockReturnValue(new Promise(() => {}));
@@ -1572,7 +1551,7 @@ describe('CitizenMapPage', () => {
 
   /** Layer ids as the MapCanvas mock received them (`data-<layer>` attribute). */
   function mapLayerIds(
-    attribute: 'data-zonas' | 'data-centros' | 'data-ambulancias' | 'data-emergencias',
+    attribute: 'data-centros' | 'data-ambulancias' | 'data-emergencias',
   ): string[] {
     const raw = screen.getByTestId('map-canvas').getAttribute(attribute);
     return raw ? (JSON.parse(raw) as string[]) : [];
@@ -1625,8 +1604,7 @@ describe('CitizenMapPage', () => {
     }
   });
 
-  it('draws the three map layers by default and shows every toggle pressed', () => {
-    mockMapZonas.push(zona('Z-1', 4.72, -74.05));
+  it('draws the two map layers by default and shows every toggle pressed', () => {
     renderPage({
       ambulancias: [amb('AMB-1', 'AVAILABLE')],
       centrosAyuda: [centro('CA-1', 'GREEN', 4.728, -74.078)],
@@ -1635,12 +1613,7 @@ describe('CitizenMapPage', () => {
     // The current behaviour is preserved: nothing is filtered out of the box.
     expect(mapLayerIds('data-ambulancias')).toEqual(['AMB-1']);
     expect(mapLayerIds('data-centros')).toEqual(['CA-1']);
-    expect(mapLayerIds('data-zonas')).toEqual(['Z-1']);
 
-    expect(screen.getByRole('button', { name: 'Zonas (1)' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
     expect(screen.getByRole('button', { name: 'Centros (1)' })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -1649,31 +1622,26 @@ describe('CitizenMapPage', () => {
       'aria-pressed',
       'true',
     );
+    // Zones are point reports, not a map layer: no toggle exists for them.
+    expect(screen.queryByRole('button', { name: /^Zonas/ })).not.toBeInTheDocument();
   });
 
-  it('AC1: isolates the ambulances on the map when the other two layers are off', () => {
-    mockMapZonas.push(zona('Z-1', 4.72, -74.05));
+  it('AC1: isolates the ambulances on the map when the centers layer is off', () => {
     renderPage({
       ambulancias: [amb('AMB-1', 'AVAILABLE')],
       centrosAyuda: [centro('CA-1', 'GREEN', 4.728, -74.078)],
     });
 
-    // "Solo ambulancias": centers and zones are turned off, one toggle each.
-    fireEvent.click(screen.getByRole('button', { name: 'Zonas (1)' }));
+    // "Solo ambulancias": centers are turned off, one toggle.
     fireEvent.click(screen.getByRole('button', { name: 'Centros (1)' }));
 
-    expect(screen.getByRole('button', { name: 'Zonas (1)' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    );
     expect(screen.getByRole('button', { name: 'Centros (1)' })).toHaveAttribute(
       'aria-pressed',
       'false',
     );
-    // The map receives the ambulances and NEITHER zone nor center.
+    // The map receives the ambulances and NO center.
     expect(mapLayerIds('data-ambulancias')).toEqual(['AMB-1']);
     expect(mapLayerIds('data-centros')).toEqual([]);
-    expect(mapLayerIds('data-zonas')).toEqual([]);
   });
 
   it('AC2: keeps a hidden layer event in the store and paints it once the filter is lifted', () => {
