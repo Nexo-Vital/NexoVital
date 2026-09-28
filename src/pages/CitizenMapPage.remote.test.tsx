@@ -1,7 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useEmergencyStore } from '@/features/emergencias/emergency-store';
 import { useFleetStore } from '@/features/flota/fleet-store';
 import type { MapaResponse } from '@/features/mapa/map-api';
+import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
 import { setToken } from '@/services/apiClient';
 import { FakeRealtimePort } from '@/test/fake-realtime-port';
 import CitizenMapPage from './CitizenMapPage';
@@ -298,5 +300,88 @@ describe('CitizenMapPage fleet source off demo mode', () => {
       WIRE_FLEET.map((unit) => unit.id),
     );
     expect(useFleetStore.getState().units.some((unit) => unit.id.startsWith('A-'))).toBe(false);
+  });
+});
+
+/**
+ * Real wire emergencies (`GET /api/v1/emergencias`): UUID ids, no `EMG-…`.
+ * The contract sends the Spanish `nivel`/`estado`; `fromWireEmergency` maps them.
+ */
+const WIRE_EMERGENCIAS = [
+  {
+    id: '7f6f2f0e-0000-4000-8000-0000000000aa',
+    ubicacion: { lat: 4.728, lng: -74.078 },
+    nivel: 'ALTO',
+    estado: 'REGISTRADA',
+    descripcion: 'Reporte real',
+    zonaId: 'Z-SUBA',
+    createdAt: '2026-01-01T00:00:00.000Z',
+  },
+];
+
+/**
+ * Off demo mode EVERY source is the backend: the page must request
+ * `GET /api/v1/emergencias` and REPLACE the store with it, never hydrate the
+ * `MOCK_EMERGENCIAS` fixtures. A leftover `EMG-002` in the store is exactly the
+ * id that used to reach `POST /solicitudes` and produce a raw 400.
+ */
+describe('CitizenMapPage emergency/request source off demo mode', () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    vi.stubEnv('VITE_DEMO_MODE', '0');
+    localStorage.clear();
+    fetchMock.mockReset();
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/emergencias')) {
+        return Promise.resolve(mockResponse(200, WIRE_EMERGENCIAS));
+      }
+      if (url.includes('/flota/ambulancias')) {
+        return Promise.resolve(mockResponse(200, WIRE_FLEET));
+      }
+      if (url.includes('/inventario')) {
+        return Promise.resolve(mockResponse(200, []));
+      }
+      return Promise.resolve(mockResponse(200, RESPONSE));
+    });
+    setToken('jwt.test');
+  });
+
+  afterEach(() => {
+    cleanup();
+    useFleetStore.getState().hydrate([]);
+    useEmergencyStore.getState().hydrate([]);
+    useSolicitudesStore.getState().hydrate([]);
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('hydrates emergencies from the backend and leaks no fixture id; requests start empty', async () => {
+    render(<CitizenMapPage port={new FakeRealtimePort()} />);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/emergencias',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer jwt.test' }),
+      }),
+    );
+
+    await waitFor(() =>
+      expect(useEmergencyStore.getState().items.map((emergency) => emergency.id)).toEqual([
+        WIRE_EMERGENCIAS[0].id,
+      ]),
+    );
+    // The store REPLACED its contents: no fixture id could survive next to a
+    // backend one.
+    expect(useEmergencyStore.getState().items.some((item) => item.id.startsWith('EMG-'))).toBe(
+      false,
+    );
+
+    // There is no request listing endpoint: off demo the registry is EMPTY, not
+    // the `MOCK_SOLICITUDES` seed.
+    expect(useSolicitudesStore.getState().items).toEqual([]);
   });
 });

@@ -10,6 +10,23 @@ export interface ReportarEmergenciaInput {
 }
 
 /**
+ * Reads the emergency registry from `GET /api/v1/emergencias`, the read model
+ * that lets a late client see the current state (the realtime push never
+ * replays). `apiFetch` attaches the `Bearer` token; every row goes through
+ * `fromWireEmergency`, so a malformed one is dropped instead of being cast and
+ * an id that is not a real server UUID can never enter the store.
+ */
+export async function fetchEmergencias(): Promise<Emergencia[]> {
+  const dtos = await apiFetch<unknown>('/emergencias');
+  if (!Array.isArray(dtos)) {
+    return [];
+  }
+  return dtos
+    .map(fromWireEmergency)
+    .filter((emergencia): emergencia is Emergencia => emergencia !== null);
+}
+
+/**
  * Reports an emergency through the contract endpoint. `apiFetch` attaches the
  * `Content-Type` and the `Bearer` token; the body carries ONLY `ubicacion`,
  * `nivel` and `descripcion` — `id`, `estado` and `zonaId` are the server's

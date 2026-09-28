@@ -32,6 +32,7 @@ import {
 } from '@/features/donaciones/donation';
 import { CitizenReportDialog } from '@/features/emergencias/CitizenReportDialog';
 import {
+  fetchEmergencias,
   type ReportarEmergenciaInput,
   reportarEmergencia,
 } from '@/features/emergencias/emergency-api';
@@ -116,16 +117,19 @@ interface CitizenMapPageProps {
  * centered on the citizen, and a rail with the role actions, the nearest units
  * and the aid centers.
  *
- * The demo flag selects the fleet source, the same discipline `useMapData` uses:
- * in the demo build the fixtures hydrate the zustand stores, and off demo mode the
- * real `GET /api/v1/flota/ambulancias` snapshot does. The realtime layer UPSERTs
- * remote changes on top of whichever base was loaded.
+ * The demo flag selects EVERY source, the same discipline `useMapData` uses:
+ * in the demo build the fixtures hydrate the zustand stores, and off demo mode
+ * the backend snapshots do (`/flota/ambulancias`, `/emergencias`, `/mapa`). An
+ * injected prop always wins. No source silently falls back to fixtures off demo,
+ * so a mock id can never mix with a backend one — the defect that sent `EMG-002`
+ * to `POST /solicitudes`. The realtime layer UPSERTs remote changes on top of
+ * whichever base was loaded.
  */
 export default function CitizenMapPage({
   ambulancias,
-  emergencias = MOCK_EMERGENCIAS,
-  solicitudes = MOCK_SOLICITUDES,
-  centrosAyuda = MOCK_CENTROS_AYUDA,
+  emergencias,
+  solicitudes,
+  centrosAyuda,
   port = getRealtimePort(),
 }: CitizenMapPageProps) {
   const demo = isDemoMode();
@@ -162,12 +166,50 @@ export default function CitizenMapPage({
       active = false;
     };
   }, [ambulancias, demo]);
+  /*
+    Emergencies follow the SAME source discipline as the fleet: an injected list
+    wins, demo mode hydrates the fixtures, and off demo mode `GET
+    /api/v1/emergencias` REPLACES the store's contents. A failed read leaves the
+    store as-is and never substitutes a fixture, so the citizen request can never
+    anchor itself to a mock `EMG-…` id.
+  */
   useEffect(() => {
-    useEmergencyStore.getState().hydrate(emergencias);
-  }, [emergencias]);
+    if (emergencias !== undefined) {
+      useEmergencyStore.getState().hydrate(emergencias);
+      return;
+    }
+    if (demo) {
+      useEmergencyStore.getState().hydrate(MOCK_EMERGENCIAS);
+      return;
+    }
+    let active = true;
+    fetchEmergencias()
+      .then((items) => {
+        if (active) {
+          useEmergencyStore.getState().hydrate(items);
+        }
+      })
+      .catch(() => {
+        // The backend is the only emergency source off demo: no fixture fallback.
+      });
+    return () => {
+      active = false;
+    };
+  }, [emergencias, demo]);
+
+  /*
+    Requests have NO listing endpoint: the registry is fed by the realtime push
+    (which does not replay), so off demo mode it starts EMPTY rather than seeding
+    fixtures whose `REQ-…` ids would mix with server ids. Demo mode keeps the
+    fixtures, exactly as before.
+  */
   useEffect(() => {
-    useSolicitudesStore.getState().hydrate(solicitudes);
-  }, [solicitudes]);
+    if (solicitudes !== undefined) {
+      useSolicitudesStore.getState().hydrate(solicitudes);
+      return;
+    }
+    useSolicitudesStore.getState().hydrate(demo ? MOCK_SOLICITUDES : []);
+  }, [solicitudes, demo]);
 
   useFleetSync(port);
   useEmergencySync(port);
@@ -187,9 +229,12 @@ export default function CitizenMapPage({
   const fleet = useFleetStore((state) => state.units);
   const emergencies = useEmergencyStore((state) => state.items);
   const location = useDeviceLocation();
-  // Zones and centers come from the shared map source: the fixtures with the
-  // demo flag on, `GET /api/v1/mapa` with it off (never a silent fallback).
-  const mapa = useMapData(centrosAyuda);
+  // Zones and centers come from the shared map source: an injected prop wins, the
+  // fixtures with the demo flag on, `GET /api/v1/mapa` with it off (never a
+  // silent fallback). The mock is only offered to `useMapData` in demo mode, so
+  // off demo it is never even handed over.
+  const centrosFixture = centrosAyuda ?? (demo ? MOCK_CENTROS_AYUDA : []);
+  const mapa = useMapData(centrosFixture);
 
   // Inventory (EP-03): with the demo flag off the items come from the backend
   // (REST snapshot + `/topic/suministros` upserts); with it on the fixtures
