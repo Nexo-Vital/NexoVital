@@ -53,6 +53,17 @@ export const CENTER_LEVEL_STYLE: Record<CitizenCenterLevel, CenterLevelStyle> = 
   critical: { bg: 'var(--nv-red)', fg: 'var(--nv-on-accent)', badgeFg: 'var(--nv-red-600)' },
 };
 
+/**
+ * Citizen level back to the traffic-light literal the marker badge reads, so the
+ * pin's glyph is decided by the SAME combined level as its colour and the rail
+ * chip. `null` (nothing declared) maps to the neutral `NOT_DECLARED` glyph.
+ */
+export const CITIZEN_LEVEL_TRAFFIC: Record<CitizenCenterLevel, TrafficLight> = {
+  stable: 'GREEN',
+  alert: 'AMBER',
+  critical: 'RED',
+};
+
 /** Neutral style for a centre that declared nothing; shared with its pin badge. */
 export const NOT_DECLARED_CENTER_STYLE: CenterLevelStyle = {
   bg: 'var(--nv-idle)',
@@ -115,9 +126,44 @@ export function citizenCenterLevel(level: TrafficLight): CitizenCenterLevel | nu
   }
 }
 
-/** Citizen level of a center, from its worst inventory item. */
+/**
+ * Whether the center currently has an active shortage alert.
+ *
+ * A center is alerted when either real backend source says so: the active-alert
+ * COUNT (`alertasActivas`, recomputed by the backend against current stock on
+ * every map read) or the presence of the WORST active alert object (`alerta`).
+ * Both come from `GET /api/v1/mapa`; neither is invented here.
+ */
+export function hasActiveAlert(centro: CentroAyuda): boolean {
+  return (centro.alertasActivas ?? 0) > 0 || centro.alerta != null;
+}
+
+/**
+ * Citizen level of a center, combined from its REAL backend sources.
+ *
+ * The level folds the worst inventory traffic light with the centre's active
+ * shortage alert (precedence: critical > alert > stable > not-declared):
+ *
+ *   - CRITICAL when the worst item light is RED;
+ *   - ALERT when there is at least one active alert OR the worst light is AMBER;
+ *   - STABLE when there is known inventory (worst light GREEN) and no active alert;
+ *   - null (not declared) only when there is neither inventory nor alert data.
+ *
+ * The same value feeds the citizen rail chip and the map pin badge, so both can
+ * never disagree.
+ */
 export function centerLevel(centro: CentroAyuda): CitizenCenterLevel | null {
-  return citizenCenterLevel(centroSemaforo(centro));
+  const worst = centroSemaforo(centro);
+  if (worst === 'RED') {
+    return 'critical';
+  }
+  if (hasActiveAlert(centro) || worst === 'AMBER') {
+    return 'alert';
+  }
+  if (worst === 'GREEN') {
+    return 'stable';
+  }
+  return null;
 }
 
 /**

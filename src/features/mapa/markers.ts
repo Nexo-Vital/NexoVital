@@ -1,11 +1,11 @@
 import L from 'leaflet';
 import {
   CENTER_LEVEL_STYLE,
+  CITIZEN_LEVEL_TRAFFIC,
+  centerLevel,
   centerShortName,
-  citizenCenterLevel,
   NOT_DECLARED_CENTER_STYLE,
 } from '@/features/ciudadano/citizen-view';
-import { centroSemaforo } from '@/features/recursos/traffic-light';
 import type { Ambulancia, CentroAyuda, Emergencia, TrafficLight } from '@/types/domain';
 
 /**
@@ -242,14 +242,16 @@ function shortageBadgeHtml(center: CentroAyuda): string {
 }
 
 /**
- * Aid-centre marker: 48px rounded square coloured by the centre's worst
- * inventory level, with a badge that repeats the level as an icon, plus an
- * optional shortage badge carrying the unmet demand.
+ * Aid-centre marker: 48px rounded square coloured by the centre's combined level
+ * (worst inventory light plus active shortage alert, see `centerLevel`), with a
+ * badge that repeats that SAME level as an icon, plus an optional shortage badge
+ * carrying the unmet demand.
  *
  * The colours come from `CENTER_LEVEL_STYLE` — the same table the citizen legend
  * reads — written into the `--nv-marker-*` custom properties the CSS consumes.
- * `changed` adds the mockup's `.cpin.changed` halo, used right after a donation
- * to show the center that just moved level.
+ * `data-nv-level` exposes the level on the node so the map and the rail can be
+ * asserted against one source. `changed` adds the mockup's `.cpin.changed` halo,
+ * used right after a donation to show the center that just moved level.
  *
  * A hospital is an organisation too, but it is NOT an inventory centre: it has
  * no items and no traffic light, so it is routed to its own marker here. Doing
@@ -260,14 +262,16 @@ export function centerIcon(center: CentroAyuda, selected = false, changed = fals
   if (center.tipo === 'HOSPITAL') {
     return hospitalIcon(center, selected, changed);
   }
-  const traffic = centroSemaforo(center);
-  const level = citizenCenterLevel(traffic);
+  // ONE combined level drives both the pin colour and the badge glyph, exactly
+  // as it drives the citizen rail chip: worst inventory light + active alert.
+  const level = centerLevel(center);
+  const traffic = level ? CITIZEN_LEVEL_TRAFFIC[level] : 'NOT_DECLARED';
   const style = level ? CENTER_LEVEL_STYLE[level] : NOT_DECLARED_CENTER_STYLE;
   const selectedClass = selected ? ' nv-marker--selected' : '';
   const changedClass = changed ? ' nv-marker--changed' : '';
   const styleAttribute = `--nv-marker-bg: ${style.bg}; --nv-marker-color: ${style.fg}; --nv-marker-badge-color: ${style.badgeFg}`;
   const html =
-    `<div class="nv-marker nv-marker--center${selectedClass}${changedClass}" style="${styleAttribute}">` +
+    `<div class="nv-marker nv-marker--center${selectedClass}${changedClass}" data-nv-level="${level ?? 'not-declared'}" style="${styleAttribute}">` +
     `<span class="nv-marker__shape">${WAREHOUSE_GLYPH}</span>` +
     `<span class="nv-marker__badge">${CENTER_BADGE_GLYPH[traffic]}</span>` +
     shortageBadgeHtml(center) +
