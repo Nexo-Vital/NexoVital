@@ -75,8 +75,8 @@ describe('demo fixtures parity with the v2 mockup', () => {
 
   it('writes each center need literally as the mockup, from its worst item', () => {
     expect(ACOPIOS.map((centro) => [centerShortName(centro), centerNeedLabel(centro)])).toEqual([
-      ['Suba Norte', 'Le falta agua potable'],
-      ['La Gaitana', 'Le faltan alimentos'],
+      ['Suba Norte', 'Faltante: agua potable'],
+      ['La Gaitana', 'Faltante: alimentos'],
       ['Tibabuyes', 'Inventario suficiente'],
     ]);
 
@@ -92,7 +92,7 @@ describe('demo fixtures parity with the v2 mockup', () => {
         item.id === 'INV-LG-2' ? { ...item, disponible: 0 } : item,
       ),
     };
-    expect(centerNeedLabel(reshuffled)).toBe('Le falta agua potable');
+    expect(centerNeedLabel(reshuffled)).toBe('Faltante: agua potable');
   });
 
   it('writes Suba Norte inventory and address literally from the mockup c7 card', () => {

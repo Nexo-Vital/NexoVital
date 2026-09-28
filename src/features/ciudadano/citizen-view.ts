@@ -230,15 +230,18 @@ export function centerShortName(centro: CentroAyuda): string {
 }
 
 /**
- * One-line "what this center needs" for the rail row, LITERAL from the mockup:
- * "Le falta agua potable" / "Le faltan alimentos" / "Inventario suficiente".
+ * One-line "what this center needs" for the rail row.
  *
- * Nothing is hardcoded per center: the level comes from the inventory and the
- * item is the scarcest declared one (`mostUrgentItem`), so a changed inventory
- * changes the text. The verb agrees with the item's grammatical number, which
- * the item itself declares (`grammaticalNumber`) — a bare name cannot give a
- * reliable signal ("gas" is singular and ends in "s", "casas" is plural and also
- * ends in "s"), so the agreement lives in the data, never in a text heuristic.
+ * The item is the scarcest declared one (`mostUrgentItem`), so nothing is
+ * hardcoded per center: a changed inventory changes the text.
+ *
+ * The phrase is number-agnostic on purpose. The backend inventory does NOT
+ * declare an item's grammatical number (see `InventarioItem.grammaticalNumber`),
+ * so a verb template such as "Le falta X" renders the wrong agreement for a
+ * plural or mass noun ("Le falta alimentos"). "Faltante: X" is a label that is
+ * grammatically correct for both countable and mass nouns, so no agreement is
+ * guessed. When nothing is declared but an active alert names the missing
+ * resource, that name is used instead of claiming nothing was declared.
  */
 export function centerNeedLabel(centro: CentroAyuda): string {
   const level = centerLevel(centro);
@@ -247,10 +250,11 @@ export function centerNeedLabel(centro: CentroAyuda): string {
   }
   const urgent = mostUrgentItem(centro);
   if (!urgent) {
-    return 'Sin requerimientos declarados';
+    return centro.alerta
+      ? `Faltante: ${centro.alerta.nombre.toLowerCase()}`
+      : 'Sin requerimientos declarados';
   }
-  const name = urgent.nombre.toLowerCase();
-  return urgent.grammaticalNumber === 'plural' ? `Le faltan ${name}` : `Le falta ${name}`;
+  return `Faltante: ${urgent.nombre.toLowerCase()}`;
 }
 
 /**
