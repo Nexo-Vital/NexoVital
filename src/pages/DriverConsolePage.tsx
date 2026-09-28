@@ -27,6 +27,8 @@ import {
   type SelfMarker,
 } from '@/features/mapa/MapCanvas';
 import { useMapData } from '@/features/mapa/use-map-data';
+import { useInventarioStore, withInventario } from '@/features/recursos/inventory-store';
+import { useInventario } from '@/features/recursos/use-inventario';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
 import { useSolicitudRegistrySync } from '@/features/solicitudes/use-solicitud-registry-sync';
 import { useSessionStore } from '@/features/usuarios/session';
@@ -166,6 +168,20 @@ export default function DriverConsolePage({
   // demo flag on, `GET /api/v1/mapa` with it off (never a silent fallback).
   const mapa = useMapData(centrosAyuda);
 
+  // `/mapa` carries NO inventory, only the alert projection, so a center read
+  // straight from it can never derive its real traffic light. The driver screen
+  // therefore reads the inventory exactly like the citizen one (REST snapshot +
+  // `/topic/suministros` upserts) and merges it onto the map centers, so BOTH
+  // screens call the same `centerLevel` over the same data. `mapa.refresh`
+  // re-reads the alert projection on every inventory/scarcity event, so the
+  // driver's levels react live instead of freezing at "Sin declarar".
+  useInventario(mapa.centros, port, mapa.refresh);
+  const inventario = useInventarioStore((state) => state.itemsByCentro);
+  const centros = useMemo(
+    () => withInventario(mapa.centros, inventario),
+    [mapa.centros, inventario],
+  );
+
   // The rail reads the driver's own unit straight from the store (the self marker
   // stands in for it on the map, so `fleet` below excludes it).
   const ownUnit = useMemo(
@@ -235,11 +251,11 @@ export default function DriverConsolePage({
       return;
     }
     const emergency = emergencies.find((item) => item.id === solicitud.emergenciaId) ?? null;
-    const centro = mapa.centros.find((item) => item.id === solicitud.centroAyudaId) ?? null;
+    const centro = centros.find((item) => item.id === solicitud.centroAyudaId) ?? null;
     // A backend wire frame declares the zone, not coordinates: those come from
     // the emergency or the (real) aid center, both resolved by id.
     const zone = solicitud.zonaId
-      ? mapa.centros.find((item) => item.zonaId === solicitud.zonaId)?.ubicacion
+      ? centros.find((item) => item.zonaId === solicitud.zonaId)?.ubicacion
       : undefined;
     const scene =
       (inbox.broadcast?.requestId === solicitud.id ? inbox.broadcast?.escena : undefined) ??
@@ -251,7 +267,7 @@ export default function DriverConsolePage({
       // A fresh object so a repeated "Visualizar" re-flies even to the same point.
       setMapFocus({ lat: scene.lat, lng: scene.lng });
     }
-  }, [selectedSolicitud, emergencies, inbox.broadcast, mapa.centros]);
+  }, [selectedSolicitud, emergencies, inbox.broadcast, centros]);
 
   useEffect(() => {
     if (!hasCentered && effectivePosition) {
@@ -305,7 +321,7 @@ export default function DriverConsolePage({
     () => fleetUnits.filter((unit) => unit.id !== unitId),
     [fleetUnits, unitId],
   );
-  const counts = useMemo(() => countCentersByLevel(mapa.centros), [mapa.centros]);
+  const counts = useMemo(() => countCentersByLevel(centros), [centros]);
 
   const self: SelfMarker | null = useMemo(
     () =>
@@ -412,7 +428,7 @@ export default function DriverConsolePage({
         <MapCanvas
           ambulancias={fleet}
           emergencias={emergencies}
-          centros={mapa.centros}
+          centros={centros}
           center={effectivePosition ?? CITIZEN_FALLBACK_POSITION}
           focus={mapFocus ?? (hasCentered ? null : effectivePosition)}
           onFocusApplied={() => setMapFocus(null)}
@@ -481,7 +497,7 @@ export default function DriverConsolePage({
           onReject: inbox.reject,
           onTimeout: inbox.notifyTimeout,
         }}
-        centros={mapa.centros}
+        centros={centros}
         solicitudes={solicitudesRegistry}
         onSelectSolicitud={handleSelectSolicitud}
       />
