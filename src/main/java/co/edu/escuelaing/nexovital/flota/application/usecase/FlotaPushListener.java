@@ -1,6 +1,7 @@
 package co.edu.escuelaing.nexovital.flota.application.usecase;
 
 import co.edu.escuelaing.nexovital.flota.domain.event.FlotaActualizadaEvent;
+import co.edu.escuelaing.nexovital.flota.domain.event.PosicionActualizadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudAsignadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudConfirmadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudCreadaEvent;
@@ -8,6 +9,8 @@ import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudExpiradaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudFinalizadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudLlegadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudRechazadaEvent;
+import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoAmbulancia;
+import co.edu.escuelaing.nexovital.flota.domain.enums.FuentePosicion;
 import co.edu.escuelaing.nexovital.flota.domain.model.Ambulancia;
 import co.edu.escuelaing.nexovital.flota.domain.port.out.AmbulanciaRepository;
 import co.edu.escuelaing.nexovital.shared.domain.port.out.PushPort;
@@ -168,6 +171,17 @@ public class FlotaPushListener {
     }
 
     /**
+     * Live position feed (EP-04.F1.US1, D-T3): a topic frame the front already
+     * knows how to consume. It has no {@code type} discriminant (it is the
+     * front's {@code LiveUnitPayload}) and the payload is UPSERTED by
+     * {@code ambulanceId}. Published AFTER commit, as every fleet event is.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void alActualizarPosicion(PosicionActualizadaEvent evento) {
+        pushPort.publicar(DESTINO_FLOTA, PosicionPushPayload.desde(evento));
+    }
+
+    /**
      * Resolves the unit's driver and publishes to its OWN user destination. A
      * unit without a driver is skipped instead of failing the whole fan-out.
      */
@@ -198,5 +212,52 @@ public class FlotaPushListener {
 
     /** Public projection of a fleet state change. */
     public record FlotaPushPayload(UUID ambulanciaId, String estado) {
+    }
+
+    /**
+     * Live-position projection, shaped exactly like the front's
+     * {@code LiveUnitPayload}: {@code ambulanceId}, {@code ubicacion},
+     * {@code estado}, {@code heading}, {@code source}.
+     *
+     * <p><b>Enum bridge.</b> The front's {@code AmbulanceState} is English
+     * ({@code AVAILABLE | ASSIGNED | EN_ROUTE | MAINTENANCE}) while the domain
+     * enum is Spanish; the REST fleet read already bridges the same two at the
+     * front boundary ({@code fleet-api.ts}), so the live frame must speak the
+     * same English literal or the front's UPSERT would ignore it. {@code source}
+     * is the front's lowercase {@code 'device' | 'simulated'}.
+     */
+    public record PosicionPushPayload(UUID ambulanceId, Ubicacion ubicacion, String estado,
+                                      Integer heading, String source) {
+
+        /** {@code {lat, lng}} as the front's {@code Ubicacion} declares it. */
+        public record Ubicacion(double lat, double lng) {
+        }
+
+        static PosicionPushPayload desde(PosicionActualizadaEvent evento) {
+            return new PosicionPushPayload(
+                    evento.ambulanciaId(),
+                    new Ubicacion(evento.lat(), evento.lng()),
+                    estadoWire(evento.estado()),
+                    evento.heading(),
+                    fuenteWire(evento.fuente()));
+        }
+
+        /** Domain state (Spanish) to the front's {@code AmbulanceState} (English). */
+        private static String estadoWire(EstadoAmbulancia estado) {
+            return switch (estado) {
+                case DISPONIBLE -> "AVAILABLE";
+                case EN_MISION -> "ASSIGNED";
+                case EN_RUTA -> "EN_ROUTE";
+                case MANTENIMIENTO -> "MAINTENANCE";
+            };
+        }
+
+        /** Domain source to the front's lowercase {@code 'device' | 'simulated'}. */
+        private static String fuenteWire(FuentePosicion fuente) {
+            return switch (fuente) {
+                case DEVICE -> "device";
+                case SIMULADA -> "simulated";
+            };
+        }
     }
 }
