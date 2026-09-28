@@ -442,3 +442,32 @@ test('EP-04.F2.US3 rechazo: un conductor rechaza y la solicitud sigue para otro'
     await citizenContext.close();
   }
 });
+
+/**
+ * Off demo mode the request registry and the emergency store are fed ONLY by the
+ * backend. Before this fix the console hydrated `MOCK_SOLICITUDES` off demo, so a
+ * driver's inbox listed six fake `REQ-…` rows and an accept/reject would have
+ * POSTed an id the server does not know. This scenario runs against the real
+ * stack and asserts no fixture id is painted anywhere in the driver panel.
+ */
+test('el inbox del conductor no pinta identificadores de fixture', async ({ browser }) => {
+  test.setTimeout(60_000);
+
+  const context = await newIsolatedContext(browser);
+  const page = await context.newPage();
+
+  try {
+    await loginAsSpecificDriver(page, DRIVER_1);
+
+    const panel = page.getByRole('complementary', { name: 'Panel del conductor' });
+    await expect(panel).toBeVisible({ timeout: 30_000 });
+
+    // The registry is a view of the real backend: no `REQ-…` fixture request and
+    // no `EMG-…` fixture emergency can appear anywhere in the panel. A real
+    // request uses a UUID, so this assertion stays true even if one is live.
+    await expect(panel.getByText(/REQ-\d+/)).toHaveCount(0);
+    await expect(panel.getByText(/EMG-\d+/)).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
+});

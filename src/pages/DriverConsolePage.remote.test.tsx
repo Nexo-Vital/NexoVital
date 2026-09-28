@@ -1,6 +1,10 @@
-import { act, cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useEmergencyStore } from '@/features/emergencias/emergency-store';
+import { useFleetStore } from '@/features/flota/fleet-store';
+import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
 import { useSessionStore } from '@/features/usuarios/session';
+import { setToken } from '@/services/apiClient';
 import { DESTINATIONS, type SolicitudBroadcastPayload } from '@/shared/realtime';
 import { FakeRealtimePort } from '@/test/fake-realtime-port';
 import DriverConsolePage from './DriverConsolePage';
@@ -183,5 +187,114 @@ describe('DriverConsolePage against the real backend', () => {
     expect(
       within(card).getByText(/Todavía no podemos identificar tu ambulancia/),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * Real wire emergencies (`GET /api/v1/emergencias`): UUID ids, never `EMG-…`.
+ * The contract sends the Spanish `nivel`/`estado`; `fromWireEmergency` maps them.
+ */
+const WIRE_EMERGENCIAS = [
+  {
+    id: '7f6f2f0e-0000-4000-8000-0000000000bb',
+    ubicacion: { lat: 4.728, lng: -74.078 },
+    nivel: 'ALTO',
+    estado: 'REGISTRADA',
+    descripcion: 'Reporte real',
+    zonaId: 'Z-SUBA',
+    createdAt: '2026-01-01T00:00:00.000Z',
+  },
+];
+
+/**
+ * Source discipline off demo mode: the driver console must read the fleet and the
+ * emergencies from the backend and start the request registry EMPTY, never
+ * hydrating the fixtures. A leftover `A-…`/`EMG-…`/`REQ-…` id is exactly the mock
+ * leak that used to reach the driver's inbox and the accept/reject path.
+ */
+describe('DriverConsolePage source discipline off demo mode', () => {
+  const fetchMock = vi.fn();
+  const port = new FakeRealtimePort();
+
+  beforeEach(() => {
+    vi.stubEnv('VITE_DEMO_MODE', '0');
+    localStorage.clear();
+    fetchMock.mockReset();
+    vi.stubGlobal('fetch', fetchMock);
+    // `apiFetch` reads the persisted token, not the session store.
+    setToken('jwt.test');
+    useSessionStore.setState({
+      user: { id: DRIVER_USER_ID, nombre: 'Driver', email: 'c@nexovital.co', rol: 'CONDUCTOR' },
+      role: 'CONDUCTOR',
+      token: 'jwt.test',
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    useFleetStore.getState().hydrate([]);
+    useEmergencyStore.getState().hydrate([]);
+    useSolicitudesStore.getState().hydrate([]);
+    useSessionStore.setState({ user: null, role: null, token: null });
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('hydrates the fleet and emergencies from the backend and starts requests empty', async () => {
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/ambulancias/mia')) {
+        return Promise.resolve(mockResponse(200, MIA_UNIT));
+      }
+      if (url.includes('/flota/ambulancias')) {
+        return Promise.resolve(mockResponse(200, FLEET));
+      }
+      if (url.includes('/emergencias')) {
+        return Promise.resolve(mockResponse(200, WIRE_EMERGENCIAS));
+      }
+      return Promise.resolve(mockResponse(200, []));
+    });
+
+    render(<DriverConsolePage port={port} />);
+
+    // The backend is the source: both endpoints are read (apiFetch adds the token).
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/flota/ambulancias',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer jwt.test' }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/emergencias',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer jwt.test' }),
+      }),
+    );
+
+    await waitFor(() =>
+      expect(useFleetStore.getState().units.map((unit) => unit.id)).toEqual(
+        FLEET.map((unit) => unit.id),
+      ),
+    );
+    await waitFor(() =>
+      expect(useEmergencyStore.getState().items.map((item) => item.id)).toEqual([
+        WIRE_EMERGENCIAS[0].id,
+      ]),
+    );
+
+    // The stores REPLACED their contents: no fixture id survived next to a
+    // backend one, and the request registry is EMPTY (there is no listing
+    // endpoint; it is fed only by the realtime push).
+    expect(useFleetStore.getState().units.some((unit) => unit.id.startsWith('A-'))).toBe(false);
+    expect(useEmergencyStore.getState().items.some((item) => item.id.startsWith('EMG-'))).toBe(
+      false,
+    );
+    expect(useSolicitudesStore.getState().items).toEqual([]);
+
+    // Neither the card nor the registry can show a fixture request id.
+    const rail = screen.getByRole('complementary', { name: 'Panel del conductor' });
+    expect(within(rail).queryByText(/REQ-\d+/)).not.toBeInTheDocument();
+    expect(within(rail).getByText('Sin solicitudes por ahora')).toBeInTheDocument();
   });
 });

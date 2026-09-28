@@ -3,6 +3,9 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useToastStore } from '@/components/ui/toast';
 import { useDriverAlertsStore } from '@/features/conductor/driver-alerts-store';
+import { useEmergencyStore } from '@/features/emergencias/emergency-store';
+import { useFleetStore } from '@/features/flota/fleet-store';
+import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
 import { MOCK_CENTROS_AYUDA, MOCK_SOLICITUDES } from '@/mocks/fixtures';
 import { DESTINATIONS, type SolicitudBroadcastPayload } from '@/shared/realtime';
 import { FakeRealtimePort } from '@/test/fake-realtime-port';
@@ -127,6 +130,7 @@ describe('DriverConsolePage', () => {
     mockFetchRuta.mockReset();
     mockFetchRuta.mockReturnValue(new Promise(() => {}));
     vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
   });
 
   it('renders the map and the unit panel controls', () => {
@@ -870,5 +874,19 @@ describe('DriverConsolePage', () => {
       ambulanceId: 'A-07',
     });
     expect(screen.getByRole('status')).toHaveTextContent('Solicitud rechazada');
+  });
+
+  it('keeps the fixtures as the source in demo mode and never reads the backend', () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<DriverConsolePage port={new FakeRealtimePort()} ambulanceId="A-07" />);
+
+    // Every store is hydrated from the fixtures, exactly as before the fix.
+    expect(useFleetStore.getState().units.map((unit) => unit.id)).toContain('A-07');
+    expect(useEmergencyStore.getState().items.map((item) => item.id)).toContain('EMG-002');
+    expect(useSolicitudesStore.getState().items.map((item) => item.id)).toContain('REQ-1001');
+    // And no source fell through to the backend.
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

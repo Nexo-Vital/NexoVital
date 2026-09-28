@@ -13,6 +13,7 @@ import { resolveDriverAmbulanceId } from '@/features/conductor/driver-session';
 import { DRIVER_STATUS_META, type DriverStatus } from '@/features/conductor/driver-status';
 import { SolicitudSheet } from '@/features/conductor/SolicitudSheet';
 import { useSolicitudInbox } from '@/features/conductor/use-solicitud-inbox';
+import { fetchEmergencias } from '@/features/emergencias/emergency-api';
 import { useEmergencyStore } from '@/features/emergencias/emergency-store';
 import { useEmergencySync } from '@/features/emergencias/use-emergency-sync';
 import { fetchFlota, fetchMiAmbulancia } from '@/features/flota/fleet-api';
@@ -47,7 +48,13 @@ import {
   type LiveUnitPayload,
   type RealtimePort,
 } from '@/shared/realtime';
-import type { Ambulancia, CentroAyuda, SolicitudAmbulancia, Ubicacion } from '@/types/domain';
+import type {
+  Ambulancia,
+  CentroAyuda,
+  Emergencia,
+  SolicitudAmbulancia,
+  Ubicacion,
+} from '@/types/domain';
 
 /** Stable empty list so the map props do not change identity every render. */
 const NO_NOTIFIED_UNITS: readonly string[] = [];
@@ -61,6 +68,8 @@ interface DriverConsolePageProps {
   ambulancias?: Ambulancia[];
   /** Aid centers drawn on the map and listed in the rail. */
   centrosAyuda?: CentroAyuda[];
+  /** Emergencies to hydrate; injectable for tests. */
+  emergencias?: Emergencia[];
   /** Requests hydrated into the registry and listed at the bottom. */
   solicitudes?: SolicitudAmbulancia[];
 }
@@ -79,13 +88,21 @@ interface DriverConsolePageProps {
  *
  * C2: Accept is a BID. This screen never decides a winner; it publishes the
  * accept and renders whatever the server-side arbiter answers.
+ *
+ * The demo flag selects EVERY source, the same discipline `useMapData` and the
+ * citizen screen use: an injected prop wins, the fixtures hydrate the zustand
+ * stores only in the demo build, and off demo mode the backend snapshots do
+ * (`/flota/ambulancias`, `/emergencias`). No source silently falls back to
+ * fixtures off demo, so a mock `A-…`/`EMG-…`/`REQ-…` id can never mix with a
+ * backend one and reach the accept/reject path.
  */
 export default function DriverConsolePage({
   port = getRealtimePort(),
   ambulanceId,
-  ambulancias = MOCK_AMBULANCIAS,
-  centrosAyuda = MOCK_CENTROS_AYUDA,
-  solicitudes = MOCK_SOLICITUDES,
+  ambulancias,
+  centrosAyuda,
+  emergencias,
+  solicitudes,
 }: DriverConsolePageProps) {
   const userId = useSessionStore((state) => state.user?.id);
   /**
@@ -110,17 +127,21 @@ export default function DriverConsolePage({
   const [selectedSolicitud, setSelectedSolicitud] = useState<SolicitudAmbulancia | null>(null);
   const [mapFocus, setMapFocus] = useState<Ubicacion | null>(null);
 
-  // Shared stores: emergencies reported and units created on another client
-  // show up on the driver map too (UPSERT semantics).
+  /*
+    Fleet source discipline, the same one the citizen screen uses:
+    - an injected list (tests, explicit callers) is the source when provided;
+    - demo mode hydrates the fixtures, exactly as before;
+    - off demo mode the backend snapshot (`GET /flota/ambulancias`) REPLACES the
+      store, so no fixture id can mix with a backend one. A failed read leaves the
+      store as-is (`hydrate` is never called with fixtures).
+  */
   useEffect(() => {
-    useFleetStore.getState().hydrate(ambulancias);
-  }, [ambulancias]);
-  // Real backend: read the fleet so the driver's map shows the other units, and
-  // read the driver's OWN unit from the server-scoped `/mia` resource. The
-  // fixtures are never substituted on error: a failed read leaves the unit
-  // unresolved and the UI says so.
-  useEffect(() => {
-    if (demo || ambulanceId !== undefined) {
+    if (ambulancias !== undefined) {
+      useFleetStore.getState().hydrate(ambulancias);
+      return;
+    }
+    if (demo) {
+      useFleetStore.getState().hydrate(MOCK_AMBULANCIAS);
       return;
     }
     let active = true;
@@ -131,9 +152,20 @@ export default function DriverConsolePage({
         }
       })
       .catch(() => {
-        // The map's fleet feed is optional here: the own-unit read below is what
-        // the driver needs, so a fleet read failure never blocks it.
+        // The backend is the only fleet source off demo: no fixture fallback.
       });
+    return () => {
+      active = false;
+    };
+  }, [ambulancias, demo]);
+  // Off demo the driver's OWN unit comes from the server-scoped `/mia` resource
+  // (the general fleet list no longer exposes any driver id). A failed read
+  // leaves the unit unresolved and the UI says so, never substituting a fixture.
+  useEffect(() => {
+    if (demo || ambulanceId !== undefined) {
+      return;
+    }
+    let active = true;
     fetchMiAmbulancia()
       .then((mia) => {
         if (active) {
@@ -149,14 +181,49 @@ export default function DriverConsolePage({
       active = false;
     };
   }, [demo, ambulanceId]);
+  /*
+    Emergencies follow the SAME source discipline as the fleet: an injected list
+    wins, demo mode hydrates the fixtures, and off demo mode `GET /emergencias`
+    REPLACES the store. A failed read leaves the store as-is and never
+    substitutes a fixture, so a mock `EMG-…` id can never reach the driver inbox.
+  */
   useEffect(() => {
-    useEmergencyStore.getState().hydrate(MOCK_EMERGENCIAS);
-  }, []);
-  // The request registry (U5) is the same multi-request store the CRUE uses: the
-  // fixtures seed it and the realtime sync UPSERTs every arriving request.
+    if (emergencias !== undefined) {
+      useEmergencyStore.getState().hydrate(emergencias);
+      return;
+    }
+    if (demo) {
+      useEmergencyStore.getState().hydrate(MOCK_EMERGENCIAS);
+      return;
+    }
+    let active = true;
+    fetchEmergencias()
+      .then((items) => {
+        if (active) {
+          useEmergencyStore.getState().hydrate(items);
+        }
+      })
+      .catch(() => {
+        // The backend is the only emergency source off demo: no fixture fallback.
+      });
+    return () => {
+      active = false;
+    };
+  }, [emergencias, demo]);
+  /*
+    Requests have NO listing endpoint. Off demo mode the registry starts EMPTY
+    and is filled only by the `/user/queue/solicitudes` push, so a fixture
+    `REQ-…` id can never be mistaken for a server one. That push does NOT replay
+    on reconnect (a backend limitation): a driver who reconnects late simply sees
+    no past request, never a stale fixture. Demo mode keeps the fixtures.
+  */
   useEffect(() => {
-    useSolicitudesStore.getState().hydrate(solicitudes);
-  }, [solicitudes]);
+    if (solicitudes !== undefined) {
+      useSolicitudesStore.getState().hydrate(solicitudes);
+      return;
+    }
+    useSolicitudesStore.getState().hydrate(demo ? MOCK_SOLICITUDES : []);
+  }, [solicitudes, demo]);
   useFleetSync(port);
   useEmergencySync(port);
   useSolicitudRegistrySync(port);
@@ -164,9 +231,13 @@ export default function DriverConsolePage({
   const fleetUnits = useFleetStore((state) => state.units);
   const emergencies = useEmergencyStore((state) => state.items);
   const solicitudesRegistry = useSolicitudesStore((state) => state.items);
-  // Zones and centers come from the shared map source: the fixtures with the
-  // demo flag on, `GET /api/v1/mapa` with it off (never a silent fallback).
-  const mapa = useMapData(centrosAyuda);
+  // Zones and centers come from the shared map source: an injected prop wins, the
+  // fixtures with the demo flag on, `GET /api/v1/mapa` with it off (never a
+  // silent fallback). `useMapData` ignores the fallback off demo, so the fixture
+  // list is only handed over in demo mode; passing `[]` off demo makes that
+  // explicit instead of relying on the ignored default.
+  const centrosFixture = centrosAyuda ?? (demo ? MOCK_CENTROS_AYUDA : []);
+  const mapa = useMapData(centrosFixture);
 
   // `/mapa` carries NO inventory, only the alert projection, so a center read
   // straight from it can never derive its real traffic light. The driver screen
