@@ -51,6 +51,11 @@ public class AmbulanciaRepositoryAdapter implements AmbulanciaRepository, FlotaQ
     }
 
     @Override
+    public int actualizarPosicionAtomica(UUID id, double lat, double lng) {
+        return jpaRepository.actualizarPosicionAtomica(id, lat, lng);
+    }
+
+    @Override
     public List<Ambulancia> consultarFlota() {
         return jpaRepository.findAll().stream().map(AmbulanciaRepositoryAdapter::toDomain).toList();
     }

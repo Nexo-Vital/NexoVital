@@ -44,4 +44,19 @@ public interface AmbulanciaJpaRepository extends JpaRepository<AmbulanciaJpaEnti
      * must not turn the read into a 500.
      */
     Optional<AmbulanciaJpaEntity> findFirstByConductorId(UUID conductorId);
+
+    /**
+     * Updates only the position columns and bumps {@code @Version}. It never
+     * writes {@code estado}, so a position report cannot change the operational
+     * state (D-T5): the invariant is guaranteed by the UPDATE itself.
+     *
+     * <p>{@code clearAutomatically} discards the cached entity so a later read
+     * sees the persisted coordinates.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE AmbulanciaJpaEntity a SET a.lat = :lat, a.lng = :lng, a.version = a.version + 1 "
+            + "WHERE a.id = :id")
+    int actualizarPosicionAtomica(@Param("id") UUID id,
+                                  @Param("lat") double lat,
+                                  @Param("lng") double lng);
 }

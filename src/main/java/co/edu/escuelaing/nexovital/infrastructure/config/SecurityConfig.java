@@ -143,6 +143,14 @@ public class SecurityConfig {
                         // chain is fail-closed.
                         .requestMatchers(HttpMethod.GET, "/api/v1/flota/ambulancias/mia")
                                 .hasAuthority("ROLE_CONDUCTOR")
+                        // Report the live position of the caller's OWN unit
+                        // (EP-04.F1.US1): only a driver reports telemetry, and
+                        // the use case additionally verifies the unit belongs to
+                        // the caller (409 otherwise). Declared explicitly because
+                        // the chain is fail-closed; without it, POST
+                        // /flota/ambulancias/{id}/posicion would be denied.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/flota/ambulancias/*/posicion")
+                                .hasAuthority("ROLE_CONDUCTOR")
                         // Request an ambulance (EP-04, broadcast C2): the
                         // citizen raises the request, the role Azure fixes.
                         // Declared explicitly because the chain is fail-closed;

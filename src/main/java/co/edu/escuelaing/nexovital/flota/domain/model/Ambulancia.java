@@ -52,6 +52,26 @@ public final class Ambulancia {
     }
 
     /**
+     * Moves the unit to a new position. Position is DATA, not a state (D-T5):
+     * the unit keeps its {@code estado}, so a unit in a mission keeps moving on
+     * the map while it is {@code EN_MISION}. This method only expresses the new
+     * aggregate; the position columns are persisted atomically by the outbound
+     * port so the state can never be touched by a report.
+     *
+     * @param lat latitude in degrees
+     * @param lng longitude in degrees
+     * @return a new aggregate with the same identity, driver and state, and the
+     *         new coordinates
+     * @throws IllegalArgumentException if a coordinate is not a finite number
+     */
+    public Ambulancia actualizarPosicion(double lat, double lng) {
+        if (!Double.isFinite(lat) || !Double.isFinite(lng)) {
+            throw new IllegalArgumentException("Position coordinates must be finite numbers");
+        }
+        return new Ambulancia(id, placa, estado, lat, lng, zona, conductorId, version + 1);
+    }
+
+    /**
      * Releases the unit at the end of the service: only a unit that is
      * {@code EN_MISION} can be freed. It returns to {@code DISPONIBLE} so it can
      * take a new mission (EP-04.F2.US11).

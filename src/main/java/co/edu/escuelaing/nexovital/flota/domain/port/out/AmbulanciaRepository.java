@@ -28,4 +28,19 @@ public interface AmbulanciaRepository {
      * caso de uso lo traduce al 409 de conflicto.
      */
     int transicionAtomicaEstado(UUID id, EstadoAmbulancia estadoEsperado, EstadoAmbulancia nuevoEstado);
+
+    /**
+     * Persists ONLY the position columns of a unit in one conditional-free
+     * UPDATE and bumps {@code @Version}. It cannot touch {@code estado}, so the
+     * "a report never changes the state" rule (D-T5) holds by construction, not
+     * by discipline.
+     *
+     * <p>The read-modify-write via {@link #guardar(Ambulancia)} cannot be used
+     * here: it builds a detached entity without the current version, so a second
+     * report on the same row would detach at version 0 and clash with
+     * {@code @Version}. The targeted UPDATE keeps the optimistic lock correct.
+     *
+     * @return rows affected: 1 = updated, 0 = the unit disappeared
+     */
+    int actualizarPosicionAtomica(UUID id, double lat, double lng);
 }

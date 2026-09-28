@@ -35,4 +35,25 @@ class AmbulanciaTest {
         assertEquals(EstadoAmbulancia.DISPONIBLE, liberada.getEstado());
         assertThrows(IllegalStateException.class, () -> disponible().liberar());
     }
+
+    @Test
+    void actualizarPosicionNoCambiaElEstadoNiLaIdentidad() {
+        Ambulancia enMision = disponible().marcarEnMision();
+
+        Ambulancia movida = enMision.actualizarPosicion(4.74d, -74.09d);
+
+        // Position is data, not a state (D-T5): a busy unit keeps moving.
+        assertEquals(EstadoAmbulancia.EN_MISION, movida.getEstado());
+        assertEquals(4.74d, movida.getLat());
+        assertEquals(-74.09d, movida.getLng());
+        assertEquals(enMision.getId(), movida.getId());
+        assertEquals(enMision.getConductorId(), movida.getConductorId());
+        assertEquals(enMision.getVersion() + 1, movida.getVersion());
+    }
+
+    @Test
+    void actualizarPosicionRechazaCoordenadasNoFinitas() {
+        assertThrows(IllegalArgumentException.class,
+                () -> disponible().actualizarPosicion(Double.NaN, -74.09d));
+    }
 }
