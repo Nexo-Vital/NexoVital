@@ -8,7 +8,11 @@ import {
   type SolicitudDirectPayload,
 } from '@/shared/realtime';
 import { FakeRealtimePort } from '@/test/fake-realtime-port';
-import { UNIT_UNRESOLVED_REASON, useSolicitudInbox } from './use-solicitud-inbox';
+import {
+  UNIT_UNRESOLVED_REASON,
+  UNKNOWN_REQUEST_REASON,
+  useSolicitudInbox,
+} from './use-solicitud-inbox';
 
 const BROADCAST: SolicitudBroadcastPayload = {
   type: 'solicitud.broadcast',
@@ -614,6 +618,28 @@ describe('useSolicitudInbox against the backend (no demo mode)', () => {
     });
     expect(fetchMock).not.toHaveBeenCalled();
     expect(result.current.phase).toBe('idle');
+  });
+
+  it('refuses to answer a request id that is not a server UUID', async () => {
+    enableBackend();
+    const { port, result } = setupBackend();
+
+    // A fixture-shaped broadcast (not a backend wire frame): its `REQ-1` id would
+    // be sent as a REST path segment the server does not know.
+    act(() => port.emit(DESTINATIONS.solicitudes, { ...BROADCAST, notificadas: [REAL_UNIT] }));
+    expect(result.current.broadcast?.requestId).toBe('REQ-1');
+
+    await act(async () => {
+      result.current.accept();
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.current.outcomeMessage).toBe(UNKNOWN_REQUEST_REASON);
+
+    await act(async () => {
+      result.current.reject();
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.current.outcomeMessage).toBe(UNKNOWN_REQUEST_REASON);
   });
 
   it('declares arrival through REST and adopts the server milestone', async () => {

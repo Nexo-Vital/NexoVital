@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from '@/components/ui/toast';
+import { isUuid } from '@/features/ciudadano/citizen-request';
 import { formatDistance } from '@/features/ciudadano/citizen-view';
 import { useEmergencyStore } from '@/features/emergencias/emergency-store';
 import { distanceKm, etaMinutes } from '@/lib/geo';
@@ -34,6 +35,15 @@ export type SolicitudPhase = 'idle' | 'submitting' | 'assigned' | 'taken' | 'rej
  */
 export const UNIT_UNRESOLVED_REASON =
   'Todavía no podemos identificar tu ambulancia. Espera un momento e inténtalo de nuevo.';
+
+/**
+ * Honest reason shown when the open request id is not a server UUID. Off demo a
+ * request that did not come from the backend must never be answered: the REST
+ * paths would carry an id the server does not know (`REQ-…`) and fail mid-demo.
+ * Same defense-in-depth as the citizen `isUuid` guard before `POST /solicitudes`.
+ */
+export const UNKNOWN_REQUEST_REASON =
+  'Esta solicitud no proviene del servidor. Espera a que llegue una solicitud real e inténtalo de nuevo.';
 
 /**
  * Mission lifecycle after this unit won the request. The client never sets a
@@ -423,6 +433,13 @@ export function useSolicitudInbox(
         setOutcomeMessage(UNIT_UNRESOLVED_REASON);
         return;
       }
+      // The request id must be a real server UUID: a fixture `REQ-…` id (e.g. a
+      // leftover from a source that did not come from the backend) would only
+      // 400. Refuse honestly before sending anything.
+      if (!isUuid(active.requestId)) {
+        setOutcomeMessage(UNKNOWN_REQUEST_REASON);
+        return;
+      }
       if (acceptingRef.current) {
         return;
       }
@@ -488,6 +505,11 @@ export function useSolicitudInbox(
       // FIX B: same guard as accept — no unit, no reject.
       if (!ambulanceId) {
         setOutcomeMessage(UNIT_UNRESOLVED_REASON);
+        return;
+      }
+      // Same id guard as accept: never decline an id the backend does not know.
+      if (!isUuid(active.requestId)) {
+        setOutcomeMessage(UNKNOWN_REQUEST_REASON);
         return;
       }
       void rechazarSolicitud(active.requestId, ambulanceId)
