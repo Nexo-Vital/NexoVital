@@ -388,6 +388,37 @@ describe('CitizenMapPage', () => {
     }
   });
 
+  it('shows the backend mensaje on a 400 instead of a bare "Error HTTP 400"', async () => {
+    vi.stubEnv('VITE_DEMO_MODE', '0');
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(400, {
+        codigo: 'DATOS_INVALIDOS',
+        mensaje: 'El cuerpo de la solicitud no es válido: revise el formato de los datos enviados.',
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderPage({
+        ambulancias: SEARCH_FLEET,
+        emergencias: [pageEmergency()],
+        centrosAyuda: [backendCentro(PAGE_CENTRO_ID, 4.728, -74.078)],
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Pedir ambulancia' }));
+
+      // The backend's Spanish `mensaje` reaches the rail; the bare status text
+      // `apiFetch` falls back to never does.
+      expect(
+        await screen.findByText(
+          'El cuerpo de la solicitud no es válido: revise el formato de los datos enviados.',
+        ),
+      ).toBeInTheDocument();
+      expect(screen.queryByText('Error HTTP 400')).not.toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('does not send the request and shows the honest reason without an active emergency', async () => {
     vi.stubEnv('VITE_DEMO_MODE', '0');
     const fetchMock = vi.fn();
