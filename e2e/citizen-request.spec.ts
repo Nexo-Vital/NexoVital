@@ -154,11 +154,57 @@ async function requestAmbulance(page: Page): Promise<Response> {
   return response;
 }
 
+/**
+ * The citizen legend must count the REAL fleet, not a front-side mock. The
+ * rendered "Disponible" and "Ocupada" rows are compared against the backend's
+ * own `GET /api/v1/flota/ambulancias` response, read with the CITIZEN's real
+ * token, so the assertion can never drift from the seed (no count is hardcoded).
+ *
+ * The backend's domain states map onto the legend's unit buckets: DISPONIBLE is
+ * "Disponible" and EN_MISION/EN_RUTA are "Ocupada". A unit in MANTENIMIENTO has
+ * no row in the citizen legend, so it is excluded from both sides of the check.
+ */
+async function expectLegendMatchesBackend(page: Page): Promise<void> {
+  const token = await page.evaluate((key) => localStorage.getItem(key), TOKEN_KEY);
+  expect(token).toBeTruthy();
+  const response = await page.request.get('http://localhost:5173/api/v1/flota/ambulancias', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(response.ok()).toBeTruthy();
+  const fleet = (await response.json()) as Array<{ estado: string }>;
+
+  const free = fleet.filter((unit) => unit.estado === 'DISPONIBLE').length;
+  const busy = fleet.filter(
+    (unit) => unit.estado === 'EN_MISION' || unit.estado === 'EN_RUTA',
+  ).length;
+  const maintenance = fleet.filter((unit) => unit.estado === 'MANTENIMIENTO').length;
+
+  const legend = page.getByRole('complementary', { name: 'Leyenda del mapa' });
+  const legendCount = (label: string) =>
+    legend.locator('li').filter({ hasText: label }).locator('b');
+
+  // A vacuous comparison would pass on an empty fleet; the backend must have units.
+  expect(fleet.length).toBeGreaterThan(0);
+  await expect(legendCount('Disponible')).toHaveText(String(free));
+  await expect(legendCount('Ocupada')).toHaveText(String(busy));
+  // Every unit the legend can draw is accounted for: no mock inflates the total.
+  expect(free + busy).toBe(fleet.length - maintenance);
+
+  console.log(
+    `[A] fleet legend: Disponible=${free} Ocupada=${busy} ` +
+      `(backend total=${fleet.length}, maintenance=${maintenance})`,
+  );
+}
+
 test('Scenario A: a clean citizen login creates the request with 201 and no red error', async ({
   page,
 }) => {
   const calls = recordApiCalls(page);
   await loginAsCitizen(page);
+
+  // The legend is a view of the REAL fleet: compare its rows with the backend's
+  // own /flota/ambulancias response instead of a hardcoded count.
+  await expectLegendMatchesBackend(page);
 
   // Regression: "zonas afectadas" are point reports, never painted areas. The
   // backend still serves zone geometry through /api/v1/mapa, but the citizen map
