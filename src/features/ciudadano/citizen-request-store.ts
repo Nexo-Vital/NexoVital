@@ -8,6 +8,7 @@ import {
   toSolicitud,
 } from '@/features/solicitudes/solicitud-form';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
+import { isSessionInSync, SESSION_CHANGED_MESSAGE } from '@/features/usuarios/session-sync';
 import { isDemoMode } from '@/services/apiClient';
 import {
   DESTINATIONS,
@@ -88,6 +89,11 @@ interface CitizenRequestState {
   endOnExpired: (requestId: string) => void;
   /** Applies the backend `TOMADA` close when the citizen did not confirm it. */
   endOnClosed: (requestId: string) => void;
+  /**
+   * Flags that the persisted session no longer matches this screen (another tab
+   * signed in). Surfaces the honest reason in the rail; no request is sent.
+   */
+  flagSessionDesync: () => void;
   /** Drops the search state without publishing (e.g. after an accept). */
   reset: () => void;
 }
@@ -159,6 +165,16 @@ export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => 
     // The body is anchored to REAL data — a local `REQ-…` id, a `CA-CRUE`
     // placeholder and a blank zone are all rejected by the backend (400) — so
     // the request is only sent when there is something real to point at.
+    //
+    // Before anything is sent, the persisted session must still belong to this
+    // screen. Another tab can replace `nexovital.token` while this citizen screen
+    // stays mounted; `apiFetch` would then authenticate with a FOREIGN token and
+    // the backend would answer a misleading 403 permission error. Block it and
+    // state the real reason: the session changed.
+    if (!isSessionInSync()) {
+      set({ ...IDLE_STATE, startError: SESSION_CHANGED_MESSAGE });
+      return false;
+    }
     const emergency = latestActiveEmergency(emergencies);
     if (!emergency) {
       set({ ...IDLE_STATE, startError: CITIZEN_REQUEST_REASONS.noEmergency });
@@ -322,6 +338,8 @@ export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => 
   },
 
   reset: () => set({ ...IDLE_STATE }),
+
+  flagSessionDesync: () => set({ startError: SESSION_CHANGED_MESSAGE }),
 }));
 
 /**

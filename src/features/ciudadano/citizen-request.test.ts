@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useToastStore } from '@/components/ui/toast';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
+import { useSessionStore } from '@/features/usuarios/session';
+import { SESSION_CHANGED_MESSAGE } from '@/features/usuarios/session-sync';
 import { MOCK_AMBULANCIAS } from '@/mocks/fixtures';
+import { setSession, setToken } from '@/services/apiClient';
 import { DESTINATIONS } from '@/shared/realtime';
 import { FakeRealtimePort } from '@/test/fake-realtime-port';
 import type { AmbulanceState, Ambulancia, CentroAyuda, Emergencia } from '@/types/domain';
@@ -415,6 +418,7 @@ describe('useCitizenRequestStore against the backend', () => {
     // Demo mode OFF: the store must create the request through REST.
     vi.stubEnv('VITE_DEMO_MODE', '0');
     localStorage.clear();
+    useSessionStore.setState({ user: null, role: null, token: null });
     fetchMock.mockReset();
     vi.stubGlobal('fetch', fetchMock);
   });
@@ -423,6 +427,7 @@ describe('useCitizenRequestStore against the backend', () => {
     useCitizenRequestStore.getState().reset();
     useSolicitudesStore.getState().hydrate([]);
     useToastStore.setState({ toasts: [] });
+    useSessionStore.setState({ user: null, role: null, token: null });
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
     localStorage.clear();
@@ -538,6 +543,44 @@ describe('useCitizenRequestStore against the backend', () => {
     expect(started).toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(useCitizenRequestStore.getState().startError).toBe(CITIZEN_REQUEST_REASONS.noCenter);
+  });
+
+  it('does not send with a foreign persisted token and reports the session change honestly', async () => {
+    // The bug: another tab signed in, so storage holds a token that is not this
+    // screen's. The in-memory citizen session is still mounted.
+    useSessionStore.setState({
+      user: {
+        id: 'usr-citizen',
+        nombre: 'Ciudadano Demo',
+        email: 'ciudadano@nexovital.co',
+        rol: 'CIUDADANO',
+      },
+      role: 'CIUDADANO',
+      token: 'jwt.citizen',
+    });
+    setToken('jwt.admin');
+    setSession({
+      id: 'usr-admin',
+      nombre: 'Rangel Dev',
+      email: 'rangel@nexovital.co',
+      rol: 'ADMIN_CENTRO_AYUDA',
+    });
+
+    const started = await useCitizenRequestStore.getState().start({
+      port: new FakeRealtimePort(),
+      units: MOCK_AMBULANCIAS,
+      origin: ORIGIN,
+      emergencies: [emergencia()],
+      centros: [centroAyuda(CENTRO_ID, 4.729, -74.078, 'ZONA-SUBA')],
+    });
+
+    expect(started).toBe(false);
+    // The request never reaches the backend with the foreign token.
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(useCitizenRequestStore.getState().phase).toBe('idle');
+    expect(useCitizenRequestStore.getState().startError).toBe(SESSION_CHANGED_MESSAGE);
+    // The misleading backend permission text is nowhere near this path.
+    expect(useCitizenRequestStore.getState().startError).not.toContain('No tiene permisos');
   });
 
   it('stays idle and surfaces the backend message when the creation is rejected', async () => {

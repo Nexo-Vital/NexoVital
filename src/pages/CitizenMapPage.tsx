@@ -58,6 +58,7 @@ import { centroSemaforo } from '@/features/recursos/traffic-light';
 import { useInventario } from '@/features/recursos/use-inventario';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
 import { useSolicitudRegistrySync } from '@/features/solicitudes/use-solicitud-registry-sync';
+import { useSessionSync } from '@/features/usuarios/session-sync';
 import { useRuta } from '@/hooks/use-ruta';
 import { etaMinutes } from '@/lib/geo';
 import {
@@ -140,6 +141,16 @@ export default function CitizenMapPage({
   useEmergencySync(port);
   useSolicitudRegistrySync(port);
   useCitizenRequestSync(port);
+
+  // Another tab of the same origin can replace the shared token/session while
+  // this screen stays mounted (the `storage` event fires here, in the other
+  // document). Detect it proactively: state the honest reason so the rail never
+  // sends — nor offers — a request with a foreign token.
+  useSessionSync(
+    useCallback(() => {
+      useCitizenRequestStore.getState().flagSessionDesync();
+    }, []),
+  );
 
   const fleet = useFleetStore((state) => state.units);
   const emergencies = useEmergencyStore((state) => state.items);

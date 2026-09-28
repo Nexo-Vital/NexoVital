@@ -7,12 +7,14 @@ import { type APIResponse, expect, test } from '@playwright/test';
  *
  * There are no mocks on purpose: every assertion below reads the real HTTP
  * status and the real response body. Both scenarios walk the same citizen
- * journey and differ only in the token that reaches the backend.
+ * journey. Scenario A keeps the clean session and reaches the backend;
+ * scenario B swaps the persisted credentials for another role's under the
+ * mounted citizen screen, so the app must detect the desync instead of sending.
  *
  * The red string under the action buttons is rendered by `CitizenRoleActions`
  * (src/features/ciudadano/CitizenRail.tsx) from the request store's
- * `startError`, which the store fills with the backend `mensaje` when
- * `POST /api/v1/solicitudes` fails.
+ * `startError`, which the store fills with either the backend `mensaje` or the
+ * honest local reason when a request cannot start.
  */
 
 /** Persisted auth keys, copied from src/services/apiClient.ts (TOKEN_KEY / SESSION_KEY). */
@@ -24,6 +26,14 @@ const ADMIN_CENTRO = { email: 'rangel@nexovital.co', password: 'rangel123' };
 
 /** Exact backend 403 message (SecurityConfig accessDeniedHandler). */
 const DENIED_MESSAGE = 'No tiene permisos para este recurso';
+
+/**
+ * Honest local reason for a desynced session, copied from
+ * src/features/usuarios/session-sync.ts (SESSION_CHANGED_MESSAGE). It must never
+ * be the backend permission text.
+ */
+const SESSION_CHANGED_MESSAGE =
+  'Tu sesión cambió en otra pestaña o expiró. Vuelve a iniciar sesión para continuar.';
 
 interface Account {
   email: string;
@@ -162,7 +172,9 @@ test('Scenario A: a clean citizen login creates the request with 201 and no red 
   await expect(page.getByText(DENIED_MESSAGE)).toHaveCount(0);
 });
 
-test('Scenario B: a token without ROLE_CIUDADANO is rejected with 403', async ({ page }) => {
+test('Scenario B: a foreign persisted token is never sent; the app states the session changed', async ({
+  page,
+}) => {
   const calls = recordApiCalls(page);
   await loginAsCitizen(page);
   await reportAffectedZone(page);
@@ -170,12 +182,14 @@ test('Scenario B: a token without ROLE_CIUDADANO is rejected with 403', async ({
   const admin = await fetchCredentials(page, ADMIN_CENTRO);
   /*
    * Drop the admin's token and session into localStorage with the exact shape
-   * apiClient persists. A reload would NOT work here: RequireAuth revalidates
-   * the token against GET /sesiones/actual and, because ADMIN_CENTRO_AYUDA has
-   * no role home in this build, it would eject to /login before the click. The
-   * real condition this reproduces is the in-memory citizen session surviving
-   * while the persisted token belongs to another role — the citizen screen
-   * keeps rendering, but apiFetch reads the swapped token from storage.
+   * apiClient persists. This is done from the SAME document, so no `storage`
+   * event fires here — the real condition is the in-memory citizen session
+   * surviving while the persisted token belongs to another role (another tab of
+   * the same origin would do exactly this and fire the event).
+   *
+   * Before the fix the click travelled with the admin token and the backend
+   * answered a misleading 403 ACCESO_DENEGADO. Now the screen detects the
+   * desync first: it does NOT send, and states the honest session reason.
    */
   await page.evaluate(
     ({ tokenKey, sessionKey, token, session }) => {
@@ -190,17 +204,22 @@ test('Scenario B: a token without ROLE_CIUDADANO is rejected with 403', async ({
     },
   );
 
-  const response = await requestAmbulance(page);
-  const body = await response.text();
-  console.log(`[B] POST /api/v1/solicitudes -> ${response.status()} ${body}`);
-  console.log(`[B] observed calls:\n${await describeCalls(calls)}`);
+  await page.getByRole('button', { name: 'Pedir ambulancia' }).click();
 
-  await test.info().attach('scenario-b-solicitudes-response.txt', {
-    body: `status=${response.status()}\n${body}`,
+  // The honest session message replaces the misleading permission text.
+  await expect(page.getByText(SESSION_CHANGED_MESSAGE)).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(DENIED_MESSAGE)).toHaveCount(0);
+
+  // The whole point: no request was attempted with the foreign token.
+  const solicitudesCall = calls.find(
+    (call) => call.method === 'POST' && call.url.includes('/api/v1/solicitudes'),
+  );
+  expect(solicitudesCall).toBeUndefined();
+
+  const observed = await describeCalls(calls);
+  console.log(`[B] observed calls:\n${observed}`);
+  await test.info().attach('scenario-b-session-desync.txt', {
+    body: `message=${SESSION_CHANGED_MESSAGE}\nobserved calls:\n${observed}`,
     contentType: 'text/plain',
   });
-
-  expect(response.status()).toBe(403);
-  expect(body).toContain('ACCESO_DENEGADO');
-  await expect(page.getByText(DENIED_MESSAGE)).toBeVisible({ timeout: 15_000 });
 });
