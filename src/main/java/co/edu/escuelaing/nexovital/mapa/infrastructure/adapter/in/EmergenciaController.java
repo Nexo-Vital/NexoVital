@@ -12,6 +12,8 @@ import co.edu.escuelaing.nexovital.mapa.infrastructure.adapter.in.dto.Emergencia
 import co.edu.escuelaing.nexovital.mapa.infrastructure.adapter.in.dto.EmergenciaRequest;
 import co.edu.escuelaing.nexovital.shared.infrastructure.dto.ErrorResponse;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.Ubicacion;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -40,6 +42,7 @@ import java.util.UUID;
  */
 @RestController
 @RequestMapping("/api/v1/emergencias")
+@Tag(name = "mapa")
 public class EmergenciaController {
 
     private static final String MENSAJE_DATOS_INVALIDOS =
@@ -73,6 +76,7 @@ public class EmergenciaController {
      *         falla
      */
     @PostMapping
+    @Operation(summary = "Reportar una emergencia")
     public ResponseEntity<Object> reportar(@RequestBody EmergenciaRequest request) {
         try {
             NivelEmergencia nivel = parsearNivel(request.nivel());
@@ -97,6 +101,7 @@ public class EmergenciaController {
      *         falla
      */
     @GetMapping
+    @Operation(summary = "Listar emergencias")
     public ResponseEntity<Object> listar() {
         try {
             List<EmergenciaDto> emergencias = listarEmergenciasUseCase.listar().stream()
@@ -126,6 +131,7 @@ public class EmergenciaController {
      *         la actualización falla
      */
     @PatchMapping("/{id}")
+    @Operation(summary = "Actualizar estado o nivel de una emergencia")
     public ResponseEntity<Object> actualizar(@PathVariable UUID id,
                                              @RequestBody EmergenciaActualizarRequest request) {
         try {

@@ -3,6 +3,8 @@ package co.edu.escuelaing.nexovital.mapa.infrastructure.adapter.in;
 import co.edu.escuelaing.nexovital.mapa.domain.port.in.ConsultarMapaUseCase;
 import co.edu.escuelaing.nexovital.mapa.infrastructure.adapter.in.dto.MapaDto;
 import co.edu.escuelaing.nexovital.shared.infrastructure.dto.ErrorResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -18,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/mapa")
+@Tag(name = "mapa")
 public class MapaController {
 
     private static final String MENSAJE_ERROR_CONSULTA = "No fue posible consultar el mapa.";
@@ -35,6 +38,7 @@ public class MapaController {
      *         si la consulta falla
      */
     @GetMapping
+    @Operation(summary = "Consultar el mapa (zonas y centros con su ubicacion)")
     public ResponseEntity<Object> consultar() {
         try {
             return ResponseEntity.ok(MapaDto.fromDomain(consultarMapaUseCase.consultar()));

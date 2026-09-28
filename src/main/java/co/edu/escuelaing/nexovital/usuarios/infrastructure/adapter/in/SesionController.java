@@ -11,6 +11,9 @@ import co.edu.escuelaing.nexovital.usuarios.domain.port.in.AuthenticationUseCase
 import co.edu.escuelaing.nexovital.usuarios.infrastructure.adapter.in.dto.SesionRequest;
 import co.edu.escuelaing.nexovital.usuarios.infrastructure.adapter.in.dto.SesionResponse;
 import co.edu.escuelaing.nexovital.usuarios.infrastructure.adapter.in.dto.UsuarioDto;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -32,6 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/sesiones")
+@Tag(name = "usuarios")
 public class SesionController {
 
     /**
@@ -53,6 +57,8 @@ public class SesionController {
      *         423 {@code CUENTA_BLOQUEADA} con cabecera {@code Retry-After}
      */
     @PostMapping
+    @Operation(summary = "Crear una sesion (autenticacion por email y contrasena)")
+    @SecurityRequirements
     public ResponseEntity<Object> crearSesion(@Valid @RequestBody SesionRequest request) {
         try {
             SesionAuth sesion = authenticationUseCase.login(
@@ -74,6 +80,7 @@ public class SesionController {
      * Spring Security responde 401.
      */
     @GetMapping("/actual")
+    @Operation(summary = "Sesion del llamante")
     public UsuarioDto sesionActual(Authentication authentication) {
         Usuario usuario = (Usuario) authentication.getPrincipal();
         return UsuarioDto.fromDomain(usuario);

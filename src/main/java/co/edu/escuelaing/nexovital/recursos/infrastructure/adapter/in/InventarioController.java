@@ -11,6 +11,8 @@ import co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.in.dto.Despac
 import co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.in.dto.DonacionRequest;
 import co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.in.dto.ItemInventarioDto;
 import co.edu.escuelaing.nexovital.shared.infrastructure.dto.ErrorResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -35,6 +37,7 @@ import java.util.UUID;
  */
 @RestController
 @RequestMapping("/api/v1/centros-acopio")
+@Tag(name = "recursos")
 public class InventarioController {
 
     private static final String MENSAJE_CENTRO_NO_ENCONTRADO =
@@ -73,6 +76,7 @@ public class InventarioController {
      *         id; 500 {@code ERROR_CONSULTA_INVENTARIO} si la consulta falla
      */
     @GetMapping("/{id}/inventario")
+    @Operation(summary = "Inventario de un centro de acopio con su semaforo")
     public ResponseEntity<Object> consultar(@PathVariable UUID id) {
         try {
             List<ItemInventarioDto> items = consultarInventarioUseCase.consultar(id).stream()
@@ -106,6 +110,7 @@ public class InventarioController {
      *         registro falla
      */
     @PostMapping("/{id}/inventario/donacion")
+    @Operation(summary = "Registrar la donacion de un insumo")
     public ResponseEntity<Object> donar(@PathVariable UUID id, @RequestBody DonacionRequest request) {
         try {
             if (request == null || request.itemId() == null) {
@@ -150,6 +155,7 @@ public class InventarioController {
      *         entero positivo; 500 {@code ERROR_DESPACHO} si el despacho falla
      */
     @PostMapping("/{id}/inventario/despacho")
+    @Operation(summary = "Despachar un insumo con descuento atomico (C1)")
     public ResponseEntity<Object> despachar(@PathVariable UUID id, @RequestBody DespachoRequest request) {
         try {
             if (request == null || request.itemId() == null) {

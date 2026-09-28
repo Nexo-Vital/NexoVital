@@ -18,6 +18,8 @@ import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in.dto.Solicitud
 import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in.dto.SolicitudRequest;
 import co.edu.escuelaing.nexovital.shared.infrastructure.dto.ErrorResponse;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.Usuario;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -43,6 +45,7 @@ import java.util.UUID;
  */
 @RestController
 @RequestMapping("/api/v1/solicitudes")
+@Tag(name = "flota")
 public class SolicitudController {
 
     private static final String MENSAJE_DATOS_INVALIDOS =
@@ -97,6 +100,7 @@ public class SolicitudController {
      *         field; 500 {@code ERROR_REGISTRO_SOLICITUD} if persistence fails
      */
     @PostMapping
+    @Operation(summary = "Solicitar una ambulancia (broadcast a la zona)")
     public ResponseEntity<Object> solicitar(@RequestBody SolicitudRequest request) {
         try {
             if (request == null || request.emergenciaId() == null) {
@@ -137,6 +141,7 @@ public class SolicitudController {
      *         {@code ERROR_ACEPTACION_SOLICITUD}
      */
     @PostMapping("/{id}/accept")
+    @Operation(summary = "Aceptar la solicitud (el primer accept gana)")
     public ResponseEntity<Object> aceptar(@PathVariable UUID id, @RequestBody AceptarSolicitudRequest request) {
         try {
             if (request == null || request.ambulanciaId() == null) {
@@ -183,6 +188,7 @@ public class SolicitudController {
      *         {@code DATOS_INVALIDOS}; 500 {@code ERROR_RECHAZO_SOLICITUD}
      */
     @PostMapping("/{id}/reject")
+    @Operation(summary = "Rechazar la solicitud (sigue pendiente para las demas)")
     public ResponseEntity<Object> rechazar(@PathVariable UUID id, @RequestBody RechazarSolicitudRequest request) {
         try {
             if (request == null || request.ambulanciaId() == null) {
@@ -222,6 +228,7 @@ public class SolicitudController {
      *         400 {@code DATOS_INVALIDOS}; 500 {@code ERROR_LLEGADA_SOLICITUD}
      */
     @PostMapping("/{id}/llegada")
+    @Operation(summary = "Declarar la llegada al sitio")
     public ResponseEntity<Object> llegada(@PathVariable UUID id, @RequestBody AceptarSolicitudRequest request) {
         try {
             if (request == null || request.ambulanciaId() == null) {
@@ -261,6 +268,7 @@ public class SolicitudController {
      *         400 {@code DATOS_INVALIDOS}; 500 {@code ERROR_FINALIZACION_SOLICITUD}
      */
     @PostMapping("/{id}/finalizar")
+    @Operation(summary = "Finalizar el servicio y liberar la unidad")
     public ResponseEntity<Object> finalizar(@PathVariable UUID id, @RequestBody AceptarSolicitudRequest request) {
         try {
             if (request == null || request.ambulanciaId() == null) {
@@ -298,6 +306,7 @@ public class SolicitudController {
      *         {@code ERROR_CONFIRMACION_SOLICITUD}
      */
     @PostMapping("/{id}/confirmar")
+    @Operation(summary = "Confirmar la unidad asignada")
     public ResponseEntity<Object> confirmar(@PathVariable UUID id) {
         try {
             UUID solicitanteId = usuarioAutenticadoId();

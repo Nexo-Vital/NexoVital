@@ -10,6 +10,8 @@ import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in.dto.Ambulanci
 import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in.dto.ReportarPosicionRequest;
 import co.edu.escuelaing.nexovital.shared.infrastructure.dto.ErrorResponse;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.Usuario;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -37,6 +39,7 @@ import java.util.UUID;
  */
 @RestController
 @RequestMapping("/api/v1/flota")
+@Tag(name = "flota")
 public class FlotaController {
 
     private static final String MENSAJE_ERROR_CONSULTA = "No fue posible consultar la flota.";
@@ -64,6 +67,7 @@ public class FlotaController {
      *         500 {@code ERROR_CONSULTA_FLOTA} if the query fails
      */
     @GetMapping("/ambulancias")
+    @Operation(summary = "Flota en vivo (estado y posicion de cada ambulancia)")
     public ResponseEntity<Object> ambulancias() {
         try {
             List<AmbulanciaDto> flota = consultarFlotaUseCase.consultarFlota().stream()
@@ -86,6 +90,7 @@ public class FlotaController {
      *         500 {@code ERROR_CONSULTA_FLOTA} if the query fails
      */
     @GetMapping("/ambulancias/mia")
+    @Operation(summary = "Ambulancia del conductor autenticado")
     public ResponseEntity<Object> miAmbulancia() {
         try {
             UUID conductorId = usuarioAutenticadoId();
@@ -111,6 +116,7 @@ public class FlotaController {
      *         {@code ERROR_REPORTE_POSICION} if persistence fails
      */
     @PostMapping("/ambulancias/{id}/posicion")
+    @Operation(summary = "Reportar la posicion de la propia unidad")
     public ResponseEntity<Object> reportarPosicion(@PathVariable UUID id,
                                                    @RequestBody ReportarPosicionRequest request) {
         try {

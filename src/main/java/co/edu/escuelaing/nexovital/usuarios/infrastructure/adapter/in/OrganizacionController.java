@@ -9,6 +9,8 @@ import co.edu.escuelaing.nexovital.usuarios.domain.port.in.CrearOrganizacionUseC
 import co.edu.escuelaing.nexovital.usuarios.domain.port.in.ListarOrganizacionesUseCase;
 import co.edu.escuelaing.nexovital.usuarios.infrastructure.adapter.in.dto.OrganizacionDto;
 import co.edu.escuelaing.nexovital.usuarios.infrastructure.adapter.in.dto.OrganizacionRequest;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,6 +35,7 @@ import java.util.Locale;
  */
 @RestController
 @RequestMapping("/api/v1/organizaciones")
+@Tag(name = "usuarios")
 public class OrganizacionController {
 
     private static final String MENSAJE_TIPO_INVALIDO =
@@ -58,6 +61,7 @@ public class OrganizacionController {
      *         el nombre ya está registrado; 500 si el registro falla
      */
     @PostMapping
+    @Operation(summary = "Crear una organizacion (centro de ayuda o centro de acopio)")
     public ResponseEntity<Object> crear(@RequestBody OrganizacionRequest request) {
         try {
             TipoOrganizacion tipo = parsearTipoRequerido(request.tipo());
@@ -84,6 +88,7 @@ public class OrganizacionController {
      *         el query param {@code tipo} no es un valor del enum
      */
     @GetMapping
+    @Operation(summary = "Listar organizaciones")
     public ResponseEntity<Object> listar(@RequestParam(name = "tipo", required = false) String tipo) {
         TipoOrganizacion filtro;
         try {
