@@ -403,7 +403,7 @@ describe('useSolicitudInbox', () => {
     expect(result.current.missionPhase).toBe('en_route');
   });
 
-  it('marks the citizen confirmation once, then finishes the service', () => {
+  it('marks the citizen confirmation once, then finishes the service', async () => {
     const { port, result } = setup();
     winMission(port, result);
     act(() =>
@@ -427,7 +427,9 @@ describe('useSolicitudInbox', () => {
     );
     expect(result.current.mission?.confirmedAt).toBe(confirmedAt);
 
-    act(() => result.current.finishService());
+    await act(async () => {
+      await result.current.finishService();
+    });
     expect(result.current.mission).toBeNull();
     expect(result.current.missionPhase).toBe('en_route');
   });
@@ -681,5 +683,64 @@ describe('useSolicitudInbox against the backend (no demo mode)', () => {
     expect(result.current.phase).toBe('taken');
     expect(result.current.mission).toBeNull();
     expect(result.current.outcomeMessage).toBe('Tomada por 8b6f2f0e-0000-4000-8000-0000000000ff');
+  });
+
+  it('finishes through REST, only clears on the server 200 and sends the unit', async () => {
+    enableBackend();
+    fetchMock.mockResolvedValue(
+      mockResponse(200, { ...acceptBody(true).solicitud, estado: 'TOMADA' }),
+    );
+    const { port, result } = setupBackend();
+
+    act(() => port.emit(DESTINATIONS.solicitudes, REAL_BROADCAST));
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, {
+        type: 'request.taken',
+        requestId: REAL_REQUEST,
+        winner: REAL_UNIT,
+      }),
+    );
+    expect(result.current.mission).not.toBeNull();
+
+    let finished = false;
+    await act(async () => {
+      finished = await result.current.finishService();
+    });
+
+    const [path, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe(`/api/v1/solicitudes/${REAL_REQUEST}/finalizar`);
+    expect(options.method).toBe('POST');
+    expect(JSON.parse(options.body as string)).toEqual({ ambulanciaId: REAL_UNIT });
+    expect(finished).toBe(true);
+    expect(result.current.mission).toBeNull();
+  });
+
+  it('keeps the mission and reports the failure when the backend refuses the finish', async () => {
+    enableBackend();
+    fetchMock.mockResolvedValue(
+      mockResponse(409, {
+        codigo: 'SOLICITUD_NO_ASIGNABLE',
+        mensaje: 'La solicitud ya no admite esa transición.',
+      }),
+    );
+    const { port, result } = setupBackend();
+
+    act(() => port.emit(DESTINATIONS.solicitudes, REAL_BROADCAST));
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, {
+        type: 'request.taken',
+        requestId: REAL_REQUEST,
+        winner: REAL_UNIT,
+      }),
+    );
+
+    let finished = true;
+    await act(async () => {
+      finished = await result.current.finishService();
+    });
+
+    expect(finished).toBe(false);
+    expect(result.current.mission).not.toBeNull();
+    expect(result.current.outcomeMessage).toBe('La solicitud ya no admite esa transición.');
   });
 });

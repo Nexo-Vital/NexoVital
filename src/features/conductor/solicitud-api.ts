@@ -101,6 +101,34 @@ export async function rechazarSolicitud(
 }
 
 /**
+ * Driver finish through `POST /api/v1/solicitudes/{id}/finalizar`.
+ *
+ * The backend closes the request (ASIGNADA/CONFIRMADA → TOMADA) AND returns the
+ * assigned unit to available in the SAME atomic operation, so the SERVER is the
+ * truth for both. The `{ambulanciaId}` body is the same as accept/reject/llegada;
+ * the backend verifies the unit is the one assigned to the request and belongs
+ * to the authenticated driver. The response is the closed TOMADA request,
+ * validated through the shared `fromWireSolicitudAmbulancia`. An `ApiError`
+ * bubbles up uncaught: the caller decides what to show.
+ */
+export async function finalizarSolicitud(
+  requestId: string,
+  ambulanciaId: string,
+): Promise<SolicitudAmbulancia> {
+  const body: ResponderSolicitudBody = { ambulanciaId };
+  const response = await apiFetch<unknown>(`/solicitudes/${requestId}/finalizar`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+
+  const solicitud = fromWireSolicitudAmbulancia(response);
+  if (!solicitud) {
+    throw new Error('El servidor devolvió una solicitud con una forma inesperada.');
+  }
+  return solicitud;
+}
+
+/**
  * Driver arrival declaration through `POST /api/v1/solicitudes/{id}/llegada`.
  *
  * The backend records the arrival as a milestone on the still-ASIGNADA request

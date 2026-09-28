@@ -17,7 +17,12 @@ import {
 } from '@/shared/realtime';
 import type { EmergencyLevel, Ubicacion } from '@/types/domain';
 import { playRequestDing } from './request-sound';
-import { aceptarSolicitud, declararLlegada, rechazarSolicitud } from './solicitud-api';
+import {
+  aceptarSolicitud,
+  declararLlegada,
+  finalizarSolicitud,
+  rechazarSolicitud,
+} from './solicitud-api';
 
 export type SolicitudPhase = 'idle' | 'submitting' | 'assigned' | 'taken' | 'rejected' | 'timeout';
 
@@ -89,8 +94,13 @@ export interface SolicitudInboxState {
   notifyTimeout: () => void;
   /** Declares arrival: publishes `solicitud.llegada` and waits for the relay. */
   declareArrival: () => void;
-  /** Ends the mission locally; the unit is free again (the page republishes). */
-  finishService: () => void;
+  /**
+   * Ends the mission and releases the unit. Demo clears locally; against the
+   * backend it calls `POST /solicitudes/{id}/finalizar` and only clears on the
+   * server's `200`. Resolves `true` when the mission ended (so the caller may
+   * return the unit to available), `false` when the server refused.
+   */
+  finishService: () => Promise<boolean>;
   dismiss: () => void;
 }
 
@@ -547,12 +557,39 @@ export function useSolicitudInbox(
     });
   }, [port, ambulanceId]);
 
-  const finishService = useCallback(() => {
-    // Local end of the mission: the page republishes the unit as available.
+  const finishService = useCallback(async (): Promise<boolean> => {
+    const active = missionRef.current;
+    if (!active) {
+      return false;
+    }
+    // Backend: finishing is a REST command (there is no @MessageMapping
+    // inbound). The backend closes the request AND releases the unit in the same
+    // atomic operation, so the mission is only cleared once the server confirms;
+    // a failure is surfaced and the mission stays for a retry.
+    if (!isDemoMode()) {
+      if (!ambulanceId) {
+        setOutcomeMessage(UNIT_UNRESOLVED_REASON);
+        return false;
+      }
+      try {
+        await finalizarSolicitud(active.requestId, ambulanceId);
+      } catch (error: unknown) {
+        const message =
+          error instanceof Error && error.message
+            ? error.message
+            : 'No fue posible finalizar el servicio.';
+        setOutcomeMessage(message);
+        toast(message);
+        return false;
+      }
+    }
+    // Local end of the mission: the page republishes the unit as available. In
+    // demo this runs synchronously, so the behaviour is unchanged.
     missionRef.current = null;
     setMission(null);
     setOutcomeMessage(null);
-  }, []);
+    return true;
+  }, [ambulanceId]);
 
   const missionPhase: DriverMissionPhase =
     mission?.confirmedAt != null

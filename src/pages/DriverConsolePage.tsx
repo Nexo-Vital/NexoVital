@@ -302,12 +302,18 @@ export default function DriverConsolePage({
     setStatus('OFF_DUTY');
   }, []);
 
-  // "Finalizar servicio": the mission ends locally and the unit is declared
-  // available again, so the /topic/flota effect republishes it as AVAILABLE and
-  // the rail drops back to the operations map.
+  // "Finalizar servicio": against the backend this calls
+  // `POST /solicitudes/{id}/finalizar`, which closes the request and releases
+  // the unit atomically; the unit is declared available only once the server
+  // confirms. In demo it clears immediately. Either way the /topic/flota effect
+  // republishes the unit as AVAILABLE and the rail drops back to the operations
+  // map.
   const finishService = useCallback(() => {
-    inbox.finishService();
-    setStatus('AVAILABLE');
+    void inbox.finishService().then((finished) => {
+      if (finished) {
+        setStatus('AVAILABLE');
+      }
+    });
   }, [inbox.finishService]);
 
   const fleet = useMemo(
