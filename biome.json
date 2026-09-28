@@ -12,6 +12,9 @@
       "!**/dist",
       "!**/node_modules",
       "!**/coverage",
+      "!**/test-results",
+      "!**/playwright-report",
+      "!**/blob-report",
       "!**/public/mockServiceWorker.js",
       "!**/package-lock.json"
     ]
