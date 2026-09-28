@@ -3,6 +3,7 @@ package co.edu.escuelaing.nexovital.infrastructure.config;
 import co.edu.escuelaing.nexovital.shared.infrastructure.dto.ErrorResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -28,6 +29,11 @@ import java.util.List;
  * declared is denied (fail-closed), never left open to every authenticated
  * role.
  *
+ * <p>The API documentation routes ({@link #RUTAS_SWAGGER}) are the one
+ * additional exception, and only while {@code nexovital.swagger.enabled} is
+ * true (dev/test). The {@code prod} profile sets it to false, so the docs are
+ * not even declared there and remain denied.
+ *
  * <p>{@link JwtAuthFilter} publishes the {@code ROLE_<ROL>} authority into the
  * security context from the presented token, so a per-role declaration only
  * has to name that authority; nothing new must be built to grant it.
@@ -40,12 +46,31 @@ public class SecurityConfig {
     private static final List<String> ORIGENES_PERMITIDOS =
             List.of("http://localhost:5173", "http://127.0.0.1:5173");
 
+    /**
+     * Routes owned by springdoc-openapi: the OpenAPI JSON and the Swagger UI
+     * assets. Kept as a named constant so the security declaration and the
+     * prod note stay in one place.
+     */
+    private static final String[] RUTAS_SWAGGER = {
+            "/v3/api-docs", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html"
+    };
+
     private final JwtAuthFilter jwtAuthFilter;
     private final ObjectMapper objectMapper;
 
-    public SecurityConfig(JwtAuthFilter jwtAuthFilter, ObjectMapper objectMapper) {
+    /**
+     * Whether the documentation routes are declared as public. It is true for
+     * dev/test; the {@code prod} profile turns it off, so the routes fall
+     * through to {@code anyRequest().denyAll()} and the docs are never exposed
+     * in production.
+     */
+    private final boolean swaggerHabilitado;
+
+    public SecurityConfig(JwtAuthFilter jwtAuthFilter, ObjectMapper objectMapper,
+                          @Value("${nexovital.swagger.enabled:true}") boolean swaggerHabilitado) {
         this.jwtAuthFilter = jwtAuthFilter;
         this.objectMapper = objectMapper;
+        this.swaggerHabilitado = swaggerHabilitado;
     }
 
     @Bean
@@ -54,7 +79,8 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(auth -> auth
+                .authorizeHttpRequests(auth -> {
+                    auth
                         .requestMatchers(HttpMethod.POST, "/api/v1/sesiones").permitAll()
                         // Spring Boot forwards unhandled failures to /error and that
                         // dispatch passes through this chain: without permission here, a
@@ -187,12 +213,27 @@ public class SecurityConfig {
                         // own solicitanteId. Declared explicitly because the chain
                         // is fail-closed.
                         .requestMatchers(HttpMethod.POST, "/api/v1/solicitudes/*/confirmar")
-                                .hasAuthority("ROLE_CIUDADANO")
-                        // Fail-closed standard: an operation that is not declared here is
-                        // denied, never silently open to every authenticated role. A new
-                        // operation must add its own declaration (matcher or
-                        // @PreAuthorize) before it can be reached.
-                        .anyRequest().denyAll())
+                                .hasAuthority("ROLE_CIUDADANO");
+
+                    // Swagger UI and the OpenAPI JSON. These routes must be
+                    // declared explicitly: the chain is fail-closed, so without
+                    // them the docs would answer 403 ACCESO_DENEGADO and look
+                    // uninstalled. Gated by nexovital.swagger.enabled (default
+                    // true for dev/test); the prod profile turns it off, so the
+                    // paths are never public in production. The paths are the
+                    // springdoc defaults: /v3/api-docs renders the JSON and
+                    // /swagger-ui/** serves the UI assets (/swagger-ui.html just
+                    // redirects into them).
+                    if (swaggerHabilitado) {
+                        auth.requestMatchers(RUTAS_SWAGGER).permitAll();
+                    }
+
+                    // Fail-closed standard: an operation that is not declared
+                    // here is denied, never silently open to every authenticated
+                    // role. A new operation must add its own declaration (matcher
+                    // or @PreAuthorize) before it can be reached.
+                    auth.anyRequest().denyAll();
+                })
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint((request, response, authException) ->
                                 escribirError(response, HttpServletResponse.SC_UNAUTHORIZED,
