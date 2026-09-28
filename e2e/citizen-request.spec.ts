@@ -159,6 +159,12 @@ test('Scenario A: a clean citizen login creates the request with 201 and no red 
 }) => {
   const calls = recordApiCalls(page);
   await loginAsCitizen(page);
+
+  // Regression: "zonas afectadas" are point reports, never painted areas. The
+  // backend still serves zone geometry through /api/v1/mapa, but the citizen map
+  // must draw no zone polygon (`MapCanvas` no longer renders `.nv-zone-area`).
+  await expect(page.locator('path.nv-zone-area')).toHaveCount(0);
+
   await reportAffectedZone(page);
 
   const response = await requestAmbulance(page);
