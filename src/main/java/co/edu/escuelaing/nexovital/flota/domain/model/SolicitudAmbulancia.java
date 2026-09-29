@@ -13,12 +13,16 @@ import java.util.UUID;
  * {@link IllegalStateException} when the transition is not allowed.
  *
  * <p>Valid transitions: PENDIENTE → ASIGNADA (first accept wins, CAS),
- * PENDIENTE → TIMEOUT, ASIGNADA → CONFIRMADA, ASIGNADA → TOMADA,
+ * PENDIENTE → TIMEOUT, PENDIENTE → CANCELADA (the requester withdraws before a
+ * winner exists), ASIGNADA → CONFIRMADA, ASIGNADA → TOMADA,
  * ASIGNADA/CONFIRMADA → TOMADA (finish/release).
  *
  * <p>A per-unit decline is NOT a state transition here: it leaves the request
  * {@code PENDIENTE} so the other notified units can still accept it (AC4). The
- * {@code RECHAZADA} state is reserved for a future whole-request cancellation.
+ * {@code RECHAZADA} state is the contract's whole-request rejection (every unit
+ * declined or nobody answered) and is never persisted by this aggregate.
+ * {@code CANCELADA} is a different outcome: the requester's own withdrawal while
+ * the request is PENDIENTE.
  *
  * <p>Arrival is also NOT a lifecycle state: the winning unit declares it on an
  * already-ASIGNADA request and the milestone is recorded in {@code llegadaEn}.
@@ -157,6 +161,19 @@ public final class SolicitudAmbulancia {
     public SolicitudAmbulancia expiro() {
         requiereTransicion(this, EstadoSolicitud.PENDIENTE, "expire");
         return conEstado(this, EstadoSolicitud.TIMEOUT, null);
+    }
+
+    /**
+     * PENDIENTE → CANCELADA. The requester withdraws the request while nobody
+     * accepted it. Once a unit is assigned the ambulance is on its way and the
+     * withdrawal is refused by the caller (409), so this is only valid on a
+     * still-open PENDIENTE request.
+     *
+     * @throws IllegalStateException if the request already moved past PENDIENTE
+     */
+    public SolicitudAmbulancia cancelar() {
+        requiereTransicion(this, EstadoSolicitud.PENDIENTE, "cancellation");
+        return conEstado(this, EstadoSolicitud.CANCELADA, null);
     }
 
     /** ASIGNADA → CONFIRMADA, decided by the help center. */

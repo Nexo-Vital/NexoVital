@@ -1,11 +1,13 @@
 package co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in;
 
 import co.edu.escuelaing.nexovital.flota.domain.exception.AmbulanciaNoDisponibleException;
+import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudAjenaException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoAsignableException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoEncontradaException;
 import co.edu.escuelaing.nexovital.flota.domain.model.ResultadoAceptarSolicitud;
 import co.edu.escuelaing.nexovital.flota.domain.model.SolicitudAmbulancia;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.AceptarSolicitudUseCase;
+import co.edu.escuelaing.nexovital.flota.domain.port.in.CancelarSolicitudUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.ConfirmarSolicitudUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.DeclararLlegadaUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.FinalizarSolicitudUseCase;
@@ -59,6 +61,8 @@ public class SolicitudController {
             "No existe una solicitud con el identificador indicado.";
     private static final String MENSAJE_SOLICITUD_NO_ASIGNABLE =
             "La solicitud ya no admite esa transición.";
+    private static final String MENSAJE_SOLICITUD_AJENA =
+            "Solo el solicitante puede cancelar su propia solicitud.";
     private static final String MENSAJE_CAS_PERDIDO = "Solicitud ya asignada a otra ambulancia.";
     private static final String MENSAJE_AMBULANCIA_NO_DISPONIBLE =
             "No hay ambulancias disponibles para atender la solicitud.";
@@ -68,6 +72,7 @@ public class SolicitudController {
     private static final String MENSAJE_ERROR_LLEGADA = "No fue posible declarar la llegada.";
     private static final String MENSAJE_ERROR_FINALIZACION = "No fue posible finalizar el servicio.";
     private static final String MENSAJE_ERROR_CONFIRMACION = "No fue posible confirmar la solicitud.";
+    private static final String MENSAJE_ERROR_CANCELACION = "No fue posible cancelar la solicitud.";
 
     private final SolicitarAmbulanciaUseCase solicitarAmbulanciaUseCase;
     private final AceptarSolicitudUseCase aceptarSolicitudUseCase;
@@ -75,19 +80,22 @@ public class SolicitudController {
     private final DeclararLlegadaUseCase declararLlegadaUseCase;
     private final FinalizarSolicitudUseCase finalizarSolicitudUseCase;
     private final ConfirmarSolicitudUseCase confirmarSolicitudUseCase;
+    private final CancelarSolicitudUseCase cancelarSolicitudUseCase;
 
     public SolicitudController(SolicitarAmbulanciaUseCase solicitarAmbulanciaUseCase,
                                AceptarSolicitudUseCase aceptarSolicitudUseCase,
                                RechazarSolicitudUseCase rechazarSolicitudUseCase,
                                DeclararLlegadaUseCase declararLlegadaUseCase,
                                FinalizarSolicitudUseCase finalizarSolicitudUseCase,
-                               ConfirmarSolicitudUseCase confirmarSolicitudUseCase) {
+                               ConfirmarSolicitudUseCase confirmarSolicitudUseCase,
+                               CancelarSolicitudUseCase cancelarSolicitudUseCase) {
         this.solicitarAmbulanciaUseCase = solicitarAmbulanciaUseCase;
         this.aceptarSolicitudUseCase = aceptarSolicitudUseCase;
         this.rechazarSolicitudUseCase = rechazarSolicitudUseCase;
         this.declararLlegadaUseCase = declararLlegadaUseCase;
         this.finalizarSolicitudUseCase = finalizarSolicitudUseCase;
         this.confirmarSolicitudUseCase = confirmarSolicitudUseCase;
+        this.cancelarSolicitudUseCase = cancelarSolicitudUseCase;
     }
 
     /**
@@ -323,6 +331,42 @@ public class SolicitudController {
         } catch (RuntimeException e) {
             return ResponseEntity.internalServerError()
                     .body(ErrorResponse.of("ERROR_CONFIRMACION_SOLICITUD", MENSAJE_ERROR_CONFIRMACION));
+        }
+    }
+
+    /**
+     * The requester withdraws their own still-open request. Only the citizen who
+     * raised it may cancel, and only while no unit accepted: once a unit is
+     * assigned the ambulance is on its way, so the transition is refused with
+     * 409 and an honest reason instead of pretending to stop it. The close is a
+     * CAS, so a cancel racing an accept never both wins and never turns into a
+     * 500.
+     *
+     * @return 200 with the CANCELADA request; 404
+     *         {@code SOLICITUD_NO_ENCONTRADA}; 403 {@code SOLICITUD_AJENA} when
+     *         the caller is not the requester; 409
+     *         {@code SOLICITUD_NO_ASIGNABLE} when it is no longer PENDIENTE; 500
+     *         {@code ERROR_CANCELACION_SOLICITUD}
+     */
+    @PostMapping("/{id}/cancelar")
+    @Operation(summary = "Cancelar la solicitud (solo el solicitante, mientras este pendiente)")
+    public ResponseEntity<Object> cancelar(@PathVariable UUID id) {
+        try {
+            UUID solicitanteId = usuarioAutenticadoId();
+            SolicitudAmbulancia cancelada = cancelarSolicitudUseCase.cancelar(id, solicitanteId);
+            return ResponseEntity.ok(SolicitudAmbulanciaDto.fromDomain(cancelada));
+        } catch (SolicitudNoEncontradaException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(ErrorResponse.of("SOLICITUD_NO_ENCONTRADA", MENSAJE_SOLICITUD_NO_ENCONTRADA));
+        } catch (SolicitudAjenaException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(ErrorResponse.of("SOLICITUD_AJENA", MENSAJE_SOLICITUD_AJENA));
+        } catch (SolicitudNoAsignableException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ErrorResponse.of("SOLICITUD_NO_ASIGNABLE", MENSAJE_SOLICITUD_NO_ASIGNABLE));
+        } catch (RuntimeException e) {
+            return ResponseEntity.internalServerError()
+                    .body(ErrorResponse.of("ERROR_CANCELACION_SOLICITUD", MENSAJE_ERROR_CANCELACION));
         }
     }
 

@@ -145,6 +145,23 @@ class SolicitudAmbulanciaTest {
     }
 
     @Test
+    void cancelarSoloDesdePendienteYNoConservaAsignacion() {
+        SolicitudAmbulancia cancelada = pendiente().cancelar();
+        assertEquals(EstadoSolicitud.CANCELADA, cancelada.getEstado());
+        assertNull(cancelada.getAmbulanciaAsignadaId());
+        assertEquals(solicitanteId, cancelada.getSolicitanteId(),
+                "the requester must be carried through the cancellation");
+
+        // A request the fleet already took cannot be cancelled: the ambulance is
+        // on its way, so the transition is forbidden.
+        SolicitudAmbulancia asignada = pendiente().aceptar(ambulanciaA);
+        assertThrows(IllegalStateException.class, asignada::cancelar);
+        // And a cancelled request is terminal: it never moves again.
+        assertThrows(IllegalStateException.class, () -> cancelada.aceptar(ambulanciaA));
+        assertThrows(IllegalStateException.class, cancelada::cancelar);
+    }
+
+    @Test
     void estaVencidaCuandoTimeoutQuedaAtras() {
         SolicitudAmbulancia vencida = SolicitudAmbulancia.solicitar(solicitudId, 4.73d, -74.08d,
                 emergenciaId, centroAyudaId, "zona-1", Instant.now().minus(120, ChronoUnit.SECONDS),

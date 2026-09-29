@@ -213,6 +213,13 @@ public class SecurityConfig {
                         // own solicitanteId. Declared explicitly because the chain
                         // is fail-closed.
                         .requestMatchers(HttpMethod.POST, "/api/v1/solicitudes/*/confirmar")
+                                .hasAuthority("ROLE_CIUDADANO")
+                        // Cancel the requester's own open request (EP-04): only
+                        // the citizen withdraws, and the use case additionally
+                        // verifies the caller IS the request's own solicitanteId
+                        // (403 otherwise). Declared explicitly because the chain
+                        // is fail-closed; without it, /cancelar would be denied.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/solicitudes/*/cancelar")
                                 .hasAuthority("ROLE_CIUDADANO");
 
                     // Swagger UI and the OpenAPI JSON. These routes must be

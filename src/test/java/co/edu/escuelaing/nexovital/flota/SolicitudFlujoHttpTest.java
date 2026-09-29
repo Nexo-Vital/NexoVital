@@ -674,6 +674,132 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
     }
 
     // -----------------------------------------------------------------------
+    // Cancellation: only the requester, only while PENDIENTE
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Cancelar una solicitud PENDIENTE responde 200 CANCELADA y avisa a los conductores notificados y al solicitante")
+    void cancelarPendienteDevuelve200YNotifica() throws Exception {
+        String ciudadano = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+        String solicitanteId = usuarioDe(CIUDADANO).getId().toString();
+        String solicitudId = crearSolicitud(ciudadano, zona);
+
+        // Only the cancellation push matters here: drop the creation frames.
+        pushPortDePrueba.limpiar();
+
+        MvcResult result = mockMvc.perform(post("/api/v1/solicitudes/{id}/cancelar", solicitudId)
+                        .header("Authorization", "Bearer " + ciudadano))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.estado").value("CANCELADA"))
+                .andReturn();
+
+        // The atomic CAS persisted the close and no unit was ever occupied.
+        assertEquals(EstadoSolicitud.CANCELADA,
+                solicitudJpaRepository.findById(UUID.fromString(solicitudId)).orElseThrow().getEstado());
+
+        JsonNode cancelada = objectMapper.readTree(result.getResponse().getContentAsString());
+        List<UUID> notificadas = new ArrayList<>();
+        for (JsonNode id : cancelada.get("ambulanciasNotificadas")) {
+            notificadas.add(UUID.fromString(id.asText()));
+        }
+        assertFalse(notificadas.isEmpty(), "la solicitud debía notificar al menos una unidad");
+
+        // Every notified unit's driver sees CANCELADA so its card disappears.
+        long esperadas = 1; // the requester's own copy
+        for (UUID ambulanciaId : notificadas) {
+            UUID conductorId = ambulanciaJpaRepository.findById(ambulanciaId).orElseThrow().getConductorId();
+            if (conductorId == null) {
+                continue;
+            }
+            esperadas++;
+            boolean recibio = pushPortDePrueba
+                    .haciaUsuario(conductorId.toString(), FlotaPushListener.DESTINO_SOLICITUDES).stream()
+                    .anyMatch(publicacion -> "CANCELADA".equals(estadoDe(publicacion)));
+            assertTrue(recibio, "el conductor notificado debe recibir CANCELADA: " + conductorId);
+        }
+
+        boolean alSolicitante = pushPortDePrueba
+                .haciaUsuario(solicitanteId, FlotaPushListener.DESTINO_SOLICITUDES).stream()
+                .anyMatch(publicacion -> "CANCELADA".equals(estadoDe(publicacion)));
+        assertTrue(alSolicitante, "el solicitante recibe la cancelación");
+
+        // Exactly one CANCELADA per notified unit plus the requester.
+        long canceladas = pushPortDePrueba.publicaciones().stream()
+                .filter(publicacion -> publicacion.payload() instanceof FlotaPushListener.SolicitudPushPayload payload
+                        && "CANCELADA".equals(payload.estado()))
+                .count();
+        assertEquals(esperadas, canceladas);
+    }
+
+    @Test
+    @DisplayName("Cancelar una solicitud ya ASIGNADA responde 409 y no la toca")
+    void cancelarAsignadaDevuelve409() throws Exception {
+        String ciudadano = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+        String conductor = tokenDe(CONDUCTOR, CONDUCTOR_PASSWORD);
+        UUID unidad = unidadDelConductor;
+        String solicitudId = crearSolicitud(ciudadano, zona);
+
+        mockMvc.perform(post("/api/v1/solicitudes/{id}/accept", solicitudId)
+                        .header("Authorization", "Bearer " + conductor)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpoAmbulancia(unidad)))
+                .andExpect(status().isOk());
+
+        // Once a unit accepted, the ambulance is on its way: cancellation is refused.
+        mockMvc.perform(post("/api/v1/solicitudes/{id}/cancelar", solicitudId)
+                        .header("Authorization", "Bearer " + ciudadano))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("SOLICITUD_NO_ASIGNABLE"));
+
+        assertEquals(EstadoSolicitud.ASIGNADA,
+                solicitudJpaRepository.findById(UUID.fromString(solicitudId)).orElseThrow().getEstado(),
+                "una cancelación rechazada no puede mover la solicitud");
+        assertEquals(EstadoAmbulancia.EN_MISION,
+                ambulanciaJpaRepository.findById(unidad).orElseThrow().getEstado(),
+                "la unidad asignada sigue en misión");
+    }
+
+    @Test
+    @DisplayName("Un CIUDADANO autenticado que NO es el solicitante no puede cancelar (403 SOLICITUD_AJENA)")
+    void cancelarConOtroUsuarioDevuelve403() throws Exception {
+        String ciudadano = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+        // A second citizen: same role, so the role gate passes and the identity
+        // check is the one that refuses them.
+        String emailAjeno = "ajeno-" + UUID.randomUUID() + "@nexovital.co";
+        UUID ajenoId = UUID.randomUUID();
+        usuarioJpaRepository.save(new UsuarioJpaEntity(
+                ajenoId, "Ciudadano Ajeno", emailAjeno,
+                passwordEncoderPort.encriptar("ajeno123"), RolUsuario.CIUDADANO));
+        try {
+            String ajeno = tokenDe(emailAjeno, "ajeno123");
+            String solicitudId = crearSolicitud(ciudadano, zona);
+
+            mockMvc.perform(post("/api/v1/solicitudes/{id}/cancelar", solicitudId)
+                            .header("Authorization", "Bearer " + ajeno))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.codigo").value("SOLICITUD_AJENA"));
+
+            // The refused call changed nothing: the request stays open.
+            assertEquals(EstadoSolicitud.PENDIENTE,
+                    solicitudJpaRepository.findById(UUID.fromString(solicitudId)).orElseThrow().getEstado(),
+                    "una cancelación ajena no puede cerrar la solicitud");
+        } finally {
+            usuarioJpaRepository.deleteById(ajenoId);
+        }
+    }
+
+    @Test
+    @DisplayName("Un rol distinto de CIUDADANO no puede cancelar (403, el rol quedó acotado)")
+    void cancelarConRolIncorrectoDevuelve403() throws Exception {
+        String conductor = tokenDe(CONDUCTOR, CONDUCTOR_PASSWORD);
+
+        mockMvc.perform(post("/api/v1/solicitudes/{id}/cancelar", UUID.randomUUID())
+                        .header("Authorization", "Bearer " + conductor))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("ACCESO_DENEGADO"));
+    }
+
+    // -----------------------------------------------------------------------
     // Finish / release (DEBT 2 & 3, EP-04.F2.US6/US11)
     // -----------------------------------------------------------------------
 

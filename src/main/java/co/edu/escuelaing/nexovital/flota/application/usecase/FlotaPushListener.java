@@ -3,6 +3,7 @@ package co.edu.escuelaing.nexovital.flota.application.usecase;
 import co.edu.escuelaing.nexovital.flota.domain.event.FlotaActualizadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.PosicionActualizadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudAsignadaEvent;
+import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudCanceladaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudConfirmadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudCreadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudExpiradaEvent;
@@ -147,6 +148,23 @@ public class FlotaPushListener {
         SolicitudPushPayload payload = new SolicitudPushPayload(
                 evento.solicitudId(), null, evento.emergenciaId(), evento.zonaId(),
                 "TIMEOUT", evento.ambulanciasNotificadas(), null, false);
+        for (UUID ambulanciaId : evento.ambulanciasNotificadas()) {
+            publicarAlConductor(ambulanciaId, payload);
+        }
+        publicarAlSolicitante(evento.solicitanteId(), payload);
+    }
+
+    /**
+     * The requester withdrew the open request: the requester is told so their
+     * screen returns to the initial state, and each notified unit is told so the
+     * stale notification drops. CANCELADA is a whole-request state (nobody
+     * accepted), so it is fanned out like TIMEOUT and never a per-unit decline.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void alCancelarSolicitud(SolicitudCanceladaEvent evento) {
+        SolicitudPushPayload payload = new SolicitudPushPayload(
+                evento.solicitudId(), null, evento.emergenciaId(), evento.zonaId(),
+                "CANCELADA", evento.ambulanciasNotificadas(), null, false);
         for (UUID ambulanciaId : evento.ambulanciasNotificadas()) {
             publicarAlConductor(ambulanciaId, payload);
         }
