@@ -19,7 +19,7 @@ function readUbicacion(value: unknown): Ubicacion | null {
   return { lat: value.lat, lng: value.lng };
 }
 
-/** The six lifecycle literals the backend `EstadoSolicitud` enum can emit. */
+/** The seven lifecycle literals the backend `EstadoSolicitud` enum can emit. */
 const ESTADOS: readonly EstadoSolicitudWire[] = [
   'PENDIENTE',
   'ASIGNADA',
@@ -27,6 +27,7 @@ const ESTADOS: readonly EstadoSolicitudWire[] = [
   'TOMADA',
   'RECHAZADA',
   'TIMEOUT',
+  'CANCELADA',
 ];
 
 function isEstado(value: unknown): value is EstadoSolicitudWire {
@@ -152,6 +153,7 @@ export interface WireSolicitudContext {
  *   RECHAZADA  -> request.rejected     (this driver's decline was recorded)
  *   TOMADA     -> request.closed       (service finished; drop the stale card)
  *   TIMEOUT    -> request.expired      (no winner; the request is no longer active)
+ *   CANCELADA  -> request.cancelled    (requester withdrew it; drop the stale card)
  *
  * A frame flagged `llegada` is the arrival milestone the winning unit emits:
  * it becomes `request.arrived` regardless of the lifecycle `estado` (which
@@ -209,6 +211,10 @@ export function solicitudFrameFromWire(
       return { type: 'request.closed', requestId: frame.solicitudId };
     case 'TIMEOUT':
       return { type: 'request.expired', requestId: frame.solicitudId };
+    case 'CANCELADA':
+      // The requester withdrew the still-open request: no unit was assigned, so
+      // every inbox (and the requester's screen) drops it as already closed.
+      return { type: 'request.cancelled', requestId: frame.solicitudId };
     default:
       return null;
   }

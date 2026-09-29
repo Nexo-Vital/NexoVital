@@ -298,6 +298,9 @@ export default function CitizenMapPage({
   // zone, no center, backend rejection); rendered by the rail so a blocked
   // request never looks dead.
   const requestError = useCitizenRequestStore((state) => state.startError);
+  // Honest reason the last cancellation was refused (409 already assigned, 403
+  // not the requester); rendered next to the cancel action, never as a fake close.
+  const requestCancelError = useCitizenRequestStore((state) => state.cancelError);
   const requestStartedAt = useCitizenRequestStore((state) => state.startedAt);
   const notifiedIds = useCitizenRequestStore((state) => state.notifiedIds);
   const acceptedBy = useCitizenRequestStore((state) => state.acceptedBy);
@@ -394,7 +397,9 @@ export default function CitizenMapPage({
   }, [port, pickupPoint]);
 
   const handleCancel = useCallback(() => {
-    useCitizenRequestStore.getState().cancel(port);
+    // `cancel` decides the transport (relay in demo, REST against a backend) and
+    // resolves once the server owns the outcome; the handler stays fire-and-forget.
+    void useCitizenRequestStore.getState().cancel(port);
   }, [port]);
 
   const handleConfirmArrival = useCallback(() => {
@@ -677,6 +682,7 @@ export default function CitizenMapPage({
           origin={selfPosition}
           duracionMin={routeEtaMin}
           onCancel={handleCancel}
+          cancelError={requestCancelError}
           onBackToMap={handleBackToMap}
         />
       ) : detailCentro && showDetail ? (

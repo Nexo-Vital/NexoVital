@@ -174,6 +174,14 @@ describe('solicitudFrameFromWire', () => {
     });
   });
 
+  it('maps CANCELADA to request.cancelled (the requester withdrew the open request)', () => {
+    const cancelled = validWire({ ...PENDIENTE, estado: 'CANCELADA' });
+    expect(solicitudFrameFromWire(cancelled, CONTEXT)).toEqual({
+      type: 'request.cancelled',
+      requestId: PENDIENTE.solicitudId,
+    });
+  });
+
   it('maps an arrival-flagged frame to request.arrived, keeping the estado out of it', () => {
     const arrived = validWire({
       ...PENDIENTE,

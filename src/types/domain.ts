@@ -10,8 +10,8 @@
  *                    <- REGISTRADA | EN_ATENCION | EN_ESPERA | RESUELTA | CERRADA
  *   AmbulanceState   AVAILABLE | ASSIGNED | EN_ROUTE | MAINTENANCE
  *                    <- DISPONIBLE | EN_MISION | EN_RUTA | MANTENIMIENTO
- *   RequestState     PENDING | ASSIGNED | CONFIRMED | TAKEN | REJECTED | TIMEOUT
- *                    <- PENDIENTE | ASIGNADA | CONFIRMADA | TOMADA | RECHAZADA | TIMEOUT
+ *   RequestState     PENDING | ASSIGNED | CONFIRMED | TAKEN | REJECTED | TIMEOUT | CANCELLED
+ *                    <- PENDIENTE | ASIGNADA | CONFIRMADA | TOMADA | RECHAZADA | TIMEOUT | CANCELADA
  *   TrafficLight     RED | AMBER | GREEN | NOT_DECLARED
  *                    <- ROJO | AMARILLO | VERDE (NOT_DECLARED is UI-only)
  */
@@ -92,7 +92,14 @@ export interface Ambulancia {
   heading?: number | null;
 }
 
-export type RequestState = 'PENDING' | 'ASSIGNED' | 'CONFIRMED' | 'TAKEN' | 'REJECTED' | 'TIMEOUT';
+export type RequestState =
+  | 'PENDING'
+  | 'ASSIGNED'
+  | 'CONFIRMED'
+  | 'TAKEN'
+  | 'REJECTED'
+  | 'TIMEOUT'
+  | 'CANCELLED';
 
 export interface SolicitudAmbulancia {
   id: string;

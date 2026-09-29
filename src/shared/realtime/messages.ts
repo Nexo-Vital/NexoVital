@@ -395,7 +395,8 @@ export type EstadoSolicitudWire =
   | 'CONFIRMADA'
   | 'TOMADA'
   | 'RECHAZADA'
-  | 'TIMEOUT';
+  | 'TIMEOUT'
+  | 'CANCELADA';
 
 /**
  * Request frame the backend `flota` module pushes to `/user/queue/solicitudes`.

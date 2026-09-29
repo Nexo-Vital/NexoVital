@@ -712,6 +712,32 @@ describe('useSolicitudInbox against the backend (no demo mode)', () => {
     expect(result.current.outcomeMessage).toBe('Tomada por 8b6f2f0e-0000-4000-8000-0000000000ff');
   });
 
+  it('drops the driver card on the backend CANCELADA wire frame', () => {
+    enableBackend();
+    const { port, result } = setupBackend();
+
+    act(() => port.emit(DESTINATIONS.solicitudes, REAL_BROADCAST));
+    expect(result.current.broadcast?.requestId).toBe(REAL_REQUEST);
+
+    // The backend speaks its own shape: no `type`, the whole-request state in
+    // `estado`. A CANCELADA frame means the requester withdrew before any unit
+    // accepted, so this inbox must stop offering the mission.
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, {
+        solicitudId: REAL_REQUEST,
+        emergenciaId: null,
+        zonaId: null,
+        estado: 'CANCELADA',
+        ambulanciasNotificadas: [REAL_UNIT],
+        ambulanciaAsignadaId: null,
+        ubicacion: null,
+      }),
+    );
+
+    expect(result.current.broadcast).toBeNull();
+    expect(result.current.phase).toBe('idle');
+  });
+
   it('finishes through REST, only clears on the server 200 and sends the unit', async () => {
     enableBackend();
     fetchMock.mockResolvedValue(

@@ -27,6 +27,7 @@ const ESTADO_TO_REQUEST_STATE: Record<EstadoSolicitudWire, RequestState> = {
   TOMADA: 'TAKEN',
   RECHAZADA: 'REJECTED',
   TIMEOUT: 'TIMEOUT',
+  CANCELADA: 'CANCELLED',
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -188,6 +189,31 @@ export async function solicitarAmbulancia(
  */
 export async function confirmarSolicitud(requestId: string): Promise<SolicitudAmbulancia> {
   const response = await apiFetch<unknown>(`/solicitudes/${requestId}/confirmar`, {
+    method: 'POST',
+  });
+
+  const solicitud = fromWireSolicitudAmbulancia(response);
+  if (!solicitud) {
+    throw new Error('El servidor devolvió una solicitud con una forma inesperada.');
+  }
+  return solicitud;
+}
+
+/**
+ * Cancels the requester's own open request through
+ * `POST /api/v1/solicitudes/{id}/cancelar`.
+ *
+ * The `flota` controller takes no body (a `@PathVariable` only) and resolves the
+ * requester from the authenticated user, so nothing is sent beyond the bearer.
+ * The backend answers `200` with the now-CANCELADA request, validated through the
+ * shared `fromWireSolicitudAmbulancia`.
+ *
+ * `ApiError` is intentionally NOT caught here: the caller decides what to show
+ * (409 when a unit already accepted and the ambulance is on its way, 403 when the
+ * caller is not the requester, 404 unknown request).
+ */
+export async function cancelarSolicitud(requestId: string): Promise<SolicitudAmbulancia> {
+  const response = await apiFetch<unknown>(`/solicitudes/${requestId}/cancelar`, {
     method: 'POST',
   });
 

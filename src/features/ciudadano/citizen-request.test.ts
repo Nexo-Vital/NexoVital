@@ -605,4 +605,64 @@ describe('useCitizenRequestStore against the backend', () => {
     // The failure changed nothing: the request stays open for a retry.
     expect(useCitizenRequestStore.getState().phase).toBe('arrived');
   });
+
+  it('cancels the open request through REST, adopts the server close and never publishes', async () => {
+    const port = new FakeRealtimePort();
+    fetchMock.mockResolvedValueOnce(mockResponse(201, REST_RESPONSE));
+    await useCitizenRequestStore.getState().start({
+      port,
+      units: MOCK_AMBULANCIAS,
+      origin: ORIGIN,
+    });
+    expect(useCitizenRequestStore.getState().phase).toBe('searching');
+
+    fetchMock.mockClear();
+    fetchMock.mockResolvedValueOnce(mockResponse(200, { ...REST_RESPONSE, estado: 'CANCELADA' }));
+
+    await useCitizenRequestStore.getState().cancel(port);
+
+    const [path, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe(`/api/v1/solicitudes/${REST_RESPONSE.id}/cancelar`);
+    expect(options.method).toBe('POST');
+    // The controller takes no body: nothing is sent beyond the bearer.
+    expect(options.body).toBeUndefined();
+    // Off-demo nothing is published on the relay.
+    expect(port.published).toHaveLength(0);
+    expect(useCitizenRequestStore.getState().phase).toBe('idle');
+    expect(useCitizenRequestStore.getState().requestId).toBeNull();
+    expect(useCitizenRequestStore.getState().cancelError).toBeNull();
+  });
+
+  it('does not fake a cancellation when the backend refuses it: keeps the state and shows the reason', async () => {
+    const port = new FakeRealtimePort();
+    fetchMock.mockResolvedValueOnce(mockResponse(201, REST_RESPONSE));
+    await useCitizenRequestStore.getState().start({
+      port,
+      units: MOCK_AMBULANCIAS,
+      origin: ORIGIN,
+    });
+    const requestId = REST_RESPONSE.id;
+    // A unit already accepted: the ambulance is on its way.
+    useCitizenRequestStore.getState().endOnTaken(requestId, 'winner');
+    expect(useCitizenRequestStore.getState().phase).toBe('accepted');
+
+    fetchMock.mockClear();
+    fetchMock.mockResolvedValueOnce(
+      mockResponse(409, {
+        codigo: 'SOLICITUD_NO_ASIGNABLE',
+        mensaje: 'La solicitud ya no admite esa transición.',
+      }),
+    );
+
+    await useCitizenRequestStore.getState().cancel(port);
+
+    // The citizen keeps seeing the REAL state; the backend reason is surfaced and
+    // the request is not cleared as if it had been cancelled.
+    expect(useCitizenRequestStore.getState().phase).toBe('accepted');
+    expect(useCitizenRequestStore.getState().requestId).toBe(requestId);
+    expect(useCitizenRequestStore.getState().cancelError).toBe(
+      'La solicitud ya no admite esa transición.',
+    );
+    await vi.waitFor(() => expect(useToastStore.getState().toasts).toHaveLength(1));
+  });
 });

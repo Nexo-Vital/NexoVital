@@ -1,7 +1,11 @@
 import { useEffect } from 'react';
 import { create } from 'zustand';
 import { toast } from '@/components/ui/toast';
-import { confirmarSolicitud, solicitarAmbulancia } from '@/features/solicitudes/solicitud-api';
+import {
+  cancelarSolicitud,
+  confirmarSolicitud,
+  solicitarAmbulancia,
+} from '@/features/solicitudes/solicitud-api';
 import {
   nextRequestId,
   SOLICITUD_TIMEOUT_MS,
@@ -49,6 +53,13 @@ interface CitizenRequestState {
    * attempt, on success, and on reset/cancel.
    */
   startError: string | null;
+  /**
+   * Honest reason the last cancellation failed (backend `mensaje`), or null. The
+   * citizen keeps seeing the REAL request state and this reason instead of a
+   * fake "cancelled"; it is cleared on a new attempt, on a successful cancel and
+   * on reset.
+   */
+  cancelError: string | null;
   requestId: string | null;
   /** When the search began (epoch ms); drives the elapsed counter. */
   startedAt: number | null;
@@ -72,8 +83,14 @@ interface CitizenRequestState {
    * is available: `startError` then carries the honest reason for the screen.
    */
   start: (input: CitizenRequestStart) => Promise<boolean>;
-  /** Withdraws the open request on the relay and clears the local state. */
-  cancel: (port: RealtimePort | null) => void;
+  /**
+   * Withdraws the open request. In demo mode it publishes `solicitud.cancel` on
+   * the relay and clears the local state. Against a backend it calls the real
+   * `POST /solicitudes/{id}/cancelar`: the request is only cleared on the
+   * server's `200`; a refusal (409 already assigned, 403 not the requester) keeps
+   * the real state and surfaces the backend reason instead of faking a cancel.
+   */
+  cancel: (port: RealtimePort | null) => Promise<void>;
   /** Applies the server-side arbiter decision when OUR request was taken. */
   endOnTaken: (requestId: string, winner: string) => void;
   /** Applies the driver's declared arrival; idempotent. */
@@ -110,6 +127,7 @@ interface CitizenRequestStart {
 const IDLE_STATE = {
   phase: 'idle' as CitizenRequestPhase,
   startError: null,
+  cancelError: null,
   requestId: null,
   startedAt: null,
   notifiedIds: [] as string[],
@@ -158,6 +176,7 @@ export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => 
         arrivedAt: null,
         confirmedAt: null,
         startError: null,
+        cancelError: null,
       });
       return true;
     }
@@ -197,6 +216,7 @@ export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => 
         arrivedAt: null,
         confirmedAt: null,
         startError: null,
+        cancelError: null,
       });
       return true;
     } catch (error) {
@@ -209,15 +229,42 @@ export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => 
     }
   },
 
-  cancel: (port) => {
+  cancel: async (port) => {
     const { requestId, phase } = get();
-    if (requestId && phase !== 'idle') {
+    if (!requestId || phase === 'idle') {
+      set({ ...IDLE_STATE });
+      return;
+    }
+
+    // Demo build: the relay owns the arbitration, so the withdrawal is published
+    // on the relay and the local projection is the source of truth (unchanged).
+    if (isDemoMode()) {
       port?.publish<SolicitudCancelPayload>(DESTINATIONS.solicitudes, {
         type: 'solicitud.cancel',
         requestId,
       });
+      set({ ...IDLE_STATE });
+      return;
     }
-    set({ ...IDLE_STATE });
+
+    // Real backend: cancellation is a REST command and the SERVER owns the
+    // outcome. The request is only cleared on the server's 200; a refusal (409
+    // already assigned, 403 not the requester) keeps the REAL state and surfaces
+    // the backend reason, so the citizen never sees a cancellation that did not
+    // happen.
+    set({ cancelError: null });
+    try {
+      await cancelarSolicitud(requestId);
+      set({ ...IDLE_STATE });
+      toast('Solicitud cancelada.');
+    } catch (error) {
+      const reason =
+        error instanceof Error && error.message
+          ? error.message
+          : 'No fue posible cancelar la solicitud.';
+      set({ cancelError: reason });
+      toast(reason, 'error');
+    }
   },
 
   endOnTaken: (requestId, winner) => {
@@ -356,6 +403,16 @@ function applyCitizenFrame(payload: SolicitudPayload): void {
   if (payload.type === 'request.closed') {
     // Backend TOMADA: the attended service was finished.
     store.endOnClosed(payload.requestId);
+    return;
+  }
+  if (payload.type === 'request.cancelled') {
+    // Backend CANCELADA (or the relay echo of our own withdrawal): the request is
+    // no longer active and the screen returns to the initial state. Only OUR
+    // request reacts; another client's withdrawal never touches our screen. It is
+    // idempotent with the REST success path.
+    if (store.requestId === payload.requestId) {
+      store.reset();
+    }
   }
 }
 

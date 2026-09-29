@@ -45,6 +45,12 @@ export const REQUEST_STATE_META: Record<RequestState, ColorMeta> = {
     textClass: 'text-critical',
     borderClass: 'border-critical/40',
   },
+  CANCELLED: {
+    label: 'Cancelled',
+    dotClass: 'bg-idle',
+    textClass: 'text-idle',
+    borderClass: 'border-idle/40',
+  },
 };
 
 /**
@@ -60,6 +66,7 @@ export const REQUEST_STATE_LABEL_ES: Record<RequestState, string> = {
   TAKEN: 'Tomada',
   REJECTED: 'Rechazada',
   TIMEOUT: 'Expirada',
+  CANCELLED: 'Cancelada',
 };
 
 export const EMERGENCY_LEVEL_META: Record<EmergencyLevel, ColorMeta> = {

@@ -96,7 +96,7 @@ export function useSolicitudRegistrySync(port: RealtimePort | null): void {
           useSolicitudesStore.getState().markConfirmed(wire.solicitudId);
           return;
         }
-        if (wire.estado === 'TIMEOUT' || wire.estado === 'TOMADA') {
+        if (wire.estado === 'TIMEOUT' || wire.estado === 'TOMADA' || wire.estado === 'CANCELADA') {
           // Terminal whole-request states: the request is no longer active, so
           // the card is dropped instead of lingering as a stale Pending one.
           useSolicitudesStore.getState().remove(wire.solicitudId);

@@ -41,6 +41,23 @@ function RailPanel({ label, children }: { label: string; children: ReactNode }) 
 }
 
 /**
+ * Honest reason a cancellation was refused by the backend (409 when a unit
+ * already accepted, 403 when the caller is not the requester). It is rendered
+ * next to the cancel action so a failed withdrawal never looks like a silent one.
+ */
+function CancelErrorNotice({ message }: { message: string }) {
+  return (
+    <p
+      role="alert"
+      className="flex items-start gap-2 rounded-nv-md bg-nv-red-soft p-3 text-nv-red-600 text-[13px] leading-5"
+    >
+      <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <span>{message}</span>
+    </p>
+  );
+}
+
+/**
  * Search panel (mockup `C.c3`): the spinner, the "Buscando ambulancia" heading,
  * the copy adjusted to the real number of alerted units and the live counter.
  */
@@ -261,6 +278,8 @@ interface CitizenRequestRailProps {
    */
   duracionMin?: number | null;
   onCancel: () => void;
+  /** Honest reason the last cancellation was refused by the backend, or null. */
+  cancelError?: string | null;
   /** `C.c6` action: drops the closed request and returns to the map rail. */
   onBackToMap: () => void;
 }
@@ -422,6 +441,7 @@ export function CitizenRequestRail({
   origin,
   duracionMin,
   onCancel,
+  cancelError,
   onBackToMap,
 }: CitizenRequestRailProps) {
   if (phase === 'expired') {
@@ -442,6 +462,7 @@ export function CitizenRequestRail({
         aria-label="Panel del ciudadano"
         className="flex flex-col gap-4 lg:min-h-0 lg:overflow-y-auto"
       >
+        {cancelError && <CancelErrorNotice message={cancelError} />}
         {phase === 'closed' ? (
           <CompletedPanel
             unit={assignedUnit}
@@ -495,6 +516,7 @@ export function CitizenRequestRail({
         <X className="size-5" aria-hidden />
         Cancelar solicitud
       </button>
+      {cancelError && <CancelErrorNotice message={cancelError} />}
       <NotifiedPanel rows={rows} occupiedIds={occupiedIds} />
     </aside>
   );
