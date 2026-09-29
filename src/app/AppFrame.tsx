@@ -1,4 +1,5 @@
 import { Bell, ChevronDown, HeartPulse, LogOut, type LucideIcon, Search } from 'lucide-react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Navigate, Outlet, useNavigate } from 'react-router-dom';
 import { Toaster } from '@/components/ui/toast';
 import { hasRoleHome, ROLE_LABEL } from '@/features/usuarios/role-home';
@@ -42,6 +43,122 @@ function initialsOf(name: string): string {
     .slice(0, 2)
     .map((word) => word.charAt(0).toUpperCase())
     .join('');
+}
+
+const FOCUS_RING =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nv-teal focus-visible:ring-offset-2';
+
+interface UserMenuProps {
+  /** Signed-in user's real name, from the session. */
+  name: string;
+  /** Spanish role label plus the optional unit suffix. */
+  roleLabel: string;
+  /** Avatar initials derived from the name. */
+  initials: string;
+  /** Signs out and returns to /login. */
+  onLogout: () => void;
+}
+
+/**
+ * The topbar account chip: avatar + name + role, opening a menu that offers
+ * "Salir".
+ *
+ * Accessibility (no extra dependency; the repo ships no menu primitive):
+ *   - the trigger is a real button with `aria-haspopup="menu"` and
+ *     `aria-expanded`, named "Cuenta de <nombre>" so the screen reader hears
+ *     whose account it is even when the visible name is short;
+ *   - opening moves focus to the first item, Escape closes and restores focus to
+ *     the trigger, and a click outside closes the menu;
+ *   - `role="menu"` / `role="menuitem"` and a visible focus ring keep it
+ *     keyboard-operable.
+ */
+function UserMenu({ name, roleLabel, initials, onLogout }: UserMenuProps) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const itemRef = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    itemRef.current?.focus();
+    const onPointerDown = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className="relative shrink-0">
+      <button
+        type="button"
+        ref={triggerRef}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
+        aria-label={`Cuenta de ${name}`}
+        onClick={() => setOpen((current) => !current)}
+        className={`flex items-center gap-3 rounded-nv-pill text-left ${FOCUS_RING}`}
+      >
+        <span className="grid size-10 shrink-0 place-items-center rounded-full bg-nv-lime font-bold text-nv-navy text-sm">
+          {initials}
+        </span>
+        <span className="hidden flex-col gap-px leading-tight sm:flex">
+          <b className="font-semibold text-sm">{name}</b>
+          <small className="text-nv-navy-400 text-xs">{roleLabel}</small>
+        </span>
+        <ChevronDown
+          className={cn(
+            'hidden size-[18px] shrink-0 text-nv-navy-400 transition-transform lg:block',
+            open && 'rotate-180',
+          )}
+          aria-hidden
+        />
+      </button>
+
+      {open && (
+        <div
+          id={menuId}
+          role="menu"
+          aria-label="Cuenta"
+          className="absolute top-full right-0 z-50 mt-2 flex w-56 flex-col gap-1 rounded-nv-md border border-nv-line bg-white p-1.5 shadow-nv-card"
+        >
+          <div className="flex flex-col gap-px px-3 py-2">
+            <b className="truncate font-semibold text-sm">{name}</b>
+            <small className="truncate text-nv-navy-400 text-xs">{roleLabel}</small>
+          </div>
+          <button
+            type="button"
+            ref={itemRef}
+            role="menuitem"
+            onClick={onLogout}
+            className={cn(
+              'flex items-center gap-3 rounded-nv-md px-3 py-2.5 text-left font-medium text-nv-navy text-sm hover:bg-nv-mint',
+              FOCUS_RING,
+            )}
+          >
+            <LogOut className="size-4 shrink-0" aria-hidden />
+            Salir
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -162,24 +279,13 @@ export function AppFrame({ nav, activeKey, roleDetail, bellCount }: AppFrameProp
           <div className="hidden h-8 w-px shrink-0 bg-nv-line lg:block" />
 
           {user && (
-            <>
-              <div className="grid size-10 shrink-0 place-items-center rounded-full bg-nv-lime font-bold text-nv-navy text-sm">
-                {initialsOf(user.nombre)}
-              </div>
-              <div className="hidden flex-col gap-px leading-tight sm:flex">
-                <b className="font-semibold text-sm">{user.nombre}</b>
-                <small className="text-nv-navy-400 text-xs">
-                  {ROLE_LABEL[user.rol]}
-                  {roleDetail ? ` · ${roleDetail}` : ''}
-                </small>
-              </div>
-            </>
+            <UserMenu
+              name={user.nombre}
+              roleLabel={`${ROLE_LABEL[user.rol]}${roleDetail ? ` · ${roleDetail}` : ''}`}
+              initials={initialsOf(user.nombre)}
+              onLogout={handleLogout}
+            />
           )}
-
-          <ChevronDown
-            className="hidden size-[18px] shrink-0 text-nv-navy-400 lg:block"
-            aria-hidden
-          />
         </header>
 
         <main className="min-h-0 flex-1 overflow-auto bg-nv-mint p-7 px-8">

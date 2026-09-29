@@ -129,4 +129,58 @@ describe('AppFrame', () => {
     expect(screen.getByTestId('login-screen')).toBeInTheDocument();
     expect(screen.queryByTestId('outlet-content')).not.toBeInTheDocument();
   });
+
+  it('opens the account menu from the header chip and names the signed-in user', async () => {
+    const user = userEvent.setup();
+    renderFrame();
+
+    const account = screen.getByRole('button', { name: 'Cuenta de Ciudadano Demo' });
+    expect(account).toHaveAttribute('aria-haspopup', 'menu');
+    expect(account).toHaveAttribute('aria-expanded', 'false');
+
+    await user.click(account);
+
+    expect(account).toHaveAttribute('aria-expanded', 'true');
+    const menu = screen.getByRole('menu', { name: 'Cuenta' });
+    expect(within(menu).getByRole('menuitem', { name: 'Salir' })).toBeInTheDocument();
+  });
+
+  it('closes the account menu on Escape and restores focus to the chip', async () => {
+    const user = userEvent.setup();
+    renderFrame();
+
+    const account = screen.getByRole('button', { name: 'Cuenta de Ciudadano Demo' });
+    await user.click(account);
+    expect(screen.getByRole('menu', { name: 'Cuenta' })).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByRole('menu', { name: 'Cuenta' })).not.toBeInTheDocument();
+    expect(account).toHaveFocus();
+  });
+
+  it('closes the account menu when clicking outside of it', async () => {
+    const user = userEvent.setup();
+    renderFrame();
+
+    await user.click(screen.getByRole('button', { name: 'Cuenta de Ciudadano Demo' }));
+    expect(screen.getByRole('menu', { name: 'Cuenta' })).toBeInTheDocument();
+
+    await user.click(screen.getByTestId('outlet-content'));
+
+    expect(screen.queryByRole('menu', { name: 'Cuenta' })).not.toBeInTheDocument();
+  });
+
+  it('signs out from the account menu "Salir" and returns to login with a clean session', async () => {
+    const user = userEvent.setup();
+    renderFrame();
+
+    await user.click(screen.getByRole('button', { name: 'Cuenta de Ciudadano Demo' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Salir' }));
+
+    expect(screen.getByTestId('login-screen')).toBeInTheDocument();
+    expect(useSessionStore.getState().user).toBeNull();
+    expect(useSessionStore.getState().role).toBeNull();
+    expect(useSessionStore.getState().token).toBeNull();
+  });
 });
