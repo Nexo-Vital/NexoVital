@@ -85,16 +85,16 @@ public class DataSeeder implements CommandLineRunner {
      * Un conductor por ambulancia para poder probar el broadcast de C2.
      */
     private static final List<UsuarioSemilla> CATALOGO = List.of(
-            new UsuarioSemilla("Rangel Dev", "rangel@nexovital.co", "rangel123", RolUsuario.ADMIN_CENTRO_AYUDA),
-            new UsuarioSemilla("Admin Plataforma", "admin@nexovital.co", "admin123", RolUsuario.ADMIN_PLATAFORMA),
-            new UsuarioSemilla("Coordinación CRUE", "centro@nexovital.co", "centro123", RolUsuario.ADMIN_CENTRO_AYUDA),
-            new UsuarioSemilla("Admin Acopio Bogotá", "acopio@nexovital.co", "acopio123", RolUsuario.ADMIN_ACOPIO),
-            new UsuarioSemilla("Ciudadano Demo", "ciudadano@nexovital.co", "ciudadano123", RolUsuario.CIUDADANO),
-            new UsuarioSemilla("Conductor ABC101", "conductor1@nexovital.co", PASSWORD_CONDUCTOR, RolUsuario.CONDUCTOR),
-            new UsuarioSemilla("Conductor ABC202", "conductor2@nexovital.co", PASSWORD_CONDUCTOR, RolUsuario.CONDUCTOR),
-            new UsuarioSemilla("Conductor ABC303", "conductor3@nexovital.co", PASSWORD_CONDUCTOR, RolUsuario.CONDUCTOR),
-            new UsuarioSemilla("Conductor ABC404", "conductor4@nexovital.co", PASSWORD_CONDUCTOR, RolUsuario.CONDUCTOR),
-            new UsuarioSemilla("Conductor ABC505", "conductor5@nexovital.co", PASSWORD_CONDUCTOR, RolUsuario.CONDUCTOR));
+            new UsuarioSemilla("Andrés Rangel", "rangel@nexovital.co", "rangel123", RolUsuario.ADMIN_CENTRO_AYUDA),
+            new UsuarioSemilla("Diana Torres", "admin@nexovital.co", "admin123", RolUsuario.ADMIN_PLATAFORMA),
+            new UsuarioSemilla("Camilo Rojas", "centro@nexovital.co", "centro123", RolUsuario.ADMIN_CENTRO_AYUDA),
+            new UsuarioSemilla("Paula Méndez", "acopio@nexovital.co", "acopio123", RolUsuario.ADMIN_ACOPIO),
+            new UsuarioSemilla("Ana Gómez", "ciudadano@nexovital.co", "ciudadano123", RolUsuario.CIUDADANO),
+            new UsuarioSemilla("Carlos Pérez", "conductor1@nexovital.co", PASSWORD_CONDUCTOR, RolUsuario.CONDUCTOR),
+            new UsuarioSemilla("Laura Restrepo", "conductor2@nexovital.co", PASSWORD_CONDUCTOR, RolUsuario.CONDUCTOR),
+            new UsuarioSemilla("Andrés Gómez", "conductor3@nexovital.co", PASSWORD_CONDUCTOR, RolUsuario.CONDUCTOR),
+            new UsuarioSemilla("Valentina Ruiz", "conductor4@nexovital.co", PASSWORD_CONDUCTOR, RolUsuario.CONDUCTOR),
+            new UsuarioSemilla("Diego Herrera", "conductor5@nexovital.co", PASSWORD_CONDUCTOR, RolUsuario.CONDUCTOR));
 
     /**
      * Los 3 centros de Bogotá que el front usa hoy. Los nombres y las

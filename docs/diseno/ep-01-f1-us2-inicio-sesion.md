@@ -89,12 +89,12 @@ Diez usuarios cubriendo los 5 roles. Se **conserva** la credencial de referencia
 
 | Rol | Email | Contraseña demo | Nombre | Nota |
 |---|---|---|---|---|
-| `ADMIN_CENTRO_AYUDA` | `rangel@nexovital.co` | `rangel123` | Rangel Dev | Credencial de referencia |
-| `ADMIN_PLATAFORMA` | `admin@nexovital.co` | `admin123` | Admin Plataforma | — |
-| `ADMIN_CENTRO_AYUDA` | `centro@nexovital.co` | `centro123` | Coordinación CRUE | Segundo operador de la sala |
-| `ADMIN_ACOPIO` | `acopio@nexovital.co` | `acopio123` | Admin Acopio Bogotá | Ata el rol al centro de acopio demo |
-| `CIUDADANO` | `ciudadano@nexovital.co` | `ciudadano123` | Ciudadano Demo | Rol que consume la épica EP-04 |
-| `CONDUCTOR` | `conductor1@nexovital.co` … `conductor5@nexovital.co` | `conductor123` | Conductor ABC101 … ABC505 | **Un conductor por ambulancia** |
+| `ADMIN_CENTRO_AYUDA` | `rangel@nexovital.co` | `rangel123` | Andrés Rangel | Credencial de referencia |
+| `ADMIN_PLATAFORMA` | `admin@nexovital.co` | `admin123` | Diana Torres | — |
+| `ADMIN_CENTRO_AYUDA` | `centro@nexovital.co` | `centro123` | Camilo Rojas | Segundo operador de la sala |
+| `ADMIN_ACOPIO` | `acopio@nexovital.co` | `acopio123` | Paula Méndez | Ata el rol al centro de acopio demo |
+| `CIUDADANO` | `ciudadano@nexovital.co` | `ciudadano123` | Ana Gómez | Rol que consume la épica EP-04 |
+| `CONDUCTOR` | `conductor1@nexovital.co` … `conductor5@nexovital.co` | `conductor123` | Carlos Pérez … Diego Herrera | **Un conductor por ambulancia** |
 
 **Por qué 5 conductores y no 1:** la evidencia de C2 exige N = 2, 5, 20 conductores recibiendo el broadcast. Con un solo usuario `CONDUCTOR` esa demo es imposible, y la pantalla del conductor (`238`) no se puede probar con dos sesiones en paralelo. El diseño ata un conductor a cada ambulancia sembrada.
 **Contraseñas:** se persisten **solo como hash BCrypt**. El texto plano vive únicamente en el código del seeder, nunca en la base ni en el contrato.
