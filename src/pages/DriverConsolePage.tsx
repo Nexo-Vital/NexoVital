@@ -30,6 +30,7 @@ import {
 import { useMapData } from '@/features/mapa/use-map-data';
 import { useInventarioStore, withInventario } from '@/features/recursos/inventory-store';
 import { useInventario } from '@/features/recursos/use-inventario';
+import { unitPlateLabel } from '@/features/seguimiento/tracking';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
 import { useSolicitudRegistrySync } from '@/features/solicitudes/use-solicitud-registry-sync';
 import { useSessionStore } from '@/features/usuarios/session';
@@ -394,16 +395,19 @@ export default function DriverConsolePage({
   );
   const counts = useMemo(() => countCentersByLevel(centros), [centros]);
 
+  // "Tú" is the driver, so the marker names their own unit by its plate, never
+  // the internal (UUID off demo) id.
+  const selfUnitLabel = ownUnit ? unitPlateLabel(ownUnit) : unitId;
   const self: SelfMarker | null = useMemo(
     () =>
       effectivePosition
         ? {
             position: effectivePosition,
             simulated: effectiveSimulated,
-            label: `Tú · ${unitId}`,
+            label: `Tú · ${selfUnitLabel}`,
           }
         : null,
-    [effectivePosition, effectiveSimulated, unitId],
+    [effectivePosition, effectiveSimulated, selfUnitLabel],
   );
 
   const activeScene = (missionActive ? inbox.mission : inbox.broadcast)?.escena ?? null;

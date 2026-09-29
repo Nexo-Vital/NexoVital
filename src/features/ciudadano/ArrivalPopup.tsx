@@ -1,5 +1,6 @@
 import { Ambulance, Check, Flag, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { unitPlateLabel } from '@/features/seguimiento/tracking';
 import type { Ambulancia } from '@/types/domain';
 
 interface ArrivalPopupProps {
@@ -39,9 +40,8 @@ interface ArrivalPopupProps {
  * the honest interim exit, not a dispute flow.
  */
 export function ArrivalPopup({ unitId, unit, onConfirm, onClose }: ArrivalPopupProps) {
-  const plate = unit?.placa;
+  const unitLabel = unit ? unitPlateLabel(unit) : unitId;
   const modelType = unit?.modelo && unit.tipo ? `${unit.modelo} · ${unit.tipo}` : null;
-  const marker = `${unitId}${plate ? ` · ${plate}` : ''}`;
 
   return (
     <Dialog
@@ -63,8 +63,7 @@ export function ArrivalPopup({ unitId, unit, onConfirm, onClose }: ArrivalPopupP
         <h3 className="font-semibold text-2xl tracking-tight">Tu ambulancia llegó</h3>
         <DialogDescription className="text-nv-navy-400 text-[15px] leading-6">
           {unit?.driverName ? `${unit.driverName} marcó` : 'El conductor marcó'} que llegó a tu
-          ubicación con la ambulancia {unitId}
-          {plate ? `, placa ${plate}` : ''}. ¿Está contigo?
+          ubicación con la ambulancia {unitLabel}. ¿Está contigo?
         </DialogDescription>
 
         <div className="flex w-full items-center gap-2.5 rounded-nv-md border border-nv-line p-2.5 text-left">
@@ -72,7 +71,7 @@ export function ArrivalPopup({ unitId, unit, onConfirm, onClose }: ArrivalPopupP
             <Ambulance className="size-4" aria-hidden />
           </span>
           <span className="min-w-0 flex-1">
-            <b className="block truncate font-semibold text-[13.5px]">{marker}</b>
+            <b className="block truncate font-semibold text-[13.5px]">{unitLabel}</b>
             {modelType && (
               <small className="block truncate text-nv-navy-400 text-xs">{modelType}</small>
             )}

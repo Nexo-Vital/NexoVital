@@ -5,6 +5,7 @@ import {
   type MapFilterLayer,
   type MapFilterState,
 } from '@/features/mapa/map-filter';
+import { unitPlateLabel } from '@/features/seguimiento/tracking';
 import { cn } from '@/lib/utils';
 import type { CentroAyuda } from '@/types/domain';
 import {
@@ -119,7 +120,9 @@ function NearbyAmbulanceRow({ item }: { item: NearbyAmbulance }) {
         <Ambulance className="size-4" aria-hidden />
       </span>
       <span className="min-w-0 flex-1">
-        <b className="block truncate font-semibold text-[13.5px]">Ambulancia {item.ambulance.id}</b>
+        <b className="block truncate font-semibold text-[13.5px]">
+          Ambulancia {unitPlateLabel(item.ambulance)}
+        </b>
         <small className="block truncate text-nv-navy-400 text-xs">{item.detail}</small>
       </span>
       <span

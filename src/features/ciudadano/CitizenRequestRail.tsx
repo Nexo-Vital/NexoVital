@@ -12,6 +12,7 @@ import {
   TrackingSteps,
   TrackingTimeline,
   unitDetailRows,
+  unitPlateLabel,
 } from '@/features/seguimiento/tracking';
 import { useClock } from '@/hooks/use-clock';
 import { distanceKm, etaMinutes } from '@/lib/geo';
@@ -83,7 +84,9 @@ function NotifiedRow({ item }: { item: NearbyAmbulance }) {
         <Ambulance className="size-4" aria-hidden />
       </span>
       <span className="min-w-0 flex-1">
-        <b className="block truncate font-semibold text-[13.5px]">Ambulancia {item.ambulance.id}</b>
+        <b className="block truncate font-semibold text-[13.5px]">
+          Ambulancia {unitPlateLabel(item.ambulance)}
+        </b>
         <small className="block truncate text-nv-navy-400 text-xs">{item.detail}</small>
       </span>
       <span className="inline-flex shrink-0 items-center gap-1 rounded-nv-pill bg-nv-sky px-2.5 py-1 font-semibold text-nv-navy text-xs">
@@ -328,12 +331,13 @@ function CompletedPanel({
   onBackToMap: () => void;
 }) {
   const driver = unit?.driverName;
+  const unitLabel = unit ? unitPlateLabel(unit) : unitId;
   const entries: TimelineEntry[] = [
     { text: 'Pediste una ambulancia', at: startedAt },
     {
       text: driver
-        ? `${driver} aceptó con la ${unitId}`
-        : `La unidad ${unitId} aceptó tu solicitud`,
+        ? `${driver} aceptó con la ambulancia ${unitLabel}`
+        : `La unidad ${unitLabel} aceptó tu solicitud`,
       at: acceptedAt,
     },
     { text: 'La ambulancia llegó', at: arrivedAt },

@@ -122,13 +122,13 @@ describe('DriverConsolePage against the real backend', () => {
     render(<DriverConsolePage port={port} />);
 
     // The server names the unit the driver owns.
-    expect(await screen.findByText(`${REAL_UNIT} · ABC202`)).toBeInTheDocument();
+    expect(await screen.findByText('ABC202')).toBeInTheDocument();
   });
 
   it('FIX3: the driver gets the mission when the server winner is its OWN unit', async () => {
     fetchMock.mockImplementation(stubBackendReads(MIA_UNIT));
     render(<DriverConsolePage port={port} />);
-    await screen.findByText(`${REAL_UNIT} · ABC202`);
+    await screen.findByText('ABC202');
 
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
     act(() =>
@@ -145,7 +145,7 @@ describe('DriverConsolePage against the real backend', () => {
   it('FIX3: the driver does NOT get the mission when the winner is another unit', async () => {
     fetchMock.mockImplementation(stubBackendReads(MIA_UNIT));
     render(<DriverConsolePage port={port} />);
-    await screen.findByText(`${REAL_UNIT} · ABC202`);
+    await screen.findByText('ABC202');
 
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
     act(() =>

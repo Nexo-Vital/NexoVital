@@ -236,12 +236,14 @@ describe('DriverConsolePage', () => {
     ).toBeInTheDocument();
   });
 
-  it('shows the own unit id and plate, and its chip tracks the driver status', async () => {
+  it('shows the own unit plate, and its chip tracks the driver status', async () => {
     const user = userEvent.setup();
     render(<DriverConsolePage port={new FakeRealtimePort()} ambulanceId="A-07" />);
 
     const rail = driverRail();
-    expect(within(rail).getByText('A-07 · WNR-418')).toBeInTheDocument();
+    expect(within(rail).getByText('WNR-418')).toBeInTheDocument();
+    // The internal unit id is never painted as the unit name.
+    expect(within(rail).queryByText('A-07')).not.toBeInTheDocument();
     // The mockup's "Tu ambulancia" line: model · type, not the zone.
     expect(within(rail).getByText('Renault Master 2023 · Básica (TAB)')).toBeInTheDocument();
     // Off duty is the DRIVER's state: it says "Fuera de servicio", never the
@@ -270,7 +272,7 @@ describe('DriverConsolePage', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'Simular posición' }));
-    expect(screen.getByTestId('map-canvas')).toHaveAttribute('data-self-label', 'Tú · A-07');
+    expect(screen.getByTestId('map-canvas')).toHaveAttribute('data-self-label', 'Tú · WNR-418');
   });
 
   it('stops claiming there are no requests and renders the request card', () => {
@@ -449,9 +451,9 @@ describe('DriverConsolePage', () => {
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
 
     // No device fix: the self marker sits on A-07's declared position and the
-    // map is told the position is simulated.
+    // map is told the position is simulated. It is named by the unit's plate.
     const map = screen.getByTestId('map-canvas');
-    expect(map).toHaveAttribute('data-self-label', 'Tú · A-07');
+    expect(map).toHaveAttribute('data-self-label', 'Tú · WNR-418');
     expect(map).toHaveAttribute('data-self-sim', 'yes');
 
     // Reported as simulated on /topic/flota once online, via the existing flag.

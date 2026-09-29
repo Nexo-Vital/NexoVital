@@ -58,6 +58,7 @@ import { registrarDonacion } from '@/features/recursos/inventory-api';
 import { useInventarioStore, withInventario } from '@/features/recursos/inventory-store';
 import { centroSemaforo } from '@/features/recursos/traffic-light';
 import { useInventario } from '@/features/recursos/use-inventario';
+import { unitPlateLabel } from '@/features/seguimiento/tracking';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
 import { useSolicitudRegistrySync } from '@/features/solicitudes/use-solicitud-registry-sync';
 import { useSessionSync } from '@/features/usuarios/session-sync';
@@ -521,13 +522,14 @@ export default function CitizenMapPage({
   const ruta = useRuta(assignedUnit?.ubicacion ?? null, assignedUnit ? selfPosition : null);
   const routeEtaMin = ruta ? Math.max(1, Math.round(ruta.duracionMin)) : null;
 
-  // The assigned unit's marker carries its ETA label ("A-07 · 5 min"): the real
-  // routed duration when there is a route, the straight-line estimate otherwise.
+  // The assigned unit's marker carries its ETA label ("WNR-418 · 5 min"), named
+  // by its plate: the real routed duration when there is a route, the
+  // straight-line estimate otherwise.
   const ambulanceLabels = useMemo(
     () =>
       assignedUnit
         ? {
-            [assignedUnit.id]: `${assignedUnit.id} · ${
+            [assignedUnit.id]: `${unitPlateLabel(assignedUnit)} · ${
               routeEtaMin ?? etaMinutes(assignedUnit.ubicacion, selfPosition)
             } min`,
           }

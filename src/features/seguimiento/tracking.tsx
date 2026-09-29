@@ -73,17 +73,30 @@ export interface UnitDetailRow {
 }
 
 /**
- * "Unidad / Placa / Modelo / Tipo" from the assigned unit (mockup `C.c4`).
+ * Human handle of an ambulance: its plate (`ABC101`), never the internal id.
  *
- * `modelo` and `tipo` are optional in the domain: a unit created in the fleet
- * manager or hydrated from a live frame may not know them yet, so the row is
- * omitted instead of showing an invented vehicle.
+ * Off demo the id is a UUID, so painting it as the unit's name gives the user a
+ * long, unreadable identifier. The plate is the short, real handle the domain
+ * already carries (and the one the user recognises), so every user-facing unit
+ * label goes through here. Falls back to the id only when a unit arrives with a
+ * blank plate.
+ */
+export function unitPlateLabel(unit: Pick<Ambulancia, 'id' | 'placa'>): string {
+  const plate = unit.placa.trim();
+  return plate === '' ? unit.id : plate;
+}
+
+/**
+ * "Placa / Modelo / Tipo" from the assigned unit (mockup `C.c4`).
+ *
+ * The internal unit id is deliberately NOT a row: off demo it is a UUID, and the
+ * plate already identifies the vehicle to the user. `modelo` and `tipo` are
+ * optional in the domain: a unit created in the fleet manager or hydrated from a
+ * live frame may not know them yet, so the row is omitted instead of showing an
+ * invented vehicle.
  */
 export function unitDetailRows(unit: Ambulancia): UnitDetailRow[] {
-  const rows: UnitDetailRow[] = [
-    { label: 'Unidad', value: unit.id },
-    { label: 'Placa', value: unit.placa },
-  ];
+  const rows: UnitDetailRow[] = [{ label: 'Placa', value: unit.placa }];
   if (unit.modelo) {
     rows.push({ label: 'Modelo', value: unit.modelo });
   }

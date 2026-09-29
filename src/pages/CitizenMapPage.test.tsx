@@ -314,9 +314,9 @@ describe('CitizenMapPage', () => {
     expect(screen.getByRole('heading', { name: 'Buscando ambulancia' })).toBeInTheDocument();
     expect(screen.getByText(/Buscando hace/)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Ambulancias avisadas' })).toBeInTheDocument();
-    expect(screen.getByText('Ambulancia A-07')).toBeInTheDocument();
-    expect(screen.getByText('Ambulancia A-12')).toBeInTheDocument();
-    expect(screen.getByText('Ambulancia A-03')).toBeInTheDocument();
+    expect(screen.getByText('Ambulancia OVX-A-07')).toBeInTheDocument();
+    expect(screen.getByText('Ambulancia OVX-A-12')).toBeInTheDocument();
+    expect(screen.getByText('Ambulancia OVX-A-03')).toBeInTheDocument();
     expect(screen.getAllByText('Avisada')).toHaveLength(3);
     expect(screen.getByText(/Las ambulancias ocupadas \(A-09 y A-15\)/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cancelar solicitud' })).toBeInTheDocument();
@@ -379,7 +379,7 @@ describe('CitizenMapPage', () => {
 
       // The rail renders the server-assigned state and its notified units.
       expect(screen.getByRole('heading', { name: 'Buscando ambulancia' })).toBeInTheDocument();
-      expect(screen.getByText('Ambulancia A-07')).toBeInTheDocument();
+      expect(screen.getByText('Ambulancia OVX-A-07')).toBeInTheDocument();
       expect(useCitizenRequestStore.getState().notifiedIds).toEqual(
         serverResponse.ambulanciasNotificadas,
       );
@@ -773,7 +773,6 @@ describe('CitizenMapPage', () => {
     expect(within(rail).getByText('Carlos Pérez Gómez')).toBeInTheDocument();
     expect(within(rail).getByText('Conductor de la ambulancia')).toBeInTheDocument();
     for (const [label, value] of [
-      ['Unidad', 'A-07'],
       ['Placa', 'WNR-418'],
       ['Modelo', 'Renault Master 2023'],
       ['Tipo', 'Básica (TAB)'],
@@ -805,7 +804,7 @@ describe('CitizenMapPage', () => {
 
     const map = screen.getByTestId('map-canvas');
     expect(map).toHaveAttribute('data-selected', 'A-07');
-    expect(map.getAttribute('data-labels')).toMatch(/"A-07":"A-07 · \d+ min"/);
+    expect(map.getAttribute('data-labels')).toMatch(/"A-07":"WNR-418 · \d+ min"/);
     expect(map).toHaveAttribute('data-connector', 'yes');
     // A live mission draws the connector solid, not dashed (`C.c4`).
     expect(map).toHaveAttribute('data-connector-dashed', 'no');
@@ -963,7 +962,11 @@ describe('CitizenMapPage', () => {
     const rows = within(rail)
       .getAllByText(/^Ambulancia /)
       .map((node) => node.textContent);
-    expect(rows).toEqual(['Ambulancia AMB-NEAR', 'Ambulancia AMB-MID', 'Ambulancia AMB-FAR']);
+    expect(rows).toEqual([
+      'Ambulancia OVX-AMB-NEAR',
+      'Ambulancia OVX-AMB-MID',
+      'Ambulancia OVX-AMB-FAR',
+    ]);
     expect(within(rail).getAllByText('Disponible')).toHaveLength(2);
     expect(within(rail).getAllByText('Ocupada')).toHaveLength(1);
   });
@@ -1054,10 +1057,10 @@ describe('CitizenMapPage', () => {
     ).toBeInTheDocument();
     expect(
       within(dialog).getByText(
-        'Carlos Pérez Gómez marcó que llegó a tu ubicación con la ambulancia A-07, placa WNR-418. ¿Está contigo?',
+        'Carlos Pérez Gómez marcó que llegó a tu ubicación con la ambulancia WNR-418. ¿Está contigo?',
       ),
     ).toBeInTheDocument();
-    expect(within(dialog).getByText('A-07 · WNR-418')).toBeInTheDocument();
+    expect(within(dialog).getByText('WNR-418')).toBeInTheDocument();
     expect(within(dialog).getByText('Renault Master 2023 · Básica (TAB)')).toBeInTheDocument();
 
     // The dispute flow is not built: the action is disabled with its reason.
@@ -1226,7 +1229,9 @@ describe('CitizenMapPage', () => {
     const entries = within(timeline).getAllByRole('listitem');
     expect(entries).toHaveLength(4);
     expect(entries[0].textContent).toMatch(/^Pediste una ambulancia\d{1,2}:\d{2}$/);
-    expect(entries[1].textContent).toMatch(/^Carlos Pérez Gómez aceptó con la A-07\d{1,2}:\d{2}$/);
+    expect(entries[1].textContent).toMatch(
+      /^Carlos Pérez Gómez aceptó con la ambulancia WNR-418\d{1,2}:\d{2}$/,
+    );
     expect(entries[2].textContent).toMatch(/^La ambulancia llegó\d{1,2}:\d{2}$/);
     expect(entries[3].textContent).toMatch(/^Confirmaste la llegada\d{1,2}:\d{2}$/);
 

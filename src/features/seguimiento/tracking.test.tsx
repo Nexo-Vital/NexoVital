@@ -16,6 +16,7 @@ import {
   TrackingSteps,
   TrackingTimeline,
   unitDetailRows,
+  unitPlateLabel,
 } from './tracking';
 
 describe('tracking steps', () => {
@@ -138,15 +139,26 @@ describe('driverInitials', () => {
   });
 });
 
+describe('unitPlateLabel', () => {
+  it('names a unit by its plate, never by its internal id', () => {
+    expect(unitPlateLabel({ id: '550e8400-e29b-41d4-a716-446655440000', placa: 'ABC101' })).toBe(
+      'ABC101',
+    );
+  });
+
+  it('falls back to the id only when the plate is blank', () => {
+    expect(unitPlateLabel({ id: 'A-07', placa: '   ' })).toBe('A-07');
+  });
+});
+
 describe('unitDetailRows', () => {
-  it('lists the real unit data from the fleet fixture', () => {
+  it('lists the real unit data from the fleet fixture, without the internal id', () => {
     const unit = MOCK_AMBULANCIAS.find((candidate) => candidate.id === 'A-07');
     if (!unit) {
       throw new Error('A-07 missing from fixtures');
     }
 
     expect(unitDetailRows(unit)).toEqual([
-      { label: 'Unidad', value: 'A-07' },
       { label: 'Placa', value: 'WNR-418' },
       { label: 'Modelo', value: 'Renault Master 2023' },
       { label: 'Tipo', value: 'Básica (TAB)' },
@@ -163,9 +175,6 @@ describe('unitDetailRows', () => {
         zona: 'Suba',
         driverName: 'Nadie',
       }),
-    ).toEqual([
-      { label: 'Unidad', value: 'A-99' },
-      { label: 'Placa', value: 'XXX-000' },
-    ]);
+    ).toEqual([{ label: 'Placa', value: 'XXX-000' }]);
   });
 });

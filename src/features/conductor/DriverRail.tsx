@@ -33,6 +33,7 @@ import {
   INSECURE_CONTEXT_MESSAGE,
   SIMULATED_START,
 } from '@/features/geolocalizacion/use-device-location';
+import { unitPlateLabel } from '@/features/seguimiento/tracking';
 import {
   EMERGENCY_LEVEL_META,
   REQUEST_STATE_LABEL_ES,
@@ -155,7 +156,9 @@ function MyUnitPanel({
   const chipLabel = missionActive ? CITIZEN_UNIT_META.busy.label : driverMeta.label;
   const chipClass = missionActive ? CITIZEN_UNIT_META.busy.chipClass : driverMeta.chipClass;
   const hint = locationHint(location);
-  const plate = unit?.placa;
+  // The unit is named by its plate (never the internal id, which is a UUID off
+  // demo); until the fleet hydrates, the id is the only handle available.
+  const unitLabel = unit ? unitPlateLabel(unit) : unitId;
   const modelType = unit?.modelo && unit.tipo ? `${unit.modelo} · ${unit.tipo}` : null;
   const secondary = modelType ?? unit?.zona ?? null;
 
@@ -175,10 +178,7 @@ function MyUnitPanel({
           <Ambulance className="size-5" aria-hidden />
         </span>
         <span className="min-w-0 flex-1">
-          <b className="block truncate font-semibold text-[15px]">
-            {unitId}
-            {plate ? ` · ${plate}` : ''}
-          </b>
+          <b className="block truncate font-semibold text-[15px]">{unitLabel}</b>
           {secondary ? (
             <small className="block truncate text-nv-navy-400 text-xs">{secondary}</small>
           ) : null}
