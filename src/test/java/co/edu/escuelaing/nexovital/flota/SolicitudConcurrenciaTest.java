@@ -84,7 +84,7 @@ class SolicitudConcurrenciaTest {
                 String zona = "PruebaC2-" + UUID.randomUUID();
                 Map<UUID, UUID> unidades = sembrarUnidades(zona, UNIDADES_POR_RONDA);
                 UUID solicitudId = solicitarAmbulanciaUseCase
-                        .solicitar(UUID.randomUUID(), UUID.randomUUID(), zona, UUID.randomUUID(), null)
+                        .solicitar(4.73d, -74.08d, UUID.randomUUID(), UUID.randomUUID(), zona, UUID.randomUUID(), null)
                         .getId();
 
                 List<Throwable> resultados = correrCarrera(pool, solicitudId, unidades);
@@ -129,9 +129,9 @@ class SolicitudConcurrenciaTest {
                 // unit, so each request's own CAS can win. The unit's row is the
                 // only thing that can pick a single winner.
                 UUID solicitudA = solicitarAmbulanciaUseCase
-                        .solicitar(UUID.randomUUID(), UUID.randomUUID(), zona, UUID.randomUUID(), null).getId();
+                        .solicitar(4.73d, -74.08d, UUID.randomUUID(), UUID.randomUUID(), zona, UUID.randomUUID(), null).getId();
                 UUID solicitudB = solicitarAmbulanciaUseCase
-                        .solicitar(UUID.randomUUID(), UUID.randomUUID(), zona, UUID.randomUUID(), null).getId();
+                        .solicitar(4.73d, -74.08d, UUID.randomUUID(), UUID.randomUUID(), zona, UUID.randomUUID(), null).getId();
 
                 CountDownLatch largada = new CountDownLatch(1);
                 Future<Throwable> futuroA = pool.submit(aceptarDeLaMismaUnidad(largada, solicitudA, unidad, conductor));

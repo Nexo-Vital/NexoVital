@@ -49,7 +49,7 @@ import java.util.UUID;
 public class SolicitudController {
 
     private static final String MENSAJE_DATOS_INVALIDOS =
-            "La solicitud no es válida: revise la emergencia, el centro y la zona.";
+            "La solicitud no es válida: indique la ubicación del pedido.";
     private static final String MENSAJE_DATOS_ACEPTACION = "El accept no es válido: indique la ambulancia.";
     private static final String MENSAJE_DATOS_RECHAZO = "El reject no es válido: indique la ambulancia.";
     private static final String MENSAJE_DATOS_LLEGADA = "La llegada no es válida: indique la ambulancia.";
@@ -91,30 +91,32 @@ public class SolicitudController {
     }
 
     /**
-     * Broadcasts the request to every available unit of the zone. The
+     * Broadcasts the request to every available unit (no zone filter). The
      * authenticated citizen is persisted as the requester and receives the
-     * lifecycle on their own user destination.
+     * lifecycle on their own user destination. The only mandatory field is the
+     * pickup location; the emergency, the aid center and the zone are optional
+     * context, because a request no longer depends on an affected zone.
      *
      * @return 201 with the created request; 409 {@code AMBULANCIA_NO_DISPONIBLE}
-     *         if the zone has none; 400 {@code DATOS_INVALIDOS} on a missing
-     *         field; 500 {@code ERROR_REGISTRO_SOLICITUD} if persistence fails
+     *         if no unit is available; 400 {@code DATOS_INVALIDOS} when the
+     *         location is missing or not finite; 500
+     *         {@code ERROR_REGISTRO_SOLICITUD} if persistence fails
      */
     @PostMapping
-    @Operation(summary = "Solicitar una ambulancia (broadcast a la zona)")
+    @Operation(summary = "Solicitar una ambulancia (broadcast a todas las disponibles)")
     public ResponseEntity<Object> solicitar(@RequestBody SolicitudRequest request) {
         try {
-            if (request == null || request.emergenciaId() == null) {
-                throw new IllegalArgumentException("La emergencia es obligatoria.");
+            if (request == null || request.ubicacion() == null) {
+                throw new IllegalArgumentException("La ubicación del pedido es obligatoria.");
             }
-            if (request.centroAyudaId() == null) {
-                throw new IllegalArgumentException("El centro de ayuda es obligatorio.");
-            }
-            if (request.zonaId() == null || request.zonaId().isBlank()) {
-                throw new IllegalArgumentException("La zona es obligatoria.");
+            double lat = request.ubicacion().lat();
+            double lng = request.ubicacion().lng();
+            if (!Double.isFinite(lat) || !Double.isFinite(lng)) {
+                throw new IllegalArgumentException("La ubicación del pedido debe ser un punto válido.");
             }
             UUID solicitanteId = usuarioAutenticadoId();
             SolicitudAmbulancia creada = solicitarAmbulanciaUseCase.solicitar(
-                    request.emergenciaId(), request.centroAyudaId(), request.zonaId(),
+                    lat, lng, request.emergenciaId(), request.centroAyudaId(), request.zonaId(),
                     solicitanteId, request.timeoutEn());
             return ResponseEntity.status(HttpStatus.CREATED).body(SolicitudAmbulanciaDto.fromDomain(creada));
         } catch (AmbulanciaNoDisponibleException e) {

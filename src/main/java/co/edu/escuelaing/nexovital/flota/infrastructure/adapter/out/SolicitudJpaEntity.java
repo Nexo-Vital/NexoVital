@@ -24,17 +24,27 @@ public class SolicitudJpaEntity {
     @Id
     private UUID id;
 
+    /** Pickup point: mandatory, the only required geographic field. */
     @Column(nullable = false)
+    private double lat;
+
+    @Column(nullable = false)
+    private double lng;
+
+    /** Optional emergency reference; a standalone request has none. */
+    @Column
     private UUID emergenciaId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private EstadoSolicitud estado;
 
-    @Column(nullable = false)
+    /** Optional aid-center reference; a standalone request has none. */
+    @Column
     private UUID centroAyudaId;
 
-    @Column(nullable = false)
+    /** Optional zone context; the zone is a map warning, never a dispatch key. */
+    @Column
     private String zonaId;
 
     @Column(nullable = false)
@@ -65,11 +75,13 @@ public class SolicitudJpaEntity {
     protected SolicitudJpaEntity() {
     }
 
-    public SolicitudJpaEntity(UUID id, UUID emergenciaId, EstadoSolicitud estado, UUID centroAyudaId,
-                              String zonaId, Instant solicitadaEn, Instant timeoutEn, UUID solicitanteId,
-                              List<UUID> ambulanciasNotificadas, UUID ambulanciaAsignadaId,
-                              Instant llegadaEn) {
+    public SolicitudJpaEntity(UUID id, double lat, double lng, UUID emergenciaId, EstadoSolicitud estado,
+                              UUID centroAyudaId, String zonaId, Instant solicitadaEn, Instant timeoutEn,
+                              UUID solicitanteId, List<UUID> ambulanciasNotificadas,
+                              UUID ambulanciaAsignadaId, Instant llegadaEn) {
         this.id = id;
+        this.lat = lat;
+        this.lng = lng;
         this.emergenciaId = emergenciaId;
         this.estado = estado;
         this.centroAyudaId = centroAyudaId;
@@ -86,6 +98,14 @@ public class SolicitudJpaEntity {
 
     public UUID getId() {
         return id;
+    }
+
+    public double getLat() {
+        return lat;
+    }
+
+    public double getLng() {
+        return lng;
     }
 
     public UUID getEmergenciaId() {

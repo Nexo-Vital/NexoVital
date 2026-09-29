@@ -10,7 +10,11 @@ import java.util.UUID;
 /** Outbound port for the fleet aggregate. The domain never sees JPA. */
 public interface AmbulanciaRepository {
 
-    List<Ambulancia> listarDisponiblesEnZona(String zona);
+    /**
+     * Every available unit, with NO zone filter: the C2 broadcast reaches all of
+     * them, so the zone is a map warning and never a dispatch key.
+     */
+    List<Ambulancia> listarDisponibles();
 
     Optional<Ambulancia> buscarPorId(UUID id);
 

@@ -142,19 +142,48 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
     void ac1_cadaAmbulanciaDisponibleRecibeSuNotificacion() throws Exception {
         String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
 
-        mockMvc.perform(post("/api/v1/solicitudes")
+        // The dispatch has NO zone filter: EVERY available unit at creation time
+        // is notified. Read the expected set right before the POST, so the
+        // assertion never hardcodes the seed and cannot drift from it.
+        Map<UUID, UUID> conductorPorUnidad = ambulanciaJpaRepository.findAll().stream()
+                .filter(entidad -> entidad.getEstado() == EstadoAmbulancia.DISPONIBLE)
+                .collect(Collectors.toMap(AmbulanciaJpaEntity::getId, AmbulanciaJpaEntity::getConductorId));
+        assertTrue(conductorPorUnidad.keySet().containsAll(sembradas),
+                "las unidades de prueba deben estar disponibles antes del broadcast");
+
+        MvcResult result = mockMvc.perform(post("/api/v1/solicitudes")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(cuerpoSolicitud(zona)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.estado").value("PENDIENTE"))
-                .andExpect(jsonPath("$.ambulanciasNotificadas.length()").value(UNIDADES_DE_PRUEBA));
+                .andExpect(jsonPath("$.ubicacion.lat").value(4.73d))
+                .andExpect(jsonPath("$.ubicacion.lng").value(-74.08d))
+                .andReturn();
 
-        for (UUID conductorId : conductorPorAmbulancia.values()) {
+        JsonNode creada = objectMapper.readTree(result.getResponse().getContentAsString());
+        Set<UUID> notificadas = new java.util.HashSet<>();
+        for (JsonNode id : creada.get("ambulanciasNotificadas")) {
+            notificadas.add(UUID.fromString(id.asText()));
+        }
+        assertEquals(conductorPorUnidad.keySet(), notificadas,
+                "el broadcast debe notificar a TODAS las unidades disponibles, sin filtro de zona");
+
+        for (UUID conductorId : conductorPorUnidad.values()) {
             List<PublicacionCapturada> entregas = pushPortDePrueba.haciaUsuario(
                     conductorId.toString(), FlotaPushListener.DESTINO_SOLICITUDES);
-            assertEquals(1, entregas.size(),
-                    "cada ambulancia disponible debe recibir UNA entrega en su destino de usuario: " + conductorId);
+            assertFalse(entregas.isEmpty(),
+                    "cada unidad disponible debe recibir su entrega en el destino de su conductor: " + conductorId);
+        }
+        // Each notified unit's driver got at least one copy; the payload carries
+        // the pickup location so the driver knows where to go.
+        for (PublicacionCapturada entrega : pushPortDePrueba.publicaciones()) {
+            if (entrega.payload() instanceof FlotaPushListener.SolicitudPushPayload payload
+                    && "PENDIENTE".equals(payload.estado())) {
+                assertNotNull(payload.ubicacion(), "el broadcast lleva la ubicación del pedido");
+                assertEquals(4.73d, payload.ubicacion().lat());
+                assertEquals(-74.08d, payload.ubicacion().lng());
+            }
         }
 
         long broadcastCompartido = pushPortDePrueba.publicaciones().stream()
@@ -163,6 +192,39 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
                 .count();
         assertEquals(0, broadcastCompartido,
                 "no debe existir una entrega a /queue/solicitudes sin usuario: el simple broker la repartiría en round-robin");
+    }
+
+    @Test
+    @DisplayName("La ubicación del pedido es obligatoria: sin ella, POST /solicitudes responde 400")
+    void sinUbicacionDevuelve400() throws Exception {
+        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+
+        mockMvc.perform(post("/api/v1/solicitudes")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "emergenciaId", UUID.randomUUID().toString()))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("DATOS_INVALIDOS"));
+    }
+
+    @Test
+    @DisplayName("Sin emergencia, centro ni zona: la solicitud nace PENDIENTE con su ubicación (campos opcionales)")
+    void sinEmergenciaCentroNiZonaLaSolicitudNacePendiente() throws Exception {
+        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+
+        mockMvc.perform(post("/api/v1/solicitudes")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "ubicacion", Map.of("lat", 4.73d, "lng", -74.08d)))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.estado").value("PENDIENTE"))
+                .andExpect(jsonPath("$.emergenciaId").doesNotExist())
+                .andExpect(jsonPath("$.centroAyudaId").doesNotExist())
+                .andExpect(jsonPath("$.zonaId").doesNotExist())
+                .andExpect(jsonPath("$.ubicacion.lat").value(4.73d))
+                .andExpect(jsonPath("$.ubicacion.lng").value(-74.08d));
     }
 
     // -----------------------------------------------------------------------
@@ -238,8 +300,9 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
         String conductor = tokenDe(CONDUCTOR, CONDUCTOR_PASSWORD);
         String solicitudId = crearSolicitud(ciudadano, zona);
 
-        // Available and owned by the authenticating driver, but in ANOTHER zone:
-        // the request never notified it, so its accept must be refused.
+        // The dispatch has no zone filter, so a unit that must NOT be notified has
+        // to appear AFTER the request was created: it is available and owned by
+        // the authenticating driver, but the broadcast never saw it.
         UUID noNotificada = UUID.randomUUID();
         ambulanciaJpaRepository.save(new AmbulanciaJpaEntity(
                 noNotificada, "OTR0", EstadoAmbulancia.DISPONIBLE,
@@ -738,6 +801,7 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
 
     private String cuerpoSolicitud(String zona, UUID centroAyudaId) throws Exception {
         return objectMapper.writeValueAsString(Map.of(
+                "ubicacion", Map.of("lat", 4.73d, "lng", -74.08d),
                 "emergenciaId", UUID.randomUUID().toString(),
                 "centroAyudaId", centroAyudaId.toString(),
                 "zonaId", zona));

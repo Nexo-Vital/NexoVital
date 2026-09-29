@@ -29,7 +29,7 @@ class SolicitudAmbulanciaTest {
     private final UUID ambulanciaB = UUID.randomUUID();
 
     private SolicitudAmbulancia pendiente() {
-        return SolicitudAmbulancia.solicitar(solicitudId, emergenciaId, centroAyudaId, "zona-1",
+        return SolicitudAmbulancia.solicitar(solicitudId, 4.73d, -74.08d, emergenciaId, centroAyudaId, "zona-1",
                 Instant.now(), Instant.now().plus(60, ChronoUnit.SECONDS), solicitanteId,
                 List.of(ambulanciaA, ambulanciaB));
     }
@@ -42,6 +42,34 @@ class SolicitudAmbulanciaTest {
         assertEquals(List.of(ambulanciaA, ambulanciaB), solicitud.getAmbulanciasNotificadas());
         assertEquals(solicitanteId, solicitud.getSolicitanteId());
         assertEquals(0, solicitud.getVersion());
+    }
+
+    @Test
+    void laUbicacionEsObligatoriaYViajaEnLasTransiciones() {
+        assertEquals(4.73d, pendiente().getLat());
+        assertEquals(-74.08d, pendiente().getLng());
+        // The pickup point is the request's own data: every transition carries it.
+        SolicitudAmbulancia asignada = pendiente().aceptar(ambulanciaA).llegar(Instant.now());
+        assertEquals(4.73d, asignada.getLat());
+        assertEquals(-74.08d, asignada.getLng());
+        // A non-finite coordinate is never a valid request.
+        assertThrows(IllegalArgumentException.class, () -> SolicitudAmbulancia.solicitar(
+                solicitudId, Double.NaN, -74.08d, emergenciaId, centroAyudaId, "zona-1",
+                Instant.now(), Instant.now().plus(60, ChronoUnit.SECONDS), solicitanteId,
+                List.of(ambulanciaA)));
+    }
+
+    @Test
+    void laEmergenciaElCentroYLaZonaSonOpcionales() {
+        // A standalone citizen request carries no emergency, center or zone.
+        SolicitudAmbulancia suelta = SolicitudAmbulancia.solicitar(solicitudId, 4.73d, -74.08d,
+                null, null, null, Instant.now(), Instant.now().plus(60, ChronoUnit.SECONDS),
+                solicitanteId, List.of(ambulanciaA));
+        assertEquals(EstadoSolicitud.PENDIENTE, suelta.getEstado());
+        assertNull(suelta.getEmergenciaId());
+        assertNull(suelta.getCentroAyudaId());
+        assertNull(suelta.getZonaId());
+        assertEquals(4.73d, suelta.getLat());
     }
 
     @Test
@@ -118,8 +146,8 @@ class SolicitudAmbulanciaTest {
 
     @Test
     void estaVencidaCuandoTimeoutQuedaAtras() {
-        SolicitudAmbulancia vencida = SolicitudAmbulancia.solicitar(solicitudId, emergenciaId, centroAyudaId,
-                "zona-1", Instant.now().minus(120, ChronoUnit.SECONDS),
+        SolicitudAmbulancia vencida = SolicitudAmbulancia.solicitar(solicitudId, 4.73d, -74.08d,
+                emergenciaId, centroAyudaId, "zona-1", Instant.now().minus(120, ChronoUnit.SECONDS),
                 Instant.now().minus(60, ChronoUnit.SECONDS), solicitanteId, List.of(ambulanciaA));
         assertTrue(vencida.estaVencida());
         assertFalse(pendiente().estaVencida());

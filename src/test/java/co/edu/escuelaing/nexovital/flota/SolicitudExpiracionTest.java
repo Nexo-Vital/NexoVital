@@ -141,7 +141,7 @@ class SolicitudExpiracionTest {
     @DisplayName("US9: una solicitud PENDIENTE dentro de su ventana NO expira")
     void unaSolicitudVigenteNoExpira() {
         UUID solicitudId = solicitarAmbulanciaUseCase.solicitar(
-                UUID.randomUUID(), UUID.randomUUID(), zona, UUID.randomUUID(),
+                4.73d, -74.08d, UUID.randomUUID(), UUID.randomUUID(), zona, UUID.randomUUID(),
                 clock.instant().plusSeconds(60)).getId();
         solicitudesCreadas.add(solicitudId);
 
@@ -156,7 +156,7 @@ class SolicitudExpiracionTest {
     private UUID crearSolicitudVencida(UUID solicitanteId) {
         Instant pasado = clock.instant().minusSeconds(60);
         UUID solicitudId = solicitarAmbulanciaUseCase
-                .solicitar(UUID.randomUUID(), UUID.randomUUID(), zona, solicitanteId, pasado)
+                .solicitar(4.73d, -74.08d, UUID.randomUUID(), UUID.randomUUID(), zona, solicitanteId, pasado)
                 .getId();
         solicitudesCreadas.add(solicitudId);
         return solicitudId;

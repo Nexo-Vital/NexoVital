@@ -26,6 +26,8 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
     public SolicitudAmbulancia guardar(SolicitudAmbulancia solicitud) {
         SolicitudJpaEntity entity = new SolicitudJpaEntity(
                 solicitud.getId(),
+                solicitud.getLat(),
+                solicitud.getLng(),
                 solicitud.getEmergenciaId(),
                 solicitud.getEstado(),
                 solicitud.getCentroAyudaId(),
@@ -90,6 +92,8 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
     private static SolicitudAmbulancia toDomain(SolicitudJpaEntity entity) {
         return SolicitudAmbulancia.restaurar(
                 entity.getId(),
+                entity.getLat(),
+                entity.getLng(),
                 entity.getEmergenciaId(),
                 entity.getEstado(),
                 entity.getCentroAyudaId(),

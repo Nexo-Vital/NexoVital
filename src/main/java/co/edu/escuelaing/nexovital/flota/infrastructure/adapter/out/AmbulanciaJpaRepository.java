@@ -14,7 +14,7 @@ public interface AmbulanciaJpaRepository extends JpaRepository<AmbulanciaJpaEnti
 
     Optional<AmbulanciaJpaEntity> findByPlaca(String placa);
 
-    List<AmbulanciaJpaEntity> findByEstadoAndZona(EstadoAmbulancia estado, String zona);
+    List<AmbulanciaJpaEntity> findByEstado(EstadoAmbulancia estado);
 
     /**
      * CAS real del estado de la unidad: UNA sola {@code UPDATE} condicionada a

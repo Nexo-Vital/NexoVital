@@ -27,13 +27,29 @@ import java.util.UUID;
  * {@code llegadaEn} in the front domain). The milestone is monotone: {@code
  * llegar} refuses to move it backwards and the use case treats a repeat as a
  * no-op.
+ *
+ * <p><b>Pickup location is the only mandatory geographic field.</b> A citizen
+ * request no longer depends on an affected zone: it carries the point where the
+ * unit must pick the patient up. {@code emergenciaId}, {@code centroAyudaId} and
+ * {@code zonaId} become optional context — an emergency was a prerequisite
+ * before, now it is only a reference when the report was anchored to one, and
+ * the zone is a map warning that never gates the dispatch.
  */
 public final class SolicitudAmbulancia {
 
     private final UUID id;
+    /**
+     * Pickup point: where the unit must go. It is the request's own location,
+     * independent from any emergency, and the only required geographic field.
+     */
+    private final double lat;
+    private final double lng;
+    /** Optional reference to the emergency the request may be anchored to. */
     private final UUID emergenciaId;
     private final EstadoSolicitud estado;
+    /** Optional aid-center reference; a standalone citizen request has none. */
     private final UUID centroAyudaId;
+    /** Optional zone context; the zone is a map warning, never a dispatch key. */
     private final String zonaId;
     private final Instant solicitadaEn;
     private final Instant timeoutEn;
@@ -53,15 +69,18 @@ public final class SolicitudAmbulancia {
     private final Instant llegadaEn;
     private final long version;
 
-    private SolicitudAmbulancia(UUID id, UUID emergenciaId, EstadoSolicitud estado, UUID centroAyudaId,
-                                String zonaId, Instant solicitadaEn, Instant timeoutEn, UUID solicitanteId,
-                                List<UUID> ambulanciasNotificadas, UUID ambulanciaAsignadaId,
-                                Instant llegadaEn, long version) {
+    private SolicitudAmbulancia(UUID id, double lat, double lng, UUID emergenciaId, EstadoSolicitud estado,
+                                UUID centroAyudaId, String zonaId, Instant solicitadaEn, Instant timeoutEn,
+                                UUID solicitanteId, List<UUID> ambulanciasNotificadas,
+                                UUID ambulanciaAsignadaId, Instant llegadaEn, long version) {
         this.id = Objects.requireNonNull(id, "id is required");
-        this.emergenciaId = Objects.requireNonNull(emergenciaId, "emergenciaId is required");
+        this.lat = lat;
+        this.lng = lng;
+        // Optional by design: a standalone request has no emergency, center or zone.
+        this.emergenciaId = emergenciaId;
         this.estado = Objects.requireNonNull(estado, "estado is required");
-        this.centroAyudaId = Objects.requireNonNull(centroAyudaId, "centroAyudaId is required");
-        this.zonaId = Objects.requireNonNull(zonaId, "zonaId is required");
+        this.centroAyudaId = centroAyudaId;
+        this.zonaId = zonaId;
         this.solicitadaEn = Objects.requireNonNull(solicitadaEn, "solicitadaEn is required");
         this.timeoutEn = Objects.requireNonNull(timeoutEn, "timeoutEn is required");
         // Not required here: `restaurar` must tolerate rows persisted before the
@@ -75,32 +94,42 @@ public final class SolicitudAmbulancia {
         this.version = version;
     }
 
-    public static SolicitudAmbulancia solicitar(UUID id, UUID emergenciaId, UUID centroAyudaId, String zonaId,
+    /**
+     * Creates a PENDIENTE request. The pickup location is mandatory and must be
+     * a finite coordinate; the emergency, center and zone are optional context.
+     *
+     * @throws IllegalArgumentException if the pickup point is not a finite pair
+     */
+    public static SolicitudAmbulancia solicitar(UUID id, double lat, double lng,
+                                                UUID emergenciaId, UUID centroAyudaId, String zonaId,
                                                 Instant solicitadaEn, Instant timeoutEn, UUID solicitanteId,
                                                 List<UUID> ambulanciasNotificadas) {
+        if (!Double.isFinite(lat) || !Double.isFinite(lng)) {
+            throw new IllegalArgumentException("La ubicación del pedido debe ser un punto válido.");
+        }
         Objects.requireNonNull(solicitanteId, "solicitanteId is required");
-        return new SolicitudAmbulancia(id, emergenciaId, EstadoSolicitud.PENDIENTE, centroAyudaId, zonaId,
-                solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, null, null, 0);
+        return new SolicitudAmbulancia(id, lat, lng, emergenciaId, EstadoSolicitud.PENDIENTE, centroAyudaId,
+                zonaId, solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, null, null, 0);
     }
 
     /**
      * Rebuilds the aggregate from persistence (out adapter). It does not
      * validate transitions: the state arrives exactly as it was stored.
      */
-    public static SolicitudAmbulancia restaurar(UUID id, UUID emergenciaId, EstadoSolicitud estado,
-                                                UUID centroAyudaId, String zonaId, Instant solicitadaEn,
-                                                Instant timeoutEn, UUID solicitanteId,
+    public static SolicitudAmbulancia restaurar(UUID id, double lat, double lng, UUID emergenciaId,
+                                                EstadoSolicitud estado, UUID centroAyudaId, String zonaId,
+                                                Instant solicitadaEn, Instant timeoutEn, UUID solicitanteId,
                                                 List<UUID> ambulanciasNotificadas,
                                                 UUID ambulanciaAsignadaId, Instant llegadaEn, long version) {
-        return new SolicitudAmbulancia(id, emergenciaId, estado, centroAyudaId, zonaId,
+        return new SolicitudAmbulancia(id, lat, lng, emergenciaId, estado, centroAyudaId, zonaId,
                 solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, ambulanciaAsignadaId,
                 llegadaEn, version);
     }
 
     private static SolicitudAmbulancia conEstado(SolicitudAmbulancia actual, EstadoSolicitud nuevo,
                                                  UUID ambulanciaAsignadaId) {
-        return new SolicitudAmbulancia(actual.id, actual.emergenciaId, nuevo, actual.centroAyudaId,
-                actual.zonaId, actual.solicitadaEn, actual.timeoutEn, actual.solicitanteId,
+        return new SolicitudAmbulancia(actual.id, actual.lat, actual.lng, actual.emergenciaId, nuevo,
+                actual.centroAyudaId, actual.zonaId, actual.solicitadaEn, actual.timeoutEn, actual.solicitanteId,
                 actual.ambulanciasNotificadas, ambulanciaAsignadaId, actual.llegadaEn, actual.version + 1);
     }
 
@@ -164,7 +193,7 @@ public final class SolicitudAmbulancia {
      */
     public SolicitudAmbulancia llegar(Instant llegadaEn) {
         requiereTransicion(this, EstadoSolicitud.ASIGNADA, "arrival");
-        return new SolicitudAmbulancia(id, emergenciaId, estado, centroAyudaId, zonaId,
+        return new SolicitudAmbulancia(id, lat, lng, emergenciaId, estado, centroAyudaId, zonaId,
                 solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, ambulanciaAsignadaId,
                 Objects.requireNonNull(llegadaEn, "llegadaEn is required"), version + 1);
     }
@@ -194,6 +223,17 @@ public final class SolicitudAmbulancia {
         return id;
     }
 
+    /** Pickup point latitude: where the unit must go. */
+    public double getLat() {
+        return lat;
+    }
+
+    /** Pickup point longitude: where the unit must go. */
+    public double getLng() {
+        return lng;
+    }
+
+    /** Optional emergency reference, or null for a standalone request. */
     public UUID getEmergenciaId() {
         return emergenciaId;
     }
@@ -202,10 +242,12 @@ public final class SolicitudAmbulancia {
         return estado;
     }
 
+    /** Optional aid-center reference, or null for a standalone request. */
     public UUID getCentroAyudaId() {
         return centroAyudaId;
     }
 
+    /** Optional zone context, or null when the request declares none. */
     public String getZonaId() {
         return zonaId;
     }

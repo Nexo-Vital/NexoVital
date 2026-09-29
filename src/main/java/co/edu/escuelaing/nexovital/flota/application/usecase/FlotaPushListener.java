@@ -46,8 +46,10 @@ import java.util.UUID;
  * {@code request.rejected}, making the citizen believe their still-open request
  * failed.
  *
- * <p><b>Debt (stage 3).</b> The front must subscribe to
- * {@code /user/queue/solicitudes}, not {@code /queue/solicitudes} (D-F1).
+ * <p><b>Pickup location.</b> The creation frame carries the request's
+ * {@code ubicacion}; the driver card and the request detail read it to show
+ * where to go. Later lifecycle frames keep it null: the front already holds the
+ * pickup point from the creation frame.
  */
 @Component
 public class FlotaPushListener {
@@ -67,12 +69,14 @@ public class FlotaPushListener {
 
     /**
      * Fans the new request out to EVERY notified unit, one user destination per
-     * unit (AC1). The payload is the same for each copy.
+     * unit (AC1). The payload carries the pickup {@code ubicacion} so every
+     * driver knows where to go; it is the same for each copy.
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void alCrearSolicitud(SolicitudCreadaEvent evento) {
         SolicitudPushPayload payload = new SolicitudPushPayload(
-                evento.solicitudId(), evento.emergenciaId(), evento.zonaId(),
+                evento.solicitudId(), new Ubicacion(evento.lat(), evento.lng()),
+                evento.emergenciaId(), evento.zonaId(),
                 "PENDIENTE", evento.ambulanciasNotificadas(), null, false);
         for (UUID ambulanciaId : evento.ambulanciasNotificadas()) {
             publicarAlConductor(ambulanciaId, payload);
@@ -84,7 +88,7 @@ public class FlotaPushListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void alAsignarSolicitud(SolicitudAsignadaEvent evento) {
         SolicitudPushPayload payload = new SolicitudPushPayload(
-                evento.solicitudId(), evento.emergenciaId(), evento.zonaId(),
+                evento.solicitudId(), null, evento.emergenciaId(), evento.zonaId(),
                 "ASIGNADA", List.of(), evento.ambulanciaId(), false);
         publicarAlConductor(evento.ambulanciaId(), payload);
         publicarAlSolicitante(evento.solicitanteId(), payload);
@@ -104,7 +108,7 @@ public class FlotaPushListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void alRechazarSolicitud(SolicitudRechazadaEvent evento) {
         publicarAlConductor(evento.ambulanciaId(), new SolicitudPushPayload(
-                evento.solicitudId(), evento.emergenciaId(), evento.zonaId(),
+                evento.solicitudId(), null, evento.emergenciaId(), evento.zonaId(),
                 "RECHAZADA", List.of(), null, false));
     }
 
@@ -118,7 +122,7 @@ public class FlotaPushListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void alDeclararLlegada(SolicitudLlegadaEvent evento) {
         publicarAlSolicitante(evento.solicitanteId(), new SolicitudPushPayload(
-                evento.solicitudId(), evento.emergenciaId(), evento.zonaId(),
+                evento.solicitudId(), null, evento.emergenciaId(), evento.zonaId(),
                 "ASIGNADA", List.of(), evento.ambulanciaId(), true));
     }
 
@@ -126,7 +130,7 @@ public class FlotaPushListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void alConfirmarSolicitud(SolicitudConfirmadaEvent evento) {
         SolicitudPushPayload payload = new SolicitudPushPayload(
-                evento.solicitudId(), evento.emergenciaId(), evento.zonaId(),
+                evento.solicitudId(), null, evento.emergenciaId(), evento.zonaId(),
                 "CONFIRMADA", List.of(), evento.ambulanciaId(), false);
         publicarAlConductor(evento.ambulanciaId(), payload);
         publicarAlSolicitante(evento.solicitanteId(), payload);
@@ -141,7 +145,7 @@ public class FlotaPushListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void alExpirarSolicitud(SolicitudExpiradaEvent evento) {
         SolicitudPushPayload payload = new SolicitudPushPayload(
-                evento.solicitudId(), evento.emergenciaId(), evento.zonaId(),
+                evento.solicitudId(), null, evento.emergenciaId(), evento.zonaId(),
                 "TIMEOUT", evento.ambulanciasNotificadas(), null, false);
         for (UUID ambulanciaId : evento.ambulanciasNotificadas()) {
             publicarAlConductor(ambulanciaId, payload);
@@ -157,7 +161,7 @@ public class FlotaPushListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void alFinalizarSolicitud(SolicitudFinalizadaEvent evento) {
         SolicitudPushPayload payload = new SolicitudPushPayload(
-                evento.solicitudId(), evento.emergenciaId(), evento.zonaId(),
+                evento.solicitudId(), null, evento.emergenciaId(), evento.zonaId(),
                 "TOMADA", List.of(), evento.ambulanciaId(), false);
         publicarAlConductor(evento.ambulanciaId(), payload);
         publicarAlSolicitante(evento.solicitanteId(), payload);
@@ -204,9 +208,13 @@ public class FlotaPushListener {
         }
     }
 
+    /** Pickup point of a request, as the driver card receives it. */
+    public record Ubicacion(double lat, double lng) {
+    }
+
     /** Public projection of a request for the driver inbox. */
-    public record SolicitudPushPayload(UUID solicitudId, UUID emergenciaId, String zonaId,
-                                       String estado, List<UUID> ambulanciasNotificadas,
+    public record SolicitudPushPayload(UUID solicitudId, Ubicacion ubicacion, UUID emergenciaId,
+                                       String zonaId, String estado, List<UUID> ambulanciasNotificadas,
                                        UUID ambulanciaAsignadaId, boolean llegada) {
     }
 
@@ -228,10 +236,6 @@ public class FlotaPushListener {
      */
     public record PosicionPushPayload(UUID ambulanceId, Ubicacion ubicacion, String estado,
                                       Integer heading, String source) {
-
-        /** {@code {lat, lng}} as the front's {@code Ubicacion} declares it. */
-        public record Ubicacion(double lat, double lng) {
-        }
 
         static PosicionPushPayload desde(PosicionActualizadaEvent evento) {
             return new PosicionPushPayload(

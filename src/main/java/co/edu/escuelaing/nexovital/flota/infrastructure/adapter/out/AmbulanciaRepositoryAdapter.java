@@ -25,8 +25,8 @@ public class AmbulanciaRepositoryAdapter implements AmbulanciaRepository, FlotaQ
     }
 
     @Override
-    public List<Ambulancia> listarDisponiblesEnZona(String zona) {
-        return jpaRepository.findByEstadoAndZona(EstadoAmbulancia.DISPONIBLE, zona).stream()
+    public List<Ambulancia> listarDisponibles() {
+        return jpaRepository.findByEstado(EstadoAmbulancia.DISPONIBLE).stream()
                 .map(AmbulanciaRepositoryAdapter::toDomain)
                 .toList();
     }

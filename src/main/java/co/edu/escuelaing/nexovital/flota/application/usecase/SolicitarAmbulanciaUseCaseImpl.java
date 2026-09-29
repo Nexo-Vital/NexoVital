@@ -24,9 +24,12 @@ import java.util.UUID;
  * {@link FlotaPushListener} listens in {@code AFTER_COMMIT} (golden rule:
  * publish POST-COMMIT).
  *
- * <p>The event carries the ids of EVERY available unit in the zone, so the
- * post-commit listener fans the request out to each one (D-F1, AC1). The module
- * no longer knows a broker: it only publishes the domain event.
+ * <p><b>The broadcast has no zone filter.</b> The event carries the ids of EVERY
+ * available unit — the request no longer depends on an affected zone, and the
+ * zone is only a map warning. The class of the professor's description ("all
+ * ambulances accept and only one wins") is delivered by the CAS on accept, not
+ * by narrowing who is notified. The module no longer knows a broker: it only
+ * publishes the domain event.
  */
 @Service
 public class SolicitarAmbulanciaUseCaseImpl implements SolicitarAmbulanciaUseCase {
@@ -48,11 +51,11 @@ public class SolicitarAmbulanciaUseCaseImpl implements SolicitarAmbulanciaUseCas
 
     @Override
     @Transactional
-    public SolicitudAmbulancia solicitar(UUID emergenciaId, UUID centroAyudaId, String zonaId,
-                                         UUID solicitanteId, Instant timeoutEn) {
-        List<Ambulancia> disponibles = ambulanciaRepository.listarDisponiblesEnZona(zonaId);
+    public SolicitudAmbulancia solicitar(double lat, double lng, UUID emergenciaId, UUID centroAyudaId,
+                                         String zonaId, UUID solicitanteId, Instant timeoutEn) {
+        List<Ambulancia> disponibles = ambulanciaRepository.listarDisponibles();
         if (disponibles.isEmpty()) {
-            throw new AmbulanciaNoDisponibleException(zonaId);
+            throw new AmbulanciaNoDisponibleException();
         }
 
         Instant solicitadaEn = Instant.now();
@@ -60,12 +63,13 @@ public class SolicitarAmbulanciaUseCaseImpl implements SolicitarAmbulanciaUseCas
         List<UUID> notificadas = disponibles.stream().map(Ambulancia::getId).toList();
 
         SolicitudAmbulancia solicitud = SolicitudAmbulancia.solicitar(
-                UUID.randomUUID(), emergenciaId, centroAyudaId, zonaId, solicitadaEn, tope,
+                UUID.randomUUID(), lat, lng, emergenciaId, centroAyudaId, zonaId, solicitadaEn, tope,
                 solicitanteId, notificadas);
         SolicitudAmbulancia guardada = solicitudRepository.guardar(solicitud);
 
         eventPublisher.publishEvent(new SolicitudCreadaEvent(
-                guardada.getId(), emergenciaId, zonaId, notificadas, solicitadaEn, guardada.getSolicitanteId()));
+                guardada.getId(), guardada.getLat(), guardada.getLng(), emergenciaId, zonaId,
+                notificadas, solicitadaEn, guardada.getSolicitanteId()));
         return guardada;
     }
 }

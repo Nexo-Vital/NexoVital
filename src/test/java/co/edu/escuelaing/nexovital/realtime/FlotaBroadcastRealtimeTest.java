@@ -161,6 +161,7 @@ class FlotaBroadcastRealtimeTest {
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setBearerAuth(tokenCiudadano);
         Map<String, Object> cuerpo = Map.of(
+                "ubicacion", Map.of("lat", 4.73d, "lng", -74.08d),
                 "emergenciaId", UUID.randomUUID().toString(),
                 "centroAyudaId", UUID.randomUUID().toString(),
                 "zonaId", ZONA);
@@ -169,8 +170,8 @@ class FlotaBroadcastRealtimeTest {
 
         assertEquals(HttpStatus.CREATED, respuesta.getStatusCode(), "el POST real debe responder 201");
         JsonNode creada = objectMapper.readTree(respuesta.getBody());
-        assertEquals(5, creada.get("ambulanciasNotificadas").size(),
-                "el broadcast debe notificar a las cinco ambulancias sembradas de Suba");
+        assertTrue(creada.get("ambulanciasNotificadas").size() >= 5,
+                "el broadcast sin filtro de zona debe notificar al menos a las cinco ambulancias sembradas");
         String solicitudId = creada.get("id").asText();
 
         for (Map.Entry<String, SesionStomp> entry : porUsuario.entrySet()) {
