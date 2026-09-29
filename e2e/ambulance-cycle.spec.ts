@@ -36,8 +36,9 @@ import { type APIResponse, expect, test } from '@playwright/test';
  * DISPONIBLE. If an assertion fails after the accept, the finally block makes a
  * best-effort POST /finalizar with the driver's own token, so a re-run is not
  * blocked by an occupied unit. A failure before the accept leaves a PENDIENTE
- * request that the backend expires on its own window; this backend exposes no
- * cancel command, so that is the honest limit of the failure path.
+ * request that the backend expires on its own window (or the citizen withdraws
+ * through `POST /solicitudes/{id}/cancelar`), so that is the honest limit of the
+ * failure path.
  */
 
 const BASE_URL = 'http://localhost:5173';
