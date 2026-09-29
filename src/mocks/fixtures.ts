@@ -70,7 +70,7 @@ export const MOCK_AMBULANCIAS: Ambulancia[] = [
     estado: 'AVAILABLE',
     ubicacion: { lat: 4.72, lng: -74.078 },
     zona: 'Suba',
-    driverName: 'Carlos Pérez Gómez',
+    driverName: 'Carlos Pérez',
   },
   {
     id: 'A-12',
@@ -80,7 +80,7 @@ export const MOCK_AMBULANCIAS: Ambulancia[] = [
     estado: 'AVAILABLE',
     ubicacion: { lat: 4.701, lng: -74.041 },
     zona: 'Usaquén',
-    driverName: 'Laura Restrepo Díaz',
+    driverName: 'Laura Restrepo',
   },
   {
     id: 'A-03',
@@ -90,7 +90,7 @@ export const MOCK_AMBULANCIAS: Ambulancia[] = [
     estado: 'AVAILABLE',
     ubicacion: { lat: 4.692, lng: -74.112 },
     zona: 'Engativá',
-    driverName: 'Andrés Gómez Peña',
+    driverName: 'Andrés Gómez',
   },
   {
     id: 'A-09',
@@ -100,7 +100,7 @@ export const MOCK_AMBULANCIAS: Ambulancia[] = [
     estado: 'ASSIGNED',
     ubicacion: { lat: 4.628, lng: -74.144 },
     zona: 'Kennedy',
-    driverName: 'Valentina Ruiz Mora',
+    driverName: 'Valentina Ruiz',
   },
   {
     id: 'A-15',
@@ -110,7 +110,7 @@ export const MOCK_AMBULANCIAS: Ambulancia[] = [
     estado: 'EN_ROUTE',
     ubicacion: { lat: 4.608, lng: -74.186 },
     zona: 'Bosa',
-    driverName: 'Diego Herrera Cruz',
+    driverName: 'Diego Herrera',
   },
 ];
 

@@ -166,6 +166,7 @@ export function toSolicitud(
     estado: 'PENDING',
     centroAyudaId: CITIZEN_CENTRO_AYUDA_ID,
     zonaId: payload.zonaId,
+    ...(payload.escena ? { ubicacion: payload.escena } : {}),
     tipo: payload.tipo,
     solicitadaEn: new Date(now).toISOString(),
     timeoutEn: payload.timeoutEn,

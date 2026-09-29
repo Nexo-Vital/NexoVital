@@ -331,6 +331,7 @@ export default function DriverConsolePage({
       : undefined;
     const scene =
       (inbox.broadcast?.requestId === solicitud.id ? inbox.broadcast?.escena : undefined) ??
+      solicitud.ubicacion ??
       emergency?.ubicacion ??
       centro?.ubicacion ??
       zone ??
@@ -588,6 +589,11 @@ export default function DriverConsolePage({
           setSelectedSolicitud((current) => (open ? current : null));
         }}
         solicitud={selectedSolicitud}
+        distanceKm={
+          selectedSolicitud?.ubicacion && effectivePosition
+            ? distanceKm(effectivePosition, selectedSolicitud.ubicacion)
+            : null
+        }
         canRespond={selectedIsActive}
         onAccept={handleAcceptFromSheet}
         onReject={handleRejectFromSheet}

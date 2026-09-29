@@ -5,6 +5,7 @@ import { fromWireSolicitudAmbulancia, solicitarAmbulancia } from './solicitud-ap
 /** A live-shaped 201 body: server-assigned id/estado/timestamps. */
 const WIRE_RESPONSE = {
   id: '8b6f2f0e-0000-4000-8000-000000000042',
+  ubicacion: { lat: 4.728, lng: -74.078 },
   emergenciaId: 'REQ-FRONT-1',
   estado: 'PENDIENTE',
   centroAyudaId: 'CA-CRUE',
@@ -16,6 +17,7 @@ const WIRE_RESPONSE = {
 };
 
 const BODY = {
+  ubicacion: { lat: 4.728, lng: -74.078 },
   emergenciaId: 'REQ-FRONT-1',
   centroAyudaId: 'CA-CRUE',
   zonaId: 'Suba',
@@ -36,6 +38,7 @@ describe('fromWireSolicitudAmbulancia', () => {
   it('maps the backend DTO and translates its estado to the English domain value', () => {
     expect(fromWireSolicitudAmbulancia(WIRE_RESPONSE)).toEqual({
       id: WIRE_RESPONSE.id,
+      ubicacion: WIRE_RESPONSE.ubicacion,
       emergenciaId: WIRE_RESPONSE.emergenciaId,
       estado: 'PENDING',
       centroAyudaId: WIRE_RESPONSE.centroAyudaId,
@@ -47,6 +50,19 @@ describe('fromWireSolicitudAmbulancia', () => {
       notifiedCount: 3,
       ambulanciaAsignadaId: null,
     });
+  });
+
+  it('accepts a standalone request whose emergency, center and zone are null', () => {
+    const mapped = fromWireSolicitudAmbulancia({
+      ...WIRE_RESPONSE,
+      emergenciaId: null,
+      centroAyudaId: null,
+      zonaId: null,
+    });
+
+    // Nullable context is normalized to empty strings, never invented ids.
+    expect(mapped).toMatchObject({ emergenciaId: '', centroAyudaId: '', zonaId: '' });
+    expect(mapped?.ubicacion).toEqual(WIRE_RESPONSE.ubicacion);
   });
 
   it('translates every lifecycle literal the backend can emit', () => {
@@ -80,6 +96,15 @@ describe('fromWireSolicitudAmbulancia', () => {
     expect(fromWireSolicitudAmbulancia(null)).toBeNull();
     expect(fromWireSolicitudAmbulancia('nope')).toBeNull();
     expect(fromWireSolicitudAmbulancia({ ...WIRE_RESPONSE, id: '' })).toBeNull();
+    // The pickup point is required: a request with no valid location is dropped.
+    expect(fromWireSolicitudAmbulancia({ ...WIRE_RESPONSE, ubicacion: undefined })).toBeNull();
+    expect(fromWireSolicitudAmbulancia({ ...WIRE_RESPONSE, ubicacion: 'nope' })).toBeNull();
+    expect(
+      fromWireSolicitudAmbulancia({ ...WIRE_RESPONSE, ubicacion: { lat: 'x', lng: 1 } }),
+    ).toBeNull();
+    // A non-empty string OR null is valid context; a wrong type is not.
+    expect(fromWireSolicitudAmbulancia({ ...WIRE_RESPONSE, emergenciaId: 7 })).toBeNull();
+    expect(fromWireSolicitudAmbulancia({ ...WIRE_RESPONSE, zonaId: 7 })).toBeNull();
     expect(fromWireSolicitudAmbulancia({ ...WIRE_RESPONSE, estado: 'DESCONOCIDO' })).toBeNull();
     expect(fromWireSolicitudAmbulancia({ ...WIRE_RESPONSE, estado: 'toString' })).toBeNull();
     expect(

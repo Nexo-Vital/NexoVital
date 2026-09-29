@@ -96,10 +96,21 @@ export type RequestState = 'PENDING' | 'ASSIGNED' | 'CONFIRMED' | 'TAKEN' | 'REJ
 
 export interface SolicitudAmbulancia {
   id: string;
+  /**
+   * Optional emergency reference. A standalone citizen request (no affected zone
+   * reported) carries an empty string: the request no longer depends on one.
+   */
   emergenciaId: string;
   estado: RequestState;
+  /** Optional aid-center reference; empty for a standalone request. */
   centroAyudaId: string;
+  /** Optional zone context; empty when the request declares none. */
   zonaId: string;
+  /**
+   * Pickup point of the request: where the unit must go (contract `ubicacion`).
+   * Optional because demo fixtures predate it; the backend always sends one.
+   */
+  ubicacion?: Ubicacion;
   /** UI label for the registry row, e.g. "Cardiac arrest". */
   tipo: string;
   solicitadaEn: string;

@@ -29,10 +29,10 @@ test('la cabecera muestra al usuario y su menu "Salir" cierra la sesion', async 
 
   // The header carries the signed-in user's real name, read from the login
   // response, not a hardcoded UI literal.
-  await expect(page.getByText('Ciudadano Demo')).toBeVisible();
+  await expect(page.getByText('Ana Gómez')).toBeVisible();
 
   // The account chip opens a menu that offers the sign-out.
-  const account = page.getByRole('button', { name: 'Cuenta de Ciudadano Demo' });
+  const account = page.getByRole('button', { name: 'Cuenta de Ana Gómez' });
   await account.click();
   const menu = page.getByRole('menu', { name: 'Cuenta' });
   await expect(menu).toBeVisible();

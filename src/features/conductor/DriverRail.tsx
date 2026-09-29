@@ -496,7 +496,10 @@ function RequestCard({
         */}
         <RequestDataRow
           label="Emergencia"
-          value={`${broadcast.emergenciaId}${broadcast.tipo ? ` · ${broadcast.tipo}` : ''}`}
+          value={
+            [broadcast.emergenciaId, broadcast.tipo].filter(Boolean).join(' · ') ||
+            'Sin emergencia asociada'
+          }
           icon={User}
         />
         {/* A citizen request declares no zone, so the coordinates it really
@@ -750,8 +753,15 @@ function SolicitudesListPanel({
                   </span>
                 </span>
                 <small className="block truncate text-nv-navy-400 text-xs">
-                  {[solicitud.tipo, solicitud.zonaId].filter(Boolean).join(' · ') ||
-                    solicitud.emergenciaId}
+                  {[
+                    solicitud.tipo,
+                    solicitud.zonaId ||
+                      (solicitud.ubicacion ? formatCoordinates(solicitud.ubicacion) : ''),
+                  ]
+                    .filter(Boolean)
+                    .join(' · ') ||
+                    solicitud.emergenciaId ||
+                    'Sin detalle'}
                 </small>
               </button>
             </li>

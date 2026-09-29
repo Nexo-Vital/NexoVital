@@ -1,8 +1,8 @@
-import { activeEmergencies, SOLICITUD_TIMEOUT_MS } from '@/features/solicitudes/solicitud-form';
+import { SOLICITUD_TIMEOUT_MS } from '@/features/solicitudes/solicitud-form';
 import { formatCountdown } from '@/lib/format';
 import { distanceKm } from '@/lib/geo';
 import type { SolicitudBroadcastPayload } from '@/shared/realtime';
-import type { Ambulancia, CentroAyuda, Emergencia, Ubicacion } from '@/types/domain';
+import type { Ambulancia, Ubicacion } from '@/types/domain';
 
 /**
  * Citizen "ask for an ambulance" projection.
@@ -11,6 +11,10 @@ import type { Ambulancia, CentroAyuda, Emergencia, Ubicacion } from '@/types/dom
  * what the broadcast looks like, and how its copy/labels are derived. Nothing
  * here touches a store or the network — the store action and the rail render
  * from these values, so the rules are unit-testable in isolation.
+ *
+ * <p>Asking for an ambulance does NOT depend on an affected zone: the zone is a
+ * map warning only. The request carries the citizen's pickup point, and the
+ * alert reaches every available unit.
  */
 
 /** Units alerted at once by a citizen request (mockup `C.c3`: "las 3"). */
@@ -25,24 +29,16 @@ export const CITIZEN_REQUEST_LABEL = 'Solicitud de ambulancia';
  * request never looks dead. They are UI copy (Spanish), one per real cause.
  */
 export const CITIZEN_REQUEST_REASONS = {
-  noEmergency:
-    'No hay una emergencia activa reportada. Reporta primero la zona afectada y vuelve a pedir la ambulancia.',
-  noCenter: 'El mapa todavía no tiene centros de ayuda a los que dirigir la solicitud.',
-  noZone:
-    'La emergencia no tiene zona y ningún centro cercano declara una. No se puede enviar la solicitud.',
+  noLocation:
+    'No pudimos obtener tu ubicación. Activa el GPS del dispositivo o marca el punto de recogida en el mapa.',
   noUnits: 'No hay ambulancias disponibles en este momento.',
-  // The defense-in-depth reason: a pick that is not a real server record (e.g. a
-  // leftover fixture id like `EMG-002` or `CA-LA-GAITANA`) must never be POSTed.
-  notServerData:
-    'La emergencia o el centro seleccionados no son registros válidos del servidor. Vuelve a cargar el mapa e inténtalo de nuevo.',
   failed: 'No se pudo enviar la solicitud. Intenta de nuevo.',
 } as const;
 
 /**
- * True for a canonical RFC 4122 UUID (any version). The backend's
- * `emergenciaId`/`centroAyudaId` are `java.util.UUID`, so anything else
- * (`EMG-002`, `CA-CRUE`) is rejected with a 400 before the handler even runs.
- * Used as the last guard before the request is sent: presence is not validity.
+ * True for a canonical RFC 4122 UUID (any version). The backend request id is a
+ * `java.util.UUID`, so anything else (`REQ-…`) is rejected before the accept.
+ * Used as the last guard before an accept/reject is sent.
  */
 export function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
@@ -82,47 +78,22 @@ export function countAvailableUnits(units: Ambulancia[]): number {
   return units.filter((unit) => unit.estado === 'AVAILABLE').length;
 }
 
+/** Every currently AVAILABLE unit: the dispatch broadcasts to all of them. */
+export function availableUnits(units: Ambulancia[]): Ambulancia[] {
+  return units.filter((unit) => unit.estado === 'AVAILABLE');
+}
+
 /** Available units nearest to the citizen, nearest first, capped at `limit`. */
 export function nearestAvailableUnits(
   units: Ambulancia[],
   origin: Ubicacion,
   limit = CITIZEN_BROADCAST_LIMIT,
 ): Ambulancia[] {
-  return units
-    .filter((unit) => unit.estado === 'AVAILABLE')
+  return availableUnits(units)
     .map((unit) => ({ unit, km: distanceKm(origin, unit.ubicacion) }))
     .sort((a, b) => a.km - b.km)
     .slice(0, limit)
     .map((entry) => entry.unit);
-}
-
-/**
- * The citizen's most recently created ACTIVE emergency, or null when there is
- * none. The request is anchored to THIS emergency: a local `REQ-…` id is not an
- * emergency and the backend rejects it as an invalid `UUID`. Ties keep the list
- * order, so the caller's ordering stays authoritative.
- */
-export function latestActiveEmergency(emergencies: Emergencia[]): Emergencia | null {
-  return activeEmergencies(emergencies).reduce<Emergencia | null>(
-    (latest, item) =>
-      latest === null || Date.parse(item.createdAt) >= Date.parse(latest.createdAt) ? item : latest,
-    null,
-  );
-}
-
-/**
- * The aid center nearest to `origin`, or null when the map holds none. The
- * request points the backend at a REAL center by id, so picking the nearest is
- * the natural destination; against the seeded backend every center is in Suba,
- * which is where the citizen fallback origin sits too. Returns null on an empty
- * list so the caller can fail honestly instead of sending a blank center.
- */
-export function nearestCentro(centros: CentroAyuda[], origin: Ubicacion): CentroAyuda | null {
-  return (
-    centros
-      .map((centro) => ({ centro, km: distanceKm(origin, centro.ubicacion) }))
-      .sort((a, b) => a.km - b.km)[0]?.centro ?? null
-  );
 }
 
 /**
@@ -133,7 +104,7 @@ export function searchIntroText(notifiedCount: number): string {
   if (notifiedCount === 1) {
     return 'Avisamos a la ambulancia disponible más cercana. La primera que acepte va hacia ti.';
   }
-  return `Avisamos al mismo tiempo a las ${notifiedCount} ambulancias disponibles más cercanas. La primera que acepte va hacia ti.`;
+  return `Avisamos al mismo tiempo a las ${notifiedCount} ambulancias disponibles. La primera que acepte va hacia ti.`;
 }
 
 /**
@@ -162,21 +133,22 @@ export interface CitizenBroadcastInput {
 }
 
 /**
- * Builds the citizen's broadcast. `escena` is the real citizen position and
- * `notificadas` the nearest available units.
+ * Builds the citizen's broadcast. `escena` is the real pickup point and
+ * `notificadas` holds EVERY available unit — the same no-zone-filter broadcast
+ * the backend performs. It is the DEMO path; against a backend the server owns
+ * the broadcast.
  *
  * A citizen request has no pre-existing emergency and no triage behind it, so
  * the request stands for itself: its id doubles as the emergency id, it carries
  * no declared `nivel` (the driver card shows "Sin clasificar" instead of an
  * invented severity) and `zonaId` is left empty because the citizen declared no
- * zone — the coordinates already travel in `escena`. A request created from the
- * CRUE keeps its emergency's real `nivel` and `zonaId`. Returns `null` with zero
+ * zone — the coordinates already travel in `escena`. Returns `null` with zero
  * available units so the button never starts an impossible search.
  */
 export function buildCitizenBroadcast(
   input: CitizenBroadcastInput,
 ): SolicitudBroadcastPayload | null {
-  const notified = nearestAvailableUnits(input.units, input.origin);
+  const notified = availableUnits(input.units);
   if (notified.length === 0) {
     return null;
   }

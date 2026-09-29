@@ -32,13 +32,16 @@ function isRequestFrame(payload: Record<string, unknown>): boolean {
  */
 function solicitudFromWire(frame: SolicitudWireFrame): SolicitudAmbulancia {
   const emergency =
-    useEmergencyStore.getState().items.find((item) => item.id === frame.emergenciaId) ?? null;
+    frame.emergenciaId === null
+      ? null
+      : (useEmergencyStore.getState().items.find((item) => item.id === frame.emergenciaId) ?? null);
   return {
     id: frame.solicitudId,
-    emergenciaId: frame.emergenciaId,
+    emergenciaId: frame.emergenciaId ?? '',
     estado: 'PENDING',
     centroAyudaId: '',
-    zonaId: frame.zonaId,
+    zonaId: frame.zonaId ?? '',
+    ...(frame.ubicacion ? { ubicacion: frame.ubicacion } : {}),
     tipo: emergency?.descripcion ?? '',
     solicitadaEn: new Date().toISOString(),
     timeoutEn: '',

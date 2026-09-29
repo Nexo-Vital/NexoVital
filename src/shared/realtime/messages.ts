@@ -401,27 +401,33 @@ export type EstadoSolicitudWire =
  * Request frame the backend `flota` module pushes to `/user/queue/solicitudes`.
  *
  * It is the JSON of `FlotaPushListener.SolicitudPushPayload`:
- * `{solicitudId, emergenciaId, zonaId, estado, ambulanciasNotificadas,
+ * `{solicitudId, ubicacion, emergenciaId, zonaId, estado, ambulanciasNotificadas,
  * ambulanciaAsignadaId}`. Two things set it apart from the front's
  * `SolicitudPayload` union:
  *
  *   - it has NO `type` discriminant: the lifecycle is in `estado`;
- *   - it carries NO scene (`escena`), no request type label, no severity and no
- *     accept deadline. The front resolves the scene/type/level from the
- *     emergency (`emergenciaId`) when it has it, and degrades honestly when it
- *     does not.
+ *   - it carries no request type label and no accept deadline. The front
+ *     resolves them from the emergency (`emergenciaId`) when it has it, and
+ *     degrades honestly when it does not.
  *
- * `fromWireSolicitud` validates this shape and returns null on a malformed
- * frame; the union is then built by `solicitudFrameFromWire`.
+ * `ubicacion` is the request's own pickup point and travels on the creation
+ * frame; the later lifecycle frames send it `null`. `emergenciaId` and `zonaId`
+ * are nullable: a standalone citizen request has neither. `fromWireSolicitud`
+ * validates this shape and returns null on a malformed frame; the union is then
+ * built by `solicitudFrameFromWire`.
  */
 export interface SolicitudWireFrame {
   solicitudId: string;
-  emergenciaId: string;
-  zonaId: string;
+  /** Optional emergency reference; null for a standalone request. */
+  emergenciaId: string | null;
+  /** Optional zone context; null when the request declares none. */
+  zonaId: string | null;
   estado: EstadoSolicitudWire;
   ambulanciasNotificadas: string[];
   /** Winner unit, or null while the request is still PENDIENTE. */
   ambulanciaAsignadaId: string | null;
+  /** Pickup point on the creation frame; null on the lifecycle frames. */
+  ubicacion: Ubicacion | null;
   /**
    * Arrival milestone: true on the request-level push the winning unit's
    * arrival emits. Arrival is NOT a lifecycle state (the request stays

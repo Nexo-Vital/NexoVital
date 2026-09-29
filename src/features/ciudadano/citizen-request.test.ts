@@ -7,52 +7,23 @@ import { MOCK_AMBULANCIAS } from '@/mocks/fixtures';
 import { setSession, setToken } from '@/services/apiClient';
 import { DESTINATIONS } from '@/shared/realtime';
 import { FakeRealtimePort } from '@/test/fake-realtime-port';
-import type { AmbulanceState, Ambulancia, CentroAyuda, Emergencia } from '@/types/domain';
+import type { AmbulanceState, Ambulancia } from '@/types/domain';
 import {
   buildCitizenBroadcast,
+  CITIZEN_REQUEST_LABEL,
   CITIZEN_REQUEST_REASONS,
   citizenSceneLabel,
   countAvailableUnits,
   formatUnitList,
   isUuid,
-  latestActiveEmergency,
   nearestAvailableUnits,
-  nearestCentro,
   searchElapsed,
   searchIntroText,
 } from './citizen-request';
 import { useCitizenRequestStore } from './citizen-request-store';
 
-/** Origin used by the page when the device gives no position (Suba). */
+/** Origin used by the page as the pickup point (Suba). */
 const ORIGIN = { lat: 4.728, lng: -74.078 };
-
-/** A backend-shaped emergency id (the contract field is a `UUID`). */
-const EMERGENCY_ID = '0b6f2f0e-1111-4000-8000-0000000000aa';
-/** A backend-shaped aid-center id from the map read-model. */
-const CENTRO_ID = '1c7a3a1e-2222-4000-8000-0000000000bb';
-
-function emergencia(overrides: Partial<Emergencia> = {}): Emergencia {
-  return {
-    id: EMERGENCY_ID,
-    ubicacion: { lat: 4.728, lng: -74.078 },
-    nivel: 'HIGH',
-    estado: 'REPORTED',
-    descripcion: 'Derrumbe en Suba',
-    zonaId: 'ZONA-SUBA',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    ...overrides,
-  };
-}
-
-function centroAyuda(id: string, lat: number, lng: number, zonaId?: string): CentroAyuda {
-  return {
-    id,
-    nombre: `Centro ${id}`,
-    ubicacion: { lat, lng },
-    items: [],
-    ...(zonaId === undefined ? {} : { zonaId }),
-  };
-}
 
 /** Minimal Response stand-in: apiFetch only reads status, ok, headers.get, json. */
 function mockResponse(status: number, body: unknown): Response {
@@ -113,50 +84,6 @@ describe('nearestAvailableUnits', () => {
   });
 });
 
-describe('latestActiveEmergency', () => {
-  it('picks the most recently created ACTIVE emergency', () => {
-    const older = emergencia({
-      id: 'EMG-OLD',
-      createdAt: '2026-01-01T00:00:00.000Z',
-    });
-    const newer = emergencia({
-      id: 'EMG-NEW',
-      createdAt: '2026-01-01T01:00:00.000Z',
-    });
-
-    expect(latestActiveEmergency([newer, older])?.id).toBe('EMG-NEW');
-    expect(latestActiveEmergency([older, newer])?.id).toBe('EMG-NEW');
-  });
-
-  it('ignores resolved and closed emergencies and returns null with none', () => {
-    expect(latestActiveEmergency([])).toBeNull();
-    expect(
-      latestActiveEmergency([
-        emergencia({ id: 'EMG-RESOLVED', estado: 'RESOLVED' }),
-        emergencia({ id: 'EMG-CLOSED', estado: 'CLOSED' }),
-      ]),
-    ).toBeNull();
-  });
-
-  it('keeps an emergency that is being handled (IN_PROGRESS)', () => {
-    expect(latestActiveEmergency([emergencia({ estado: 'IN_PROGRESS' })])?.id).toBe(EMERGENCY_ID);
-  });
-});
-
-describe('nearestCentro', () => {
-  it('picks the nearest center to the citizen, whatever the list order', () => {
-    const far = centroAyuda('C-FAR', 4.9, -74.078);
-    const near = centroAyuda('C-NEAR', 4.729, -74.078);
-
-    expect(nearestCentro([far, near], ORIGIN)?.id).toBe('C-NEAR');
-    expect(nearestCentro([near, far], ORIGIN)?.id).toBe('C-NEAR');
-  });
-
-  it('returns null when the map holds no center', () => {
-    expect(nearestCentro([], ORIGIN)).toBeNull();
-  });
-});
-
 describe('isUuid', () => {
   it('accepts a canonical 36-char UUID, any version', () => {
     expect(isUuid('0b6f2f0e-1111-4000-8000-0000000000aa')).toBe(true);
@@ -177,7 +104,7 @@ describe('isUuid', () => {
 });
 
 describe('buildCitizenBroadcast', () => {
-  it('alerts the three nearest available units and keeps the real scene', () => {
+  it('alerts every available unit and keeps the real pickup point', () => {
     const payload = buildCitizenBroadcast({
       requestId: 'REQ-1',
       origin: ORIGIN,
@@ -311,6 +238,21 @@ describe('useCitizenRequestStore', () => {
     expect(port.published).toHaveLength(0);
   });
 
+  it('does not enter a search without a pickup point and reports the honest reason', async () => {
+    const port = new FakeRealtimePort();
+
+    const started = await useCitizenRequestStore.getState().start({
+      port,
+      units: MOCK_AMBULANCIAS,
+      origin: null,
+    });
+
+    expect(started).toBe(false);
+    expect(useCitizenRequestStore.getState().phase).toBe('idle');
+    expect(useCitizenRequestStore.getState().startError).toBe(CITIZEN_REQUEST_REASONS.noLocation);
+    expect(port.published).toHaveLength(0);
+  });
+
   it('cancel publishes solicitud.cancel and clears the local state', () => {
     const port = new FakeRealtimePort();
     useCitizenRequestStore.getState().start({ port, units: MOCK_AMBULANCIAS, origin: ORIGIN });
@@ -418,13 +360,14 @@ describe('useCitizenRequestStore', () => {
   });
 });
 
-/** A server-shaped 201 body: the server owns id/estado/solicitadaEn/timeoutEn. */
+/** A server-shaped 201 body: a standalone request, no emergency/center/zone. */
 const REST_RESPONSE = {
   id: '8b6f2f0e-0000-4000-8000-000000000042',
-  emergenciaId: EMERGENCY_ID,
+  ubicacion: { lat: 4.728, lng: -74.078 },
+  emergenciaId: null,
   estado: 'PENDIENTE',
-  centroAyudaId: CENTRO_ID,
-  zonaId: 'ZONA-SUBA',
+  centroAyudaId: null,
+  zonaId: null,
   solicitadaEn: '2026-01-01T00:00:00.000Z',
   timeoutEn: '2026-01-01T00:45:00.000Z',
   ambulanciasNotificadas: ['A-07', 'A-12', 'A-03'],
@@ -453,7 +396,7 @@ describe('useCitizenRequestStore against the backend', () => {
     localStorage.clear();
   });
 
-  it('sends the REAL emergency, its zone and the nearest center, then stores the response', async () => {
+  it('sends only the pickup point, with no emergency, center or zone', async () => {
     fetchMock.mockResolvedValue(mockResponse(201, REST_RESPONSE));
     const port = new FakeRealtimePort();
 
@@ -462,13 +405,6 @@ describe('useCitizenRequestStore against the backend', () => {
       units: MOCK_AMBULANCIAS,
       origin: ORIGIN,
       now: 5000,
-      emergencies: [emergencia()],
-      // The nearest center is the one at the origin's latitude; the far one must
-      // never be chosen.
-      centros: [
-        centroAyuda('C-FAR', 4.9, -74.078, 'ZONA-OTRA'),
-        centroAyuda(CENTRO_ID, 4.729, -74.078),
-      ],
     });
 
     expect(started).toBe(true);
@@ -479,11 +415,10 @@ describe('useCitizenRequestStore against the backend', () => {
     const [path, options] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(path).toBe('/api/v1/solicitudes');
     expect(options.method).toBe('POST');
-    // The REAL body, never the old placeholders (`REQ-…`, `CA-CRUE`, blank zone).
+    // Asking for an ambulance no longer depends on an affected zone: the body is
+    // the pickup point and the deadline, nothing else.
     expect(JSON.parse(options.body as string)).toEqual({
-      emergenciaId: EMERGENCY_ID,
-      centroAyudaId: CENTRO_ID,
-      zonaId: 'ZONA-SUBA',
+      ubicacion: ORIGIN,
       timeoutEn: new Date(5000 + 45_000).toISOString(),
     });
 
@@ -501,101 +436,24 @@ describe('useCitizenRequestStore against the backend', () => {
       .items.find((item) => item.id === REST_RESPONSE.id);
     expect(stored).toMatchObject({
       estado: 'PENDING',
-      zonaId: 'ZONA-SUBA',
-      tipo: 'Derrumbe en Suba',
+      ubicacion: ORIGIN,
+      tipo: CITIZEN_REQUEST_LABEL,
     });
+    // A standalone request carries no emergency id: the mapper never invents one.
+    expect(stored?.emergenciaId).toBe('');
   });
 
-  it('falls back to the chosen center zone when the emergency declares none', async () => {
-    fetchMock.mockResolvedValue(mockResponse(201, REST_RESPONSE));
-
+  it('does not send without a pickup point and reports the honest reason', async () => {
     const started = await useCitizenRequestStore.getState().start({
       port: new FakeRealtimePort(),
       units: MOCK_AMBULANCIAS,
-      origin: ORIGIN,
-      emergencies: [emergencia({ zonaId: '' })],
-      centros: [centroAyuda(CENTRO_ID, 4.729, -74.078, 'ZONA-CENTRO')],
-    });
-
-    expect(started).toBe(true);
-    const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(JSON.parse(options.body as string).zonaId).toBe('ZONA-CENTRO');
-  });
-
-  it('does not send without an active emergency and reports the honest reason', async () => {
-    const started = await useCitizenRequestStore.getState().start({
-      port: new FakeRealtimePort(),
-      units: MOCK_AMBULANCIAS,
-      origin: ORIGIN,
-      emergencies: [],
-      centros: [centroAyuda(CENTRO_ID, 4.729, -74.078, 'ZONA-SUBA')],
+      origin: null,
     });
 
     expect(started).toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(useCitizenRequestStore.getState().phase).toBe('idle');
-    expect(useCitizenRequestStore.getState().startError).toBe(CITIZEN_REQUEST_REASONS.noEmergency);
-  });
-
-  it('does not send with no usable zone and reports the honest reason', async () => {
-    const started = await useCitizenRequestStore.getState().start({
-      port: new FakeRealtimePort(),
-      units: MOCK_AMBULANCIAS,
-      origin: ORIGIN,
-      emergencies: [emergencia({ zonaId: '' })],
-      centros: [centroAyuda(CENTRO_ID, 4.729, -74.078)],
-    });
-
-    expect(started).toBe(false);
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(useCitizenRequestStore.getState().startError).toBe(CITIZEN_REQUEST_REASONS.noZone);
-  });
-
-  it('does not send with no center to point at and reports the honest reason', async () => {
-    const started = await useCitizenRequestStore.getState().start({
-      port: new FakeRealtimePort(),
-      units: MOCK_AMBULANCIAS,
-      origin: ORIGIN,
-      emergencies: [emergencia()],
-      centros: [],
-    });
-
-    expect(started).toBe(false);
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(useCitizenRequestStore.getState().startError).toBe(CITIZEN_REQUEST_REASONS.noCenter);
-  });
-
-  it('never sends a non-UUID emergency id (the fixture EMG-002 that caused the raw 400)', async () => {
-    const started = await useCitizenRequestStore.getState().start({
-      port: new FakeRealtimePort(),
-      units: MOCK_AMBULANCIAS,
-      origin: ORIGIN,
-      emergencies: [emergencia({ id: 'EMG-002', zonaId: 'Kennedy' })],
-      centros: [centroAyuda(CENTRO_ID, 4.729, -74.078, 'ZONA-SUBA')],
-    });
-
-    expect(started).toBe(false);
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(useCitizenRequestStore.getState().phase).toBe('idle');
-    expect(useCitizenRequestStore.getState().startError).toBe(
-      CITIZEN_REQUEST_REASONS.notServerData,
-    );
-  });
-
-  it('never sends a non-UUID center id (a leftover fixture center)', async () => {
-    const started = await useCitizenRequestStore.getState().start({
-      port: new FakeRealtimePort(),
-      units: MOCK_AMBULANCIAS,
-      origin: ORIGIN,
-      emergencies: [emergencia()],
-      centros: [centroAyuda('CA-LA-GAITANA', 4.729, -74.078, 'ZONA-SUBA')],
-    });
-
-    expect(started).toBe(false);
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(useCitizenRequestStore.getState().startError).toBe(
-      CITIZEN_REQUEST_REASONS.notServerData,
-    );
+    expect(useCitizenRequestStore.getState().startError).toBe(CITIZEN_REQUEST_REASONS.noLocation);
   });
 
   it('does not send with a foreign persisted token and reports the session change honestly', async () => {
@@ -604,7 +462,7 @@ describe('useCitizenRequestStore against the backend', () => {
     useSessionStore.setState({
       user: {
         id: 'usr-citizen',
-        nombre: 'Ciudadano Demo',
+        nombre: 'Ana Gómez',
         email: 'ciudadano@nexovital.co',
         rol: 'CIUDADANO',
       },
@@ -614,7 +472,7 @@ describe('useCitizenRequestStore against the backend', () => {
     setToken('jwt.admin');
     setSession({
       id: 'usr-admin',
-      nombre: 'Rangel Dev',
+      nombre: 'Andrés Rangel',
       email: 'rangel@nexovital.co',
       rol: 'ADMIN_CENTRO_AYUDA',
     });
@@ -623,8 +481,6 @@ describe('useCitizenRequestStore against the backend', () => {
       port: new FakeRealtimePort(),
       units: MOCK_AMBULANCIAS,
       origin: ORIGIN,
-      emergencies: [emergencia()],
-      centros: [centroAyuda(CENTRO_ID, 4.729, -74.078, 'ZONA-SUBA')],
     });
 
     expect(started).toBe(false);
@@ -649,8 +505,6 @@ describe('useCitizenRequestStore against the backend', () => {
       port,
       units: MOCK_AMBULANCIAS,
       origin: ORIGIN,
-      emergencies: [emergencia()],
-      centros: [centroAyuda(CENTRO_ID, 4.729, -74.078, 'ZONA-SUBA')],
     });
 
     expect(started).toBe(false);
@@ -669,8 +523,6 @@ describe('useCitizenRequestStore against the backend', () => {
       port: new FakeRealtimePort(),
       units: MOCK_AMBULANCIAS,
       origin: ORIGIN,
-      emergencies: [emergencia()],
-      centros: [centroAyuda(CENTRO_ID, 4.729, -74.078, 'ZONA-SUBA')],
     });
 
     expect(started).toBe(false);
@@ -688,8 +540,6 @@ describe('useCitizenRequestStore against the backend', () => {
       port,
       units: MOCK_AMBULANCIAS,
       origin: ORIGIN,
-      emergencies: [emergencia()],
-      centros: [centroAyuda(CENTRO_ID, 4.729, -74.078, 'ZONA-SUBA')],
     });
     const requestId = REST_RESPONSE.id;
     const winner = '8b6f2f0e-0000-4000-8000-0000000000a2';
@@ -731,8 +581,6 @@ describe('useCitizenRequestStore against the backend', () => {
       port,
       units: MOCK_AMBULANCIAS,
       origin: ORIGIN,
-      emergencies: [emergencia()],
-      centros: [centroAyuda(CENTRO_ID, 4.729, -74.078, 'ZONA-SUBA')],
     });
     const requestId = REST_RESPONSE.id;
     useCitizenRequestStore.getState().endOnTaken(requestId, 'winner');

@@ -16,6 +16,7 @@ function validWire(value: unknown) {
 /** The exact JSON shape `FlotaPushListener.SolicitudPushPayload` serializes. */
 const PENDIENTE = {
   solicitudId: '11111111-1111-1111-1111-111111111111',
+  ubicacion: { lat: 4.73, lng: -74.08 },
   emergenciaId: '22222222-2222-2222-2222-222222222222',
   zonaId: 'Suba',
   estado: 'PENDIENTE',
@@ -37,12 +38,23 @@ describe('fromWireSolicitud', () => {
   it('validates the backend frame and maps it to the wire shape', () => {
     expect(fromWireSolicitud(PENDIENTE)).toEqual({
       solicitudId: PENDIENTE.solicitudId,
+      ubicacion: { lat: 4.73, lng: -74.08 },
       emergenciaId: PENDIENTE.emergenciaId,
       zonaId: 'Suba',
       estado: 'PENDIENTE',
       ambulanciasNotificadas: ['33333333-3333-3333-3333-333333333333'],
       ambulanciaAsignadaId: null,
     });
+  });
+
+  it('accepts null emergency/zone and a missing pickup point', () => {
+    const suelta = fromWireSolicitud({
+      ...PENDIENTE,
+      ubicacion: null,
+      emergenciaId: null,
+      zonaId: null,
+    });
+    expect(suelta).toMatchObject({ emergenciaId: null, zonaId: null, ubicacion: null });
   });
 
   it('accepts a string winner and an absent winner', () => {
@@ -66,6 +78,9 @@ describe('fromWireSolicitud', () => {
     expect(fromWireSolicitud({ ...PENDIENTE, ambulanciasNotificadas: 'A-1' })).toBeNull();
     expect(fromWireSolicitud({ ...PENDIENTE, ambulanciasNotificadas: [1] })).toBeNull();
     expect(fromWireSolicitud({ ...PENDIENTE, ambulanciaAsignadaId: 7 })).toBeNull();
+    // A present-but-malformed pickup point is a malformed frame.
+    expect(fromWireSolicitud({ ...PENDIENTE, ubicacion: 'nope' })).toBeNull();
+    expect(fromWireSolicitud({ ...PENDIENTE, ubicacion: { lat: 'x', lng: 1 } })).toBeNull();
     // A non-boolean arrival flag is malformed, never coerced.
     expect(fromWireSolicitud({ ...PENDIENTE, llegada: 'yes' })).toBeNull();
   });
@@ -77,7 +92,7 @@ describe('fromWireSolicitud', () => {
 });
 
 describe('solicitudFrameFromWire', () => {
-  it('maps PENDIENTE to an open broadcast, resolving the scene when known', () => {
+  it('maps PENDIENTE to an open broadcast, using the frame pickup point', () => {
     const frame = solicitudFrameFromWire(validWire(PENDIENTE), CONTEXT);
     expect(frame).toMatchObject({
       type: 'solicitud.broadcast',
@@ -86,18 +101,30 @@ describe('solicitudFrameFromWire', () => {
       zonaId: 'Suba',
       tipo: 'Traffic collision',
       nivel: 'HIGH',
-      escena: { lat: 4.742, lng: -74.09 },
+      // The frame's own pickup point wins over the emergency-resolved context.
+      escena: { lat: 4.73, lng: -74.08 },
       notificadas: ['33333333-3333-3333-3333-333333333333'],
       mode: 'broadcast',
       notifiedCount: 1,
     });
   });
 
+  it('falls back to the context scene only when the frame carries no pickup point', () => {
+    const frame = solicitudFrameFromWire(validWire({ ...PENDIENTE, ubicacion: null }), CONTEXT);
+    expect(frame).toMatchObject({ escena: { lat: 4.742, lng: -74.09 } });
+  });
+
   it('omits the scene/type it does not know instead of inventing them', () => {
-    const frame = solicitudFrameFromWire(validWire(PENDIENTE), {
-      ownAmbulanceId: 'own',
+    const frame = solicitudFrameFromWire(
+      validWire({ ...PENDIENTE, ubicacion: null, emergenciaId: null, zonaId: null }),
+      { ownAmbulanceId: 'own' },
+    );
+    expect(frame).toMatchObject({
+      type: 'solicitud.broadcast',
+      tipo: '',
+      emergenciaId: '',
+      zonaId: '',
     });
-    expect(frame).toMatchObject({ type: 'solicitud.broadcast', tipo: '' });
     expect(frame).not.toHaveProperty('escena');
     expect(frame).not.toHaveProperty('nivel');
   });

@@ -7,6 +7,8 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { formatCoordinates } from '@/features/ciudadano/citizen-request';
+import { formatDistance } from '@/features/ciudadano/citizen-view';
 import { REQUEST_STATE_LABEL_ES } from '@/features/solicitudes/request-status';
 import { cn } from '@/lib/utils';
 import type { SolicitudAmbulancia } from '@/types/domain';
@@ -16,6 +18,11 @@ interface SolicitudSheetProps {
   onOpenChange: (open: boolean) => void;
   /** The tapped request, or null when nothing is selected. */
   solicitud: SolicitudAmbulancia | null;
+  /**
+   * Distance from the driver's own unit to the request's pickup point, or null
+   * when either position is unknown. The driver needs to know where to go.
+   */
+  distanceKm: number | null;
   /**
    * Whether Aceptar/Rechazar can act on this request. True only when it is the
    * inbox's currently open broadcast: the existing accept/reject actions act on
@@ -56,6 +63,7 @@ export function SolicitudSheet({
   open,
   onOpenChange,
   solicitud,
+  distanceKm,
   canRespond,
   onAccept,
   onReject,
@@ -100,9 +108,24 @@ export function SolicitudSheet({
             </SheetHeader>
 
             <div>
-              <SheetRow label="Emergencia" value={solicitud.emergenciaId} />
+              <SheetRow
+                label="Emergencia"
+                value={solicitud.emergenciaId || 'Sin emergencia asociada'}
+              />
               <SheetRow label="Tipo" value={solicitud.tipo || 'Sin clasificar'} />
-              <SheetRow label="Ubicación" value={solicitud.zonaId || 'Sin zona declarada'} />
+              {/* A citizen request declares no zone; its own pickup point is the
+                  honest location, never "sin zona declarada". */}
+              <SheetRow
+                label="Ubicación"
+                value={
+                  solicitud.zonaId ||
+                  (solicitud.ubicacion ? formatCoordinates(solicitud.ubicacion) : 'Sin ubicación')
+                }
+              />
+              <SheetRow
+                label="Distancia"
+                value={distanceKm !== null ? formatDistance(distanceKm) : 'Sin ubicación'}
+              />
               <SheetRow label="Unidades avisadas" value={String(solicitud.notifiedCount)} />
             </div>
 

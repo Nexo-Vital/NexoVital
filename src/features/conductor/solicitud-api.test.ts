@@ -7,6 +7,7 @@ const ACCEPT_RESPONSE = {
   ganador: true,
   solicitud: {
     id: '8b6f2f0e-0000-4000-8000-000000000042',
+    ubicacion: { lat: 4.728, lng: -74.078 },
     emergenciaId: '8b6f2f0e-0000-4000-8000-0000000000e1',
     estado: 'ASIGNADA',
     centroAyudaId: '8b6f2f0e-0000-4000-8000-0000000000c1',

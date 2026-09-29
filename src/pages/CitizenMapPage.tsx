@@ -346,6 +346,17 @@ export default function CitizenMapPage({
     setMapCenter(selfPosition);
   }, [selfPosition]);
 
+  // Pickup point for the request. The device fix wins; when the browser denies
+  // geolocation the citizen marks the point by clicking the map. `null` means
+  // neither exists, and the request reports that honestly instead of sending a
+  // fake origin.
+  const [pickedPoint, setPickedPoint] = useState<Ubicacion | null>(null);
+  const pickupPoint = location.position ?? pickedPoint;
+  const pickupByMap = location.position === null && pickedPoint !== null;
+  const handlePickupClick = useCallback((punto: Ubicacion) => {
+    setPickedPoint(punto);
+  }, []);
+
   const counts = useMemo(() => countCentersByLevel(centros), [centros]);
   const nearby = useMemo(() => nearbyAmbulances(fleet, selfPosition), [fleet, selfPosition]);
   const availableCount = useMemo(() => countAvailableUnits(fleet), [fleet]);
@@ -373,16 +384,14 @@ export default function CitizenMapPage({
     setPickerOpen(false);
     // `start` decides the transport (relay in demo, REST against a backend) and
     // resolves when the search state is set; the handler stays fire-and-forget.
-    // Against a backend it anchors the body to the citizen's real emergency, its
-    // zone and the nearest map center, so it is handed the live store snapshots.
+    // The pickup point is the device fix, or the point marked on the map when
+    // the GPS was denied; with neither, `start` reports the honest reason.
     void useCitizenRequestStore.getState().start({
       port,
       units: useFleetStore.getState().units,
-      origin: selfPosition,
-      emergencies: useEmergencyStore.getState().items,
-      centros,
+      origin: pickupPoint,
     });
-  }, [port, selfPosition, centros]);
+  }, [port, pickupPoint]);
 
   const handleCancel = useCallback(() => {
     useCitizenRequestStore.getState().cancel(port);
@@ -610,7 +619,17 @@ export default function CitizenMapPage({
           requestConnector={acceptanceConnector}
           ruta={ruta}
           ambulanceLabels={ambulanceLabels}
+          request={
+            requestPhase === 'idle' && pickupByMap && pickedPoint
+              ? { position: pickedPoint, label: 'Punto de recogida' }
+              : null
+          }
           onCenterChange={setMapCenter}
+          // When the GPS is denied, a map click marks the pickup point; with a
+          // device fix the click keeps its old "release selection" behaviour.
+          onMapClick={
+            requestPhase === 'idle' && location.position === null ? handlePickupClick : undefined
+          }
           onClearSelection={handleClearSelection}
           onSelectAmbulance={() => undefined}
           onSelectEmergency={() => undefined}

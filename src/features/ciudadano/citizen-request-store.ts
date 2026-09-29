@@ -19,14 +19,11 @@ import {
   type SolicitudPayload,
   solicitudFrameFromWire,
 } from '@/shared/realtime';
-import type { Ambulancia, CentroAyuda, Emergencia, Ubicacion } from '@/types/domain';
+import type { Ambulancia, Ubicacion } from '@/types/domain';
 import {
   buildCitizenBroadcast,
   CITIZEN_REQUEST_LABEL,
   CITIZEN_REQUEST_REASONS,
-  isUuid,
-  latestActiveEmergency,
-  nearestCentro,
 } from './citizen-request';
 
 /**
@@ -68,12 +65,11 @@ interface CitizenRequestState {
   /**
    * Starts the search. In demo mode it publishes the broadcast on the relay and
    * the local projection is the source of truth; against a backend it creates
-   * the request through `POST /api/v1/solicitudes` anchored to REAL data — the
-   * newest active emergency, its zone and the nearest aid center — and adopts
-   * the server's response (id, estado, timestamps, notified units). Returns
-   * `false` (and changes nothing) when no unit is available in demo mode or, in
-   * backend mode, when there is no active emergency, no reachable center or no
-   * usable zone: `startError` then carries the honest reason for the screen.
+   * the request through `POST /api/v1/solicitudes` with the citizen's pickup
+   * point and adopts the server's response (id, estado, timestamps, notified
+   * units). Returns `false` (and changes nothing) when there is no pickup point
+   * (neither a device fix nor a map-picked point) or, in demo mode, when no unit
+   * is available: `startError` then carries the honest reason for the screen.
    */
   start: (input: CitizenRequestStart) => Promise<boolean>;
   /** Withdraws the open request on the relay and clears the local state. */
@@ -102,15 +98,13 @@ interface CitizenRequestState {
 interface CitizenRequestStart {
   port: RealtimePort | null;
   units: Ambulancia[];
-  origin: Ubicacion;
-  now?: number;
   /**
-   * The citizen's emergencies (the emergency store snapshot). Against a backend
-   * the request is anchored to the newest ACTIVE one, never to a local id.
+   * Pickup point: the device's position, or the point the citizen marked on the
+   * map when the browser denied geolocation. `null` when neither exists, which
+   * is the honest "no pickup point yet" case the screen must report.
    */
-  emergencies?: Emergencia[];
-  /** Aid centers from the map; the request points at the nearest REAL one. */
-  centros?: CentroAyuda[];
+  origin: Ubicacion | null;
+  now?: number;
 }
 
 const IDLE_STATE = {
@@ -133,8 +127,15 @@ const IDLE_STATE = {
 export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => ({
   ...IDLE_STATE,
 
-  start: async ({ port, units, origin, now, emergencies = [], centros = [] }) => {
+  start: async ({ port, units, origin, now }) => {
     const startedAt = now ?? Date.now();
+
+    // No pickup point means no honest request: with the GPS denied and no point
+    // marked on the map, the screen reports it instead of sending a fake origin.
+    if (!origin) {
+      set({ ...IDLE_STATE, startError: CITIZEN_REQUEST_REASONS.noLocation });
+      return false;
+    }
 
     // Demo build: no backend exists, so the request is published on the relay
     // and the local projection is the source of truth (unchanged behaviour).
@@ -163,14 +164,9 @@ export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => 
 
     // Real backend: the server creates the request and OWNS its identity and
     // state, so the store adopts the response instead of the local projection.
-    // The body is anchored to REAL data — a local `REQ-…` id, a `CA-CRUE`
-    // placeholder and a blank zone are all rejected by the backend (400) — so
-    // the request is only sent when there is something real to point at.
-    //
-    // Presence is NOT enough: both ids must actually be UUIDs, because that is
-    // what the backend's `java.util.UUID` fields parse. A leftover fixture id
-    // (`EMG-002`, `CA-LA-GAITANA`) passes a bare truthiness check and is what
-    // produced a raw 400; this guard is the defense in depth that never sends it.
+    // The body carries ONLY the pickup point; the emergency, the aid center and
+    // the zone are optional context and are deliberately left out — a request no
+    // longer depends on an affected zone, so there is nothing else to anchor.
     //
     // Before anything is sent, the persisted session must still belong to this
     // screen. Another tab can replace `nexovital.token` while this citizen screen
@@ -181,39 +177,15 @@ export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => 
       set({ ...IDLE_STATE, startError: SESSION_CHANGED_MESSAGE });
       return false;
     }
-    const emergency = latestActiveEmergency(emergencies);
-    if (!emergency) {
-      set({ ...IDLE_STATE, startError: CITIZEN_REQUEST_REASONS.noEmergency });
-      return false;
-    }
-    const centro = nearestCentro(centros, origin);
-    if (!centro) {
-      set({ ...IDLE_STATE, startError: CITIZEN_REQUEST_REASONS.noCenter });
-      return false;
-    }
-    // Never POST an id the backend cannot deserialize as a UUID.
-    if (!isUuid(emergency.id) || !isUuid(centro.id)) {
-      set({ ...IDLE_STATE, startError: CITIZEN_REQUEST_REASONS.notServerData });
-      return false;
-    }
-    // The backend resolves the zone when the emergency is reported; the chosen
-    // center's zone is the honest fallback. With neither, do not send blind.
-    const zonaId = emergency.zonaId.trim() || centro.zonaId?.trim() || '';
-    if (zonaId === '') {
-      set({ ...IDLE_STATE, startError: CITIZEN_REQUEST_REASONS.noZone });
-      return false;
-    }
 
     try {
       const solicitud = await solicitarAmbulancia({
-        emergenciaId: emergency.id,
-        centroAyudaId: centro.id,
-        zonaId,
+        ubicacion: origin,
         timeoutEn: new Date(startedAt + SOLICITUD_TIMEOUT_MS).toISOString(),
       });
       useSolicitudesStore.getState().upsert({
         ...solicitud,
-        tipo: emergency.descripcion?.trim() || CITIZEN_REQUEST_LABEL,
+        tipo: CITIZEN_REQUEST_LABEL,
       });
       set({
         phase: 'searching',

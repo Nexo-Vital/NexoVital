@@ -38,10 +38,12 @@ vi.mock('@/features/mapa/MapCanvas', () => ({
     focus?: { lat: number; lng: number } | null;
     ambulanceLabels?: Record<string, string>;
     requestConnector?: { dashed?: boolean } | null;
+    request?: { position: { lat: number; lng: number }; label: string } | null;
     ambulancias?: { id: string }[];
     centros?: { id: string }[];
     emergencias?: { id: string }[];
     onClearSelection?: () => void;
+    onMapClick?: (ubicacion: { lat: number; lng: number }) => void;
   }) => (
     <div
       data-testid="map-canvas"
@@ -52,17 +54,21 @@ vi.mock('@/features/mapa/MapCanvas', () => ({
       data-labels={JSON.stringify(props.ambulanceLabels ?? {})}
       data-connector={props.requestConnector ? 'yes' : 'no'}
       data-connector-dashed={props.requestConnector?.dashed === false ? 'no' : 'yes'}
+      data-request={props.request ? props.request.label : ''}
       data-ambulancias={JSON.stringify((props.ambulancias ?? []).map((item) => item.id))}
       data-centros={JSON.stringify((props.centros ?? []).map((item) => item.id))}
       data-emergencias={JSON.stringify((props.emergencias ?? []).map((item) => item.id))}
     >
       {/* Stands in for a click on the map BACKGROUND: the page only wires the
-          callback, the real Leaflet bubbling is covered by the smoke/remote tests. */}
+          callbacks, the real Leaflet bubbling is covered by the smoke/remote tests. */}
       <button
         type="button"
         data-testid="map-background"
         aria-label="map background"
-        onClick={() => props.onClearSelection?.()}
+        onClick={() => {
+          props.onMapClick?.({ lat: 4.728, lng: -74.078 });
+          props.onClearSelection?.();
+        }}
       />
     </div>
   ),
@@ -99,6 +105,43 @@ vi.mock('@/features/mapa/routing-api', () => ({
 }));
 
 mockFetchRuta.mockReturnValue(new Promise(() => {}));
+
+/**
+ * Grants a real device fix through the browser API: the page's own
+ * `useDeviceLocation` watcher resolves to the Suba point, which is the pickup
+ * point of every request case. The fallback cases stall it instead.
+ */
+function grantGeolocation(): void {
+  Object.defineProperty(window.navigator, 'geolocation', {
+    configurable: true,
+    value: {
+      watchPosition: (success: PositionCallback) => {
+        success({
+          coords: {
+            latitude: 4.728,
+            longitude: -74.078,
+            heading: null,
+            accuracy: 10,
+            altitude: null,
+            altitudeAccuracy: null,
+            speed: null,
+          },
+          timestamp: Date.now(),
+        } as GeolocationPosition);
+        return 1;
+      },
+      clearWatch: () => undefined,
+    },
+  });
+}
+
+/** A watcher that never reports: no fix and no denial dialog, only "no point". */
+function stallGeolocation(): void {
+  Object.defineProperty(window.navigator, 'geolocation', {
+    configurable: true,
+    value: { watchPosition: () => 1, clearWatch: () => undefined },
+  });
+}
 
 /** Origin used by the page when the device gives no position (Suba). */
 const SUBAS = { lat: 4.728, lng: -74.078 };
@@ -214,6 +257,9 @@ describe('CitizenMapPage', () => {
     // the store publishes on the injected port instead of calling the backend.
     // The few backend cases stub it back to '0' explicitly.
     vi.stubEnv('VITE_DEMO_MODE', '1');
+    // Every case starts with a real device fix (a real pickup point); the
+    // fallback cases stall the watcher explicitly.
+    grantGeolocation();
   });
 
   afterEach(() => {
@@ -328,14 +374,15 @@ describe('CitizenMapPage', () => {
     });
   });
 
-  it('asks the backend with the real emergency, its zone and the nearest center', async () => {
+  it('asks the backend with the citizen pickup point and no zone dependence', async () => {
     vi.stubEnv('VITE_DEMO_MODE', '0');
     const serverResponse = {
       id: '8b6f2f0e-0000-4000-8000-000000000042',
-      emergenciaId: PAGE_EMERGENCY_ID,
+      ubicacion: { lat: 4.728, lng: -74.078 },
+      emergenciaId: null,
       estado: 'PENDIENTE',
-      centroAyudaId: PAGE_CENTRO_ID,
-      zonaId: 'ZONA-SUBA',
+      centroAyudaId: null,
+      zonaId: null,
       solicitadaEn: '2026-01-01T00:00:00.000Z',
       timeoutEn: '2026-01-01T00:45:00.000Z',
       ambulanciasNotificadas: ['A-07', 'A-12', 'A-03'],
@@ -345,17 +392,7 @@ describe('CitizenMapPage', () => {
     vi.stubGlobal('fetch', fetchMock);
     try {
       const port = new FakeRealtimePort();
-      renderPage({
-        port,
-        ambulancias: SEARCH_FLEET,
-        emergencias: [pageEmergency()],
-        // The nearest center to the Suba origin is the first one, at the same
-        // latitude; the far center must never be picked.
-        centrosAyuda: [
-          backendCentro('C-FAR', 4.9, -74.05, 'ZONA-OTRA'),
-          backendCentro(PAGE_CENTRO_ID, 4.728, -74.078),
-        ],
-      });
+      renderPage({ port, ambulancias: SEARCH_FLEET });
 
       fireEvent.click(screen.getByRole('button', { name: 'Pedir ambulancia' }));
 
@@ -369,11 +406,10 @@ describe('CitizenMapPage', () => {
       const [path, options] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(path).toBe('/api/v1/solicitudes');
       expect(options.method).toBe('POST');
-      // The REAL body: no local `REQ-…`, no `CA-CRUE`, no blank zone.
+      // The REAL pickup point: a request no longer depends on a zone, so no
+      // local `REQ-…`, no `CA-CRUE` and no emergency id travel.
       expect(JSON.parse(options.body as string)).toEqual({
-        emergenciaId: PAGE_EMERGENCY_ID,
-        centroAyudaId: PAGE_CENTRO_ID,
-        zonaId: 'ZONA-SUBA',
+        ubicacion: { lat: 4.728, lng: -74.078 },
         timeoutEn: expect.any(String),
       });
 
@@ -419,20 +455,18 @@ describe('CitizenMapPage', () => {
     }
   });
 
-  it('does not send the request and shows the honest reason without an active emergency', async () => {
+  it('asks nothing and shows the honest reason without a pickup point', async () => {
     vi.stubEnv('VITE_DEMO_MODE', '0');
+    // No device fix and no point marked on the map: the request must not send.
+    stallGeolocation();
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     try {
-      renderPage({
-        ambulancias: SEARCH_FLEET,
-        emergencias: [],
-        centrosAyuda: [backendCentro(PAGE_CENTRO_ID, 4.728, -74.078)],
-      });
+      renderPage({ ambulancias: SEARCH_FLEET });
 
       fireEvent.click(screen.getByRole('button', { name: 'Pedir ambulancia' }));
 
-      expect(await screen.findByText(CITIZEN_REQUEST_REASONS.noEmergency)).toBeInTheDocument();
+      expect(await screen.findByText(CITIZEN_REQUEST_REASONS.noLocation)).toBeInTheDocument();
       expect(fetchMock).not.toHaveBeenCalled();
       expect(useCitizenRequestStore.getState().phase).toBe('idle');
       expect(useCitizenRequestStore.getState().requestId).toBeNull();
@@ -446,10 +480,50 @@ describe('CitizenMapPage', () => {
     }
   });
 
+  it('marks the pickup point on the map when the GPS is denied and then asks', async () => {
+    vi.stubEnv('VITE_DEMO_MODE', '0');
+    stallGeolocation();
+    const serverResponse = {
+      id: '8b6f2f0e-0000-4000-8000-000000000042',
+      ubicacion: { lat: 4.728, lng: -74.078 },
+      emergenciaId: null,
+      estado: 'PENDIENTE',
+      centroAyudaId: null,
+      zonaId: null,
+      solicitadaEn: '2026-01-01T00:00:00.000Z',
+      timeoutEn: '2026-01-01T00:45:00.000Z',
+      ambulanciasNotificadas: ['A-07'],
+      ambulanciaAsignadaId: null,
+    };
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(201, serverResponse));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderPage({ ambulancias: SEARCH_FLEET });
+
+      // The citizen marks the point on the map (no dead end without the GPS).
+      fireEvent.click(screen.getByTestId('map-background'));
+      expect(screen.getByTestId('map-canvas')).toHaveAttribute('data-request', 'Punto de recogida');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Pedir ambulancia' }));
+
+      await waitFor(() =>
+        expect(useCitizenRequestStore.getState().requestId).toBe(serverResponse.id),
+      );
+      const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(JSON.parse(options.body as string)).toEqual({
+        ubicacion: { lat: 4.728, lng: -74.078 },
+        timeoutEn: expect.any(String),
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('drives the citizen screen with the backend lifecycle on /user/queue/solicitudes', async () => {
     vi.stubEnv('VITE_DEMO_MODE', '0');
     const serverResponse = {
       id: '8b6f2f0e-0000-4000-8000-000000000042',
+      ubicacion: { lat: 4.728, lng: -74.078 },
       emergenciaId: PAGE_EMERGENCY_ID,
       estado: 'PENDIENTE',
       centroAyudaId: PAGE_CENTRO_ID,
@@ -512,10 +586,13 @@ describe('CitizenMapPage', () => {
   });
 
   it('does not call the demo fallback the real location while searching', () => {
-    // jsdom has no geolocation, so the page uses the Suba fallback. The subtitle
-    // must say it is a reference/demo point, never "Tu ubicación actual" (C6).
+    // The GPS is denied, so the page falls back to Suba as the map reference and
+    // the citizen marks the pickup point. The subtitle must say it is a
+    // reference/demo point, never "Tu ubicación actual" (C6).
+    stallGeolocation();
     renderPage({ ambulancias: SEARCH_FLEET });
 
+    fireEvent.click(screen.getByTestId('map-background'));
     fireEvent.click(screen.getByRole('button', { name: 'Pedir ambulancia' }));
 
     expect(screen.getByText(/Ubicación de referencia \(demo\)/)).toBeInTheDocument();
@@ -529,7 +606,7 @@ describe('CitizenMapPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Pedir ambulancia' }));
 
-    expect(screen.getByText(/a las 2 ambulancias disponibles más cercanas/)).toBeInTheDocument();
+    expect(screen.getByText(/a las 2 ambulancias disponibles/)).toBeInTheDocument();
   });
 
   it('lists only the occupied units in the footer, never the maintenance ones', () => {
@@ -770,7 +847,7 @@ describe('CitizenMapPage', () => {
     expect(chips).toHaveLength(1);
     expect(within(rail).getByText(/hace \d+ s/)).toBeInTheDocument();
 
-    expect(within(rail).getByText('Carlos Pérez Gómez')).toBeInTheDocument();
+    expect(within(rail).getByText('Carlos Pérez')).toBeInTheDocument();
     expect(within(rail).getByText('Conductor de la ambulancia')).toBeInTheDocument();
     for (const [label, value] of [
       ['Placa', 'WNR-418'],
@@ -1057,7 +1134,7 @@ describe('CitizenMapPage', () => {
     ).toBeInTheDocument();
     expect(
       within(dialog).getByText(
-        'Carlos Pérez Gómez marcó que llegó a tu ubicación con la ambulancia WNR-418. ¿Está contigo?',
+        'Carlos Pérez marcó que llegó a tu ubicación con la ambulancia WNR-418. ¿Está contigo?',
       ),
     ).toBeInTheDocument();
     expect(within(dialog).getByText('WNR-418')).toBeInTheDocument();
@@ -1230,7 +1307,7 @@ describe('CitizenMapPage', () => {
     expect(entries).toHaveLength(4);
     expect(entries[0].textContent).toMatch(/^Pediste una ambulancia\d{1,2}:\d{2}$/);
     expect(entries[1].textContent).toMatch(
-      /^Carlos Pérez Gómez aceptó con la ambulancia WNR-418\d{1,2}:\d{2}$/,
+      /^Carlos Pérez aceptó con la ambulancia WNR-418\d{1,2}:\d{2}$/,
     );
     expect(entries[2].textContent).toMatch(/^La ambulancia llegó\d{1,2}:\d{2}$/);
     expect(entries[3].textContent).toMatch(/^Confirmaste la llegada\d{1,2}:\d{2}$/);

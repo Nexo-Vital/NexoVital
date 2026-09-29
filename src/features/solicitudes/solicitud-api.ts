@@ -1,18 +1,21 @@
 import { apiFetch } from '@/services/apiClient';
 import type { EstadoSolicitudWire } from '@/shared/realtime';
-import type { RequestState, SolicitudAmbulancia } from '@/types/domain';
+import type { RequestState, SolicitudAmbulancia, Ubicacion } from '@/types/domain';
 
 /**
  * Body of `POST /api/v1/solicitudes`, mirroring the backend `SolicitudRequest`
- * record exactly: `{emergenciaId, centroAyudaId, zonaId, timeoutEn}`.
+ * record: `{ubicacion, emergenciaId?, centroAyudaId?, zonaId?, timeoutEn?}`.
  *
- * `timeoutEn` is optional: the backend falls back to its configured accept
- * window when it is absent.
+ * `ubicacion` is the pickup point and the only mandatory field. The emergency,
+ * the aid center and the zone are optional context: a citizen request no longer
+ * depends on an affected zone. `timeoutEn` is optional too — the backend falls
+ * back to its configured accept window when it is absent.
  */
 export interface SolicitudRequestBody {
-  emergenciaId: string;
-  centroAyudaId: string;
-  zonaId: string;
+  ubicacion: Ubicacion;
+  emergenciaId?: string;
+  centroAyudaId?: string;
+  zonaId?: string;
   timeoutEn?: string;
 }
 
@@ -40,6 +43,25 @@ function isTimestamp(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && Number.isFinite(Date.parse(value));
 }
 
+/** Optional id: a non-empty string, or `null`/absent. Anything else is malformed. */
+function isOptionalId(value: unknown): value is string | null {
+  return value === null || value === undefined || (typeof value === 'string' && value.length > 0);
+}
+
+/** A `{lat, lng}` pair of finite numbers, or null when absent/malformed. */
+function asUbicacion(value: unknown): Ubicacion | null {
+  if (
+    !isRecord(value) ||
+    typeof value.lat !== 'number' ||
+    typeof value.lng !== 'number' ||
+    !Number.isFinite(value.lat) ||
+    !Number.isFinite(value.lng)
+  ) {
+    return null;
+  }
+  return { lat: value.lat, lng: value.lng };
+}
+
 /**
  * Validates the backend `SolicitudAmbulanciaDto` returned by
  * `POST /api/v1/solicitudes` and maps it to the front's `SolicitudAmbulancia`.
@@ -50,8 +72,10 @@ function isTimestamp(value: unknown): value is string {
  * unexpected body is dropped instead of being stored as a half request (the same
  * boundary convention as `fromWireSolicitud` and `fromWireInventario`).
  *
- * `tipo` is NOT part of the DTO, so it is left empty here; the caller fills it
- * from its own request label instead of this mapper inventing one.
+ * `ubicacion` is the request's own pickup point and is required by the DTO.
+ * `emergenciaId`, `centroAyudaId` and `zonaId` are nullable: a standalone request
+ * sends none. `tipo` is NOT part of the DTO, so it is left empty here; the caller
+ * fills it from its own request label instead of this mapper inventing one.
  */
 export function fromWireSolicitudAmbulancia(value: unknown): SolicitudAmbulancia | null {
   if (!isRecord(value)) {
@@ -60,6 +84,7 @@ export function fromWireSolicitudAmbulancia(value: unknown): SolicitudAmbulancia
 
   const {
     id,
+    ubicacion,
     emergenciaId,
     estado,
     centroAyudaId,
@@ -73,16 +98,20 @@ export function fromWireSolicitudAmbulancia(value: unknown): SolicitudAmbulancia
   if (typeof id !== 'string' || id.length === 0) {
     return null;
   }
-  if (typeof emergenciaId !== 'string' || emergenciaId.length === 0) {
+  const punto = asUbicacion(ubicacion);
+  if (!punto) {
+    return null;
+  }
+  if (!isOptionalId(emergenciaId)) {
     return null;
   }
   if (!isEstado(estado)) {
     return null;
   }
-  if (typeof centroAyudaId !== 'string') {
+  if (!isOptionalId(centroAyudaId)) {
     return null;
   }
-  if (typeof zonaId !== 'string') {
+  if (!isOptionalId(zonaId)) {
     return null;
   }
   if (!isTimestamp(solicitadaEn) || !isTimestamp(timeoutEn)) {
@@ -106,10 +135,11 @@ export function fromWireSolicitudAmbulancia(value: unknown): SolicitudAmbulancia
 
   return {
     id,
-    emergenciaId,
+    emergenciaId: typeof emergenciaId === 'string' ? emergenciaId : '',
+    ubicacion: punto,
     estado: ESTADO_TO_REQUEST_STATE[estado],
-    centroAyudaId,
-    zonaId,
+    centroAyudaId: typeof centroAyudaId === 'string' ? centroAyudaId : '',
+    zonaId: typeof zonaId === 'string' ? zonaId : '',
     tipo: '',
     solicitadaEn,
     timeoutEn,

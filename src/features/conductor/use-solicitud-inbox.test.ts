@@ -463,6 +463,7 @@ describe('useSolicitudInbox against the backend (no demo mode)', () => {
       ganador: winner,
       solicitud: {
         id: REAL_REQUEST,
+        ubicacion: { lat: 4.72, lng: -74.08 },
         emergenciaId: 'EMG-002',
         estado: 'ASIGNADA',
         centroAyudaId: 'CA-1',

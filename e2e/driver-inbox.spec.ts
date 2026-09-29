@@ -178,9 +178,12 @@ async function citizenWithEmergency(page: Page): Promise<string> {
 }
 
 /** Clicks "Pedir ambulancia" and returns the 201 request body. */
-async function requestAmbulance(
-  page: Page,
-): Promise<{ id: string; emergenciaId: string; estado: string; ambulanciasNotificadas: string[] }> {
+async function requestAmbulance(page: Page): Promise<{
+  id: string;
+  emergenciaId: string | null;
+  estado: string;
+  ambulanciasNotificadas: string[];
+}> {
   const [response] = await Promise.all([
     page.waitForResponse(
       (candidate) =>
@@ -191,7 +194,7 @@ async function requestAmbulance(
   expect(response.status()).toBe(201);
   return (await response.json()) as {
     id: string;
-    emergenciaId: string;
+    emergenciaId: string | null;
     estado: string;
     ambulanciasNotificadas: string[];
   };
@@ -250,22 +253,27 @@ test('EP-04.F2.US3 detalle: el conductor ve el detalle de la solicitud notificad
     unitId = ((await mia.json()) as AmbulanciaDto | null)?.id ?? null;
     expect(unitId).toBeTruthy();
 
-    // 2. Citizen reports a real emergency and asks for an ambulance.
+    // 2. Citizen reports a real emergency (a map warning) and asks for an
+    //    ambulance. The request no longer depends on it: the aid/zone report is
+    //    recorded, but the request is standalone and carries the pickup point.
     const emergencyId = await citizenWithEmergency(citizenPage);
     const request = await requestAmbulance(citizenPage);
     requestId = request.id;
     expect(request.estado).toBe('PENDIENTE');
+    expect(request.emergenciaId ?? null).toBeNull();
     console.log(
-      `[US3-detalle] solicitud=${request.id} emergencia=${emergencyId} notificadas=${request.ambulanciasNotificadas.length}`,
+      `[US3-detalle] solicitud=${request.id} emergenciaReportada=${emergencyId} ` +
+        `notificadas=${request.ambulanciasNotificadas.length}`,
     );
 
-    // 3. The live card names the real emergency and the real zone: that IS the
-    //    detail of the request that reached this driver.
+    // 3. The live card shows the request's own pickup point and distance: the
+    //    request no longer carries an emergency or a zone.
     const card = driverPage.getByRole('region', { name: 'Solicitud de ambulancia' });
     await expect(card).toBeVisible({ timeout: 20_000 });
-    await expect(card.getByText(request.emergenciaId)).toBeVisible();
-    await expect(card.getByText('Suba', { exact: true })).toBeVisible();
-    console.log('[US3-detalle] live card shows the emergency id and the zone');
+    await expect(card.getByText('Sin emergencia asociada')).toBeVisible();
+    await expect(card.getByText('4.7280, -74.0780')).toBeVisible();
+    await expect(card.getByText(/km/)).toBeVisible();
+    console.log('[US3-detalle] live card shows the pickup point and the distance');
 
     // 4. The registry sheet shows the full detail too, opened by tapping the row.
     const registry = driverPage.getByRole('list', { name: 'Lista de solicitudes' });
@@ -275,10 +283,12 @@ test('EP-04.F2.US3 detalle: el conductor ve el detalle de la solicitud notificad
 
     const sheet = driverPage.getByRole('dialog', { name: `Solicitud ${request.id}` });
     await expect(sheet).toBeVisible({ timeout: 10_000 });
-    await expect(sheet.getByText('Emergencia')).toBeVisible();
-    await expect(sheet.getByText(request.emergenciaId)).toBeVisible();
+    await expect(sheet.getByText('Emergencia', { exact: true })).toBeVisible();
+    await expect(sheet.getByText('Sin emergencia asociada')).toBeVisible();
     await expect(sheet.getByText('Tipo')).toBeVisible();
     await expect(sheet.getByText('Ubicación')).toBeVisible();
+    await expect(sheet.getByText('4.7280, -74.0780')).toBeVisible();
+    await expect(sheet.getByText('Distancia')).toBeVisible();
     await expect(sheet.getByText('Unidades avisadas')).toBeVisible();
     await expect(
       sheet.getByText(String(request.ambulanciasNotificadas.length), { exact: true }),
