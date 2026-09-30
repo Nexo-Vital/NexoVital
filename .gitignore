@@ -1,0 +1,13 @@
+# Dependencias y artefactos generados (cada proyecto mantiene los suyos)
+node_modules/
+dist/
+target/
+test-results/
+coverage/
+
+# Logs
+*.log
+
+# Entorno local
+.env
+.env.local
