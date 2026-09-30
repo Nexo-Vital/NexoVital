@@ -45,10 +45,15 @@ const MVP_PROFILES = DEMO_USERS.filter(
   (profile) => profile.rol === 'CIUDADANO' || profile.rol === 'CONDUCTOR',
 );
 
-/** Citizen row: a single MVP role, so it is not inside a collapsed role group. */
+/** Citizen row: it lives inside the "Ciudadanos" group, which starts collapsed. */
 const DEMO_PROFILE = seededProfile('CIUDADANO');
 /** Driver row: it lives inside the "Conductores de ambulancia" group. */
 const OTHER_PROFILE = seededProfile('CONDUCTOR');
+
+/** Expands a collapsed role group by the plural label shown on its header. */
+function expandGroup(label: RegExp): void {
+  fireEvent.click(screen.getByRole('button', { name: label }));
+}
 
 /** Characters typed by the autofill: both credentials, one keystroke per delay. */
 const TYPED_CHARACTERS = DEMO_PROFILE.email.length + DEMO_PROFILE.password.length;
@@ -260,6 +265,7 @@ describe('LoginPage', () => {
 
     // Grouped roles stay collapsed until asked, so the panel does not become a wall of rows.
     await user.click(screen.getByRole('button', { name: /Conductores de ambulancia/ }));
+    await user.click(screen.getByRole('button', { name: /Ciudadanos/ }));
 
     for (const profile of MVP_PROFILES) {
       const row = profileRow(profile.email);
@@ -269,7 +275,7 @@ describe('LoginPage', () => {
     }
 
     expect(screen.getAllByText('Recibe y responde solicitudes de ambulancia')).toHaveLength(5);
-    expect(screen.getByText('Solicita una ambulancia y reporta emergencias')).toBeInTheDocument();
+    expect(screen.getAllByText('Solicita una ambulancia y reporta emergencias')).toHaveLength(2);
 
     // The seeded administrators are not offered: this panel is what the demo shows.
     expect(
@@ -287,6 +293,7 @@ describe('LoginPage', () => {
     fetchMock.mockResolvedValue(mockResponse(200, { token: 'jwt.real', usuario: CONDUCTOR }));
     renderLogin();
 
+    expandGroup(/Ciudadanos/);
     fireEvent.click(profileRow(DEMO_PROFILE.email));
 
     // First keystroke lands synchronously, the rest are driven by the timer queue.
@@ -331,8 +338,9 @@ describe('LoginPage', () => {
     fetchMock.mockResolvedValue(mockResponse(200, { token: 'jwt.real', usuario: CONDUCTOR }));
     renderLogin();
 
-    // The driver role is grouped, so its rows exist only after expanding it.
+    // Both MVP roles are grouped, so their rows exist only after expanding them.
     fireEvent.click(screen.getByRole('button', { name: /Conductores de ambulancia/ }));
+    expandGroup(/Ciudadanos/);
 
     fireEvent.click(profileRow(DEMO_PROFILE.email));
     // Rows lock while the run is in flight, and the ref guard covers the same tick.
@@ -363,6 +371,7 @@ describe('LoginPage', () => {
     fetchMock.mockResolvedValue(mockResponse(200, { token: 'jwt.real', usuario: CONDUCTOR }));
     renderLogin();
 
+    expandGroup(/Ciudadanos/);
     fireEvent.click(profileRow(DEMO_PROFILE.email));
 
     expect(screen.getByLabelText('Usuario o correo')).toHaveValue(DEMO_PROFILE.email);
@@ -378,6 +387,7 @@ describe('LoginPage', () => {
     );
     renderLogin();
 
+    expandGroup(/Ciudadanos/);
     fireEvent.click(profileRow(DEMO_PROFILE.email));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Credenciales inválidas');

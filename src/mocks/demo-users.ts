@@ -3,7 +3,7 @@ import type { RolUsuario } from '@/types/domain';
 /**
  * Build-time demo catalog for the deployed build (`VITE_DEMO_MODE=1`).
  *
- * It matches the ten users the backend seeds (`DataSeeder.java`, design
+ * It matches the eleven users the backend seeds (`DataSeeder.java`, design
  * decision D2) on the credentials that actually authenticate: same emails,
  * same passwords, same roles and the SAME display names. Keeping both lists in
  * sync is what makes the login screen, the demo profiles panel and the deployed
@@ -59,6 +59,13 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
     id: 'usr-demo-ciudadano',
     nombre: 'Ana Gómez',
     email: 'ciudadano@nexovital.co',
+    rol: 'CIUDADANO',
+    password: 'ciudadano123',
+  },
+  {
+    id: 'usr-demo-ciudadano-2',
+    nombre: 'Sofía Ramírez',
+    email: 'ciudadano2@nexovital.co',
     rol: 'CIUDADANO',
     password: 'ciudadano123',
   },

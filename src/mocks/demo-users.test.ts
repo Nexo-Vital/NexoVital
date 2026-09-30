@@ -20,7 +20,9 @@ describe('demo catalog', () => {
   it('covers the five canonical roles with unique emails', () => {
     const emails = DEMO_ACCOUNTS.map((account) => account.email);
     expect(new Set(emails).size).toBe(DEMO_ACCOUNTS.length);
+    expect(DEMO_ACCOUNTS).toHaveLength(11);
     expect(DEMO_ACCOUNTS.filter((account) => account.rol === 'CONDUCTOR')).toHaveLength(5);
+    expect(DEMO_ACCOUNTS.filter((account) => account.rol === 'CIUDADANO')).toHaveLength(2);
     for (const rol of ROLES) {
       expect(DEMO_ACCOUNTS.some((account) => account.rol === rol)).toBe(true);
     }

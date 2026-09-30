@@ -101,8 +101,17 @@ export const DEMO_USERS: DemoUser[] = [
   {
     rol: 'CIUDADANO',
     label: 'Ciudadano',
+    groupLabel: 'Ciudadanos',
     descripcion: 'Solicita una ambulancia y reporta emergencias',
     email: 'ciudadano@nexovital.co',
+    password: 'ciudadano123',
+  },
+  {
+    rol: 'CIUDADANO',
+    label: 'Ciudadano',
+    groupLabel: 'Ciudadanos',
+    descripcion: 'Solicita una ambulancia y reporta emergencias',
+    email: 'ciudadano2@nexovital.co',
     password: 'ciudadano123',
   },
 ];
