@@ -39,11 +39,13 @@ vi.mock('@/features/mapa/MapCanvas', () => ({
     ambulanceLabels?: Record<string, string>;
     requestConnector?: { dashed?: boolean } | null;
     request?: { position: { lat: number; lng: number }; label: string } | null;
+    self?: { position: { lat: number; lng: number }; simulated: boolean; label?: string } | null;
     ambulancias?: { id: string }[];
     centros?: { id: string }[];
     emergencias?: { id: string }[];
     onClearSelection?: () => void;
     onMapClick?: (ubicacion: { lat: number; lng: number }) => void;
+    onSelfDragEnd?: (ubicacion: { lat: number; lng: number }) => void;
   }) => (
     <div
       data-testid="map-canvas"
@@ -55,6 +57,9 @@ vi.mock('@/features/mapa/MapCanvas', () => ({
       data-connector={props.requestConnector ? 'yes' : 'no'}
       data-connector-dashed={props.requestConnector?.dashed === false ? 'no' : 'yes'}
       data-request={props.request ? props.request.label : ''}
+      data-self={props.self ? `${props.self.position.lat},${props.self.position.lng}` : ''}
+      data-self-sim={props.self?.simulated ? 'yes' : 'no'}
+      data-self-label={props.self?.label ?? ''}
       data-ambulancias={JSON.stringify((props.ambulancias ?? []).map((item) => item.id))}
       data-centros={JSON.stringify((props.centros ?? []).map((item) => item.id))}
       data-emergencias={JSON.stringify((props.emergencias ?? []).map((item) => item.id))}
@@ -69,6 +74,14 @@ vi.mock('@/features/mapa/MapCanvas', () => ({
           props.onMapClick?.({ lat: 4.728, lng: -74.078 });
           props.onClearSelection?.();
         }}
+      />
+      {/* Stands in for a drag of the self marker, the same callback the real
+          MapCanvas fires from Leaflet's `dragend`. */}
+      <button
+        type="button"
+        data-testid="self-drag"
+        aria-label="drag self"
+        onClick={() => props.onSelfDragEnd?.({ lat: 4.9, lng: -74.1 })}
       />
     </div>
   ),
@@ -303,6 +316,65 @@ describe('CitizenMapPage', () => {
       within(rail).getByRole('heading', { name: 'Ambulancias cerca de ti' }),
     ).toBeInTheDocument();
     expect(within(rail).getByRole('heading', { name: 'Centros de acopio' })).toBeInTheDocument();
+  });
+
+  it('starts the position simulation from the citizen rail and the marker reflects it', () => {
+    renderPage({ ambulancias: SEARCH_FLEET });
+
+    const map = screen.getByTestId('map-canvas');
+    expect(screen.getByRole('button', { name: 'Simular posición' })).toBeInTheDocument();
+    expect(map).toHaveAttribute('data-self-sim', 'no');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Simular posición' }));
+
+    // The device fix seeds the simulation, so the marker keeps its spot and is
+    // now flagged as simulated (the shared chip makes that visible).
+    expect(map).toHaveAttribute('data-self-sim', 'yes');
+    expect(map).toHaveAttribute('data-self', '4.728,-74.078');
+    expect(screen.getByText('Simulada')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Recentrar simulación' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Usar GPS del dispositivo' })).toBeInTheDocument();
+  });
+
+  it('returns to the device GPS when the citizen stops the simulation', () => {
+    renderPage({ ambulancias: SEARCH_FLEET });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Simular posición' }));
+    expect(screen.getByTestId('map-canvas')).toHaveAttribute('data-self-sim', 'yes');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Usar GPS del dispositivo' }));
+
+    expect(screen.getByTestId('map-canvas')).toHaveAttribute('data-self-sim', 'no');
+    expect(screen.queryByText('Simulada')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Simular posición' })).toBeInTheDocument();
+  });
+
+  it('moves the citizen position by dragging the marker while simulating', () => {
+    renderPage({ ambulancias: SEARCH_FLEET });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Simular posición' }));
+    expect(screen.getByTestId('map-canvas')).toHaveAttribute('data-self', '4.728,-74.078');
+
+    fireEvent.click(screen.getByTestId('self-drag'));
+
+    expect(screen.getByTestId('map-canvas')).toHaveAttribute('data-self', '4.9,-74.1');
+  });
+
+  it('places the citizen by tapping the map while simulating', () => {
+    // No device fix: the simulation starts at its constant seed.
+    stallGeolocation();
+    renderPage({ ambulancias: SEARCH_FLEET });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Simular posición' }));
+    const map = screen.getByTestId('map-canvas');
+    expect(map).toHaveAttribute('data-self', '4.653,-74.06');
+
+    // While simulating the map tap PLACES the citizen, it does not mark a pickup
+    // point (that path is only wired with the GPS denied and no simulation).
+    fireEvent.click(screen.getByTestId('map-background'));
+
+    expect(map).toHaveAttribute('data-self', '4.728,-74.078');
+    expect(map).toHaveAttribute('data-self-sim', 'yes');
   });
 
   it('demo: hydrates the fixtures when no fleet prop is injected', () => {

@@ -6,7 +6,6 @@ import {
   ChevronUp,
   ClipboardList,
   Clock,
-  Crosshair,
   Eye,
   Info,
   MapPin,
@@ -31,11 +30,8 @@ import {
   citizenUnitStatus,
   formatDistance,
 } from '@/features/ciudadano/citizen-view';
-import {
-  type DeviceLocationState,
-  INSECURE_CONTEXT_MESSAGE,
-  SIMULATED_START,
-} from '@/features/geolocalizacion/use-device-location';
+import { LocationSimulationControls } from '@/features/geolocalizacion/LocationSimulationControls';
+import type { DeviceLocationState } from '@/features/geolocalizacion/use-device-location';
 import { unitPlateLabel } from '@/features/seguimiento/tracking';
 import {
   EMERGENCY_LEVEL_META,
@@ -89,28 +85,6 @@ function LevelChip({ level, className }: { level?: EmergencyLevel; className?: s
   );
 }
 
-/** Spanish position hint for the simulation fallback, one per device status. */
-function locationHint(location: DeviceLocationState): { text: string; tone: string } {
-  switch (location.status) {
-    case 'unsupported':
-      return { text: INSECURE_CONTEXT_MESSAGE, tone: 'text-warning' };
-    case 'denied':
-      return {
-        text: 'Permiso de ubicación denegado. Actívalo en los ajustes del navegador o simula una posición.',
-        tone: 'text-critical',
-      };
-    case 'unavailable':
-      return {
-        text: 'La ubicación no está disponible ahora. Inténtalo de nuevo en un momento o simula una posición.',
-        tone: 'text-warning',
-      };
-    case 'granted':
-      return { text: 'Posición GPS en vivo.', tone: 'text-ok' };
-    default:
-      return { text: 'Esperando el permiso de ubicación…', tone: 'text-muted-foreground' };
-  }
-}
-
 /**
  * "Tu ambulancia": the unit this driver operates, and every control that used
  * to live in the retired bottom sheet (connection, the four driver states and
@@ -158,7 +132,6 @@ function MyUnitPanel({
   const driverMeta = DRIVER_STATUS_META[status];
   const chipLabel = missionActive ? CITIZEN_UNIT_META.busy.label : driverMeta.label;
   const chipClass = missionActive ? CITIZEN_UNIT_META.busy.chipClass : driverMeta.chipClass;
-  const hint = locationHint(location);
   // The unit is named by its plate (never the internal id, which is a UUID off
   // demo); until the fleet hydrates, the id is the only handle available.
   const unitLabel = unit ? unitPlateLabel(unit) : unitId;
@@ -266,45 +239,10 @@ function MyUnitPanel({
       */}
 
       <div className="flex flex-col gap-2 rounded-nv-md border border-nv-line p-3">
-        <div className="flex items-center gap-2">
-          <Crosshair className="size-4 text-nv-navy-400" aria-hidden />
-          <span className="nv-label text-nv-navy-400">Mi posición</span>
-          {location.simulated && (
-            <span className="ml-auto shrink-0 rounded-nv-pill border border-nv-amber px-2.5 py-1 font-semibold text-nv-amber text-xs">
-              Simulada
-            </span>
-          )}
-        </div>
-        <p className={cn('text-xs', hint.tone)}>{hint.text}</p>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => location.setSimulatedPosition(location.position ?? SIMULATED_START)}
-            className={cn(
-              'inline-flex items-center justify-center rounded-nv-md px-3 py-2 font-semibold text-xs',
-              location.simulated
-                ? 'bg-nv-navy text-white'
-                : 'border-[1.5px] border-nv-line bg-white text-nv-navy',
-            )}
-          >
-            {location.simulated ? 'Recentrar simulación' : 'Simular posición'}
-          </button>
-          {location.simulated && (
-            <button
-              type="button"
-              onClick={location.clearSimulated}
-              className="inline-flex items-center justify-center rounded-nv-md px-3 py-2 font-semibold text-nv-navy-400 text-xs"
-            >
-              Usar GPS del dispositivo
-            </button>
-          )}
-        </div>
-        {location.simulated && (
-          <p className="text-nv-navy-400 text-[11px]">
-            Toca el mapa o arrastra el marcador SIM para moverte. La posición se publica en
-            /topic/flota como unidad simulada.
-          </p>
-        )}
+        <LocationSimulationControls
+          location={location}
+          note="Toca el mapa o arrastra el marcador SIM para moverte. La posición se publica en /topic/flota como unidad simulada."
+        />
       </div>
     </RailPanel>
   );

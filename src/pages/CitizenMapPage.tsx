@@ -630,11 +630,19 @@ export default function CitizenMapPage({
               : null
           }
           onCenterChange={setMapCenter}
-          // When the GPS is denied, a map click marks the pickup point; with a
-          // device fix the click keeps its old "release selection" behaviour.
+          // While the simulation is active a map click PLACES the citizen, the
+          // driver's own affordance; with the GPS denied and no simulation it
+          // keeps its old job of marking the request's pickup point (a different
+          // feature). A simulated position leaves `location.position` non-null,
+          // so the pickup path and its marker stay off by construction.
           onMapClick={
-            requestPhase === 'idle' && location.position === null ? handlePickupClick : undefined
+            location.simulated
+              ? location.setSimulatedPosition
+              : requestPhase === 'idle' && location.position === null
+                ? handlePickupClick
+                : undefined
           }
+          onSelfDragEnd={location.simulated ? location.setSimulatedPosition : undefined}
           onClearSelection={handleClearSelection}
           onSelectAmbulance={() => undefined}
           onSelectEmergency={() => undefined}
@@ -703,6 +711,7 @@ export default function CitizenMapPage({
         <CitizenRail
           nearby={nearby}
           centros={centros}
+          location={location}
           availableCount={availableCount}
           requestError={requestError}
           onRequest={handleRequest}

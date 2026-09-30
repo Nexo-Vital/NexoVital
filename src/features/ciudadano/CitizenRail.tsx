@@ -1,4 +1,6 @@
 ﻿import { Ambulance, HandHeart, Layers, Siren, User, Warehouse } from 'lucide-react';
+import { LocationSimulationControls } from '@/features/geolocalizacion/LocationSimulationControls';
+import type { DeviceLocationState } from '@/features/geolocalizacion/use-device-location';
 import {
   MAP_FILTER_LAYERS,
   type MapFilterCounts,
@@ -244,6 +246,8 @@ function MapFilterControl({
 interface CitizenRailProps {
   nearby: NearbyAmbulance[];
   centros: CentroAyuda[];
+  /** The page's single device-location hook; drives the simulation control. */
+  location: DeviceLocationState;
   /** Units currently AVAILABLE; zero disables the search honestly. */
   availableCount: number;
   /** Honest reason the last request could not start; null when none. */
@@ -270,6 +274,7 @@ interface CitizenRailProps {
 export function CitizenRail({
   nearby,
   centros,
+  location,
   availableCount,
   requestError,
   onRequest,
@@ -286,6 +291,23 @@ export function CitizenRail({
       aria-label="Panel del ciudadano"
       className="flex flex-col gap-4 lg:min-h-0 lg:overflow-y-auto"
     >
+      {/*
+        "Mi posición" comes FIRST: it sets the origin every downstream panel
+        reads (nearby distances and the request pickup point), and it is the
+        demo's first action. It reuses the driver's exact simulation vocabulary
+        through the shared control, so no backlogged GPS blocks the multi-user
+        demo.
+      */}
+      <section
+        aria-label="Mi posición"
+        className="flex flex-col gap-2 rounded-nv-lg bg-white p-4 shadow-nv-card"
+      >
+        <LocationSimulationControls
+          location={location}
+          note="Toca el mapa o arrastra el marcador SIM para moverte."
+        />
+      </section>
+
       <CitizenRoleActions
         onRequest={onRequest}
         availableCount={availableCount}
