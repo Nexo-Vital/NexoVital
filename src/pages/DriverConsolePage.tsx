@@ -11,7 +11,6 @@ import { DriverRail } from '@/features/conductor/DriverRail';
 import { useDriverAlertsStore } from '@/features/conductor/driver-alerts-store';
 import { resolveDriverAmbulanceId } from '@/features/conductor/driver-session';
 import { DRIVER_STATUS_META, type DriverStatus } from '@/features/conductor/driver-status';
-import { SolicitudSheet } from '@/features/conductor/SolicitudSheet';
 import { useSolicitudInbox } from '@/features/conductor/use-solicitud-inbox';
 import { fetchEmergencias } from '@/features/emergencias/emergency-api';
 import { useEmergencyStore } from '@/features/emergencias/emergency-store';
@@ -280,10 +279,10 @@ export default function DriverConsolePage({
   // actually waiting for an answer (phase idle/submitting).
   const missionActive = inbox.mission !== null && !requestOpen;
 
-  // U6: the tapped request is actionable only while it is the inbox's open
-  // broadcast AND the driver's own unit is resolved. The accept/reject actions
-  // send `ambulanciaId`, so without a resolved unit they must stay disabled
-  // (FIX B) instead of firing an empty id.
+  // The selected row is actionable only while it is the inbox's open broadcast
+  // AND the driver's own unit is resolved. The accept/reject actions send
+  // `ambulanciaId`, so without a resolved unit they must stay disabled (FIX B)
+  // instead of firing an empty id.
   const selectedIsActive =
     unitResolved &&
     selectedSolicitud !== null &&
@@ -291,11 +290,12 @@ export default function DriverConsolePage({
     requestOpen;
 
   /*
-    MAP-2: the ONE definition of a solicitud's scene, shared by the sheet's
-    "Visualizar" (U7) and the row click (MAP-3). The fallback order is preserved:
-    the active broadcast only when it IS this request, then the request's own
-    pickup point, the emergency, the aid center and finally the zone reference
-    point. With none of them it returns null, so no caller can invent a location.
+    MAP-2: the ONE definition of a solicitud's scene, shared by the inline
+    detail's "Visualizar" and the row click (MAP-3). The fallback order is
+    preserved: the active broadcast only when it IS this request, then the
+    request's own pickup point, the emergency, the aid center and finally the
+    zone reference point. With none of them it returns null, so no caller can
+    invent a location.
   */
   const resolveSolicitudScene = useCallback(
     (solicitud: SolicitudAmbulancia): Ubicacion | null => {
@@ -340,27 +340,29 @@ export default function DriverConsolePage({
     [centerSolicitudScene],
   );
 
-  const handleAcceptFromSheet = useCallback(() => {
+  // The inline detail's "Aceptar" reuses the inbox accept and collapses the
+  // detail. Accept acts on the offered broadcast only, and the detail disables
+  // the button for every other row, so this path is reached only for it.
+  const handleAcceptSelected = useCallback(() => {
     inbox.accept();
     setSelectedSolicitud(null);
   }, [inbox.accept]);
 
-  const handleRejectFromSheet = useCallback(() => {
-    // Only the open request is actionable: any other row must not fire a reject
-    // for a mission the inbox is not offering. Returning false lets the sheet
-    // stay open with its honest reason.
+  // Defense-in-depth for the inline detail's "Rechazar": only the offered
+  // broadcast is actionable, so any other row refuses to fire a reject for a
+  // mission the inbox is not offering.
+  const handleRejectSelected = useCallback(() => {
     if (!selectedIsActive) {
-      return false;
+      return;
     }
     inbox.reject();
     setSelectedSolicitud(null);
-    return true;
   }, [selectedIsActive, inbox.reject]);
 
-  // U7 "Visualizar": close the sheet and centre the map on the requester, reusing
-  // the SAME scene resolution as the row click (MAP-2). With no resolvable scene
-  // the map stays put instead of flying to an invented point.
-  const handleViewSolicitud = useCallback(() => {
+  // "Visualizar": collapse the detail and centre the map on the requester,
+  // reusing the SAME scene resolution as the row click (MAP-2). With no
+  // resolvable scene the map stays put instead of flying to an invented point.
+  const handleViewSelected = useCallback(() => {
     const solicitud = selectedSolicitud;
     setSelectedSolicitud(null);
     if (!solicitud) {
@@ -368,6 +370,11 @@ export default function DriverConsolePage({
     }
     centerSolicitudScene(solicitud);
   }, [selectedSolicitud, centerSolicitudScene]);
+
+  // "Cerrar" collapses the inline detail without moving the map.
+  const handleCloseSelected = useCallback(() => {
+    setSelectedSolicitud(null);
+  }, []);
 
   useEffect(() => {
     if (!hasCentered && effectivePosition) {
@@ -619,29 +626,14 @@ export default function DriverConsolePage({
         }}
         centros={centros}
         solicitudes={solicitudesRegistry}
+        selectedSolicitud={selectedSolicitud}
+        selectedCanRespond={selectedIsActive}
+        selectedDistanceKm={selectedSolicitud ? mapSceneDistance : null}
         onSelectSolicitud={handleSelectSolicitud}
-      />
-
-      {/* U6/U7: the tapped request opens the bottom sheet with the three
-          actions; "Visualizar" closes it and focuses the map on the requester. */}
-      <SolicitudSheet
-        open={selectedSolicitud !== null}
-        onOpenChange={(open) => {
-          // Reconcile explicitly in BOTH directions: a programmatic close (accept
-          // or reject clearing the request) must not leave the sheet's internal
-          // dialog mounted, and re-opening needs the state to move too.
-          setSelectedSolicitud((current) => (open ? current : null));
-        }}
-        solicitud={selectedSolicitud}
-        distanceKm={
-          selectedSolicitud?.ubicacion && effectivePosition
-            ? distanceKm(effectivePosition, selectedSolicitud.ubicacion)
-            : null
-        }
-        canRespond={selectedIsActive}
-        onAccept={handleAcceptFromSheet}
-        onReject={handleRejectFromSheet}
-        onView={handleViewSolicitud}
+        onAcceptSelected={handleAcceptSelected}
+        onRejectSelected={handleRejectSelected}
+        onViewSelected={handleViewSelected}
+        onCloseSelected={handleCloseSelected}
       />
 
       {/*

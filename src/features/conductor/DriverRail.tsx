@@ -2,9 +2,12 @@ import type { LucideIcon } from 'lucide-react';
 import {
   Ambulance,
   Check,
+  ChevronDown,
+  ChevronUp,
   ClipboardList,
   Clock,
   Crosshair,
+  Eye,
   Info,
   MapPin,
   Navigation,
@@ -593,14 +596,215 @@ function RequestCard({
 }
 
 /**
- * "Solicitudes": mirrors the driver's live inbox.
- *
- * While a mission is open (the arbiter assigned this unit) the panel becomes the
- * `C.d4` mission rail instead of a request card: an occupied unit is not looking
- * for work. A NEW broadcast while occupied still shows its card, because the
- * driver may be asked to respond to it.
+ * Compact, human reference of a solicitud, used as the identity half of a row
+ * label. The raw UUID off the wire is never painted whole: a demo `REQ-1001`
+ * becomes `#1001`, any other id keeps its first six significant characters
+ * (`#7f6f2f`). It stays short enough to read and unique enough to tell two rows
+ * apart.
  */
-function RequestsPanel({
+function solicitudReference(id: string): string {
+  const demo = /^REQ-(\d+)$/.exec(id);
+  if (demo) {
+    return `#${demo[1]}`;
+  }
+  return `#${id.replace(/-/g, '').slice(0, 6)}`;
+}
+
+/**
+ * Primary label of a registry row: the request's declared type (never its id),
+ * plus the short reference above so two requests of the same type stay
+ * distinguishable. A frame with no type still reads honestly as "Solicitud de
+ * ambulancia".
+ */
+function solicitudLabel(solicitud: SolicitudAmbulancia): string {
+  return `${solicitud.tipo || 'Solicitud de ambulancia'} · ${solicitudReference(solicitud.id)}`;
+}
+
+/**
+ * Secondary line of a registry row: where the request is. A citizen request
+ * declares no zone, so its own reported coordinates are shown instead; with
+ * neither, the emergency reference is the honest fallback.
+ */
+function solicitudSceneLabel(solicitud: SolicitudAmbulancia): string {
+  return (
+    solicitud.zonaId ||
+    (solicitud.ubicacion ? formatCoordinates(solicitud.ubicacion) : '') ||
+    solicitud.emergenciaId ||
+    'Sin detalle'
+  );
+}
+
+/** One selectable registry row; `aria-expanded` mirrors the inline detail. */
+function SolicitudRow({
+  solicitud,
+  selected,
+  onSelect,
+}: {
+  solicitud: SolicitudAmbulancia;
+  selected: boolean;
+  onSelect: (solicitud: SolicitudAmbulancia) => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        aria-expanded={selected}
+        onClick={() => onSelect(solicitud)}
+        className={cn(
+          'flex w-full flex-col gap-1 rounded-nv-md border bg-white p-3 text-left',
+          selected ? 'border-nv-navy' : 'border-nv-line',
+        )}
+      >
+        <span className="flex items-center gap-2">
+          <b className="min-w-0 flex-1 truncate font-semibold text-[13.5px]">
+            {solicitudLabel(solicitud)}
+          </b>
+          <span className="shrink-0 rounded-nv-pill bg-nv-mint px-2 py-0.5 font-medium text-nv-navy-400 text-[11px]">
+            {REQUEST_STATE_LABEL_ES[solicitud.estado]}
+          </span>
+          {selected ? (
+            <ChevronUp className="size-4 shrink-0 text-nv-navy-400" aria-hidden />
+          ) : (
+            <ChevronDown className="size-4 shrink-0 text-nv-navy-400" aria-hidden />
+          )}
+        </span>
+        <small className="block truncate text-nv-navy-400 text-xs">
+          {solicitudSceneLabel(solicitud)}
+        </small>
+      </button>
+    </li>
+  );
+}
+
+/**
+ * Inline detail of the selected registry row. It replaces the retired bottom
+ * sheet with the same facts (title, emergency, type, location, distance and the
+ * notified units) and the same three actions.
+ *
+ * Aceptar/Rechazar act on the inbox's open broadcast ONLY, so they stay disabled
+ * for any other row, with the honest reason the sheet already gave. The detail
+ * never offers an action the server would refuse without saying why.
+ */
+function SolicitudDetail({
+  solicitud,
+  distanceKm,
+  units,
+  canRespond,
+  onAccept,
+  onReject,
+  onView,
+  onClose,
+}: {
+  solicitud: SolicitudAmbulancia;
+  distanceKm: number | null;
+  units: readonly Ambulancia[];
+  canRespond: boolean;
+  onAccept: () => void;
+  onReject: () => void;
+  onView: () => void;
+  onClose: () => void;
+}) {
+  const notified = solicitud.ambulanciasNotificadas;
+  return (
+    <div
+      data-testid="solicitud-detail"
+      className="flex flex-col gap-3 rounded-nv-md border border-nv-line bg-white p-3.5"
+    >
+      <div className="flex items-center gap-2">
+        <h5 className="min-w-0 flex-1 truncate font-semibold text-sm">
+          {solicitudLabel(solicitud)}
+        </h5>
+        <span className="shrink-0 rounded-nv-pill bg-nv-mint px-2 py-0.5 font-medium text-nv-navy-400 text-[11px]">
+          {REQUEST_STATE_LABEL_ES[solicitud.estado]}
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="inline-flex shrink-0 items-center rounded-nv-md px-2 py-1 font-semibold text-nv-navy-400 text-xs"
+        >
+          Cerrar
+        </button>
+      </div>
+
+      <div>
+        <RequestDataRow
+          label="Emergencia"
+          value={solicitud.emergenciaId || 'Sin emergencia asociada'}
+          icon={User}
+        />
+        <RequestDataRow label="Tipo" value={solicitud.tipo || 'Sin clasificar'} icon={Info} />
+        {/* A citizen request declares no zone; its own reported coordinates are
+            the honest location, never an invented zone. */}
+        <RequestDataRow label="Ubicación" value={solicitudSceneLabel(solicitud)} icon={MapPin} />
+        <RequestDataRow
+          label="Distancia"
+          value={distanceKm !== null ? formatDistance(distanceKm) : 'Sin ubicación'}
+          icon={Navigation}
+        />
+        {/*
+          ONE notified-units source in the whole panel: the registry ids resolved
+          to their plate through `unitListLabel`. The wire-only `notifiedCount`
+          number is deliberately not painted, so the panel cannot show two
+          different notification figures for the same request.
+        */}
+        <RequestDataRow
+          label="Unidades avisadas"
+          value={notified.length > 0 ? unitListLabel(notified, units) : 'Sin unidades avisadas'}
+          icon={Radio}
+        />
+      </div>
+
+      {!canRespond && (
+        <p className="rounded-nv-md bg-nv-mint p-3 text-nv-navy-400 text-xs leading-[18px]">
+          Esta solicitud ya no está abierta en tu panel: solo puedes aceptar o rechazar la solicitud
+          vigente que tienes arriba.
+        </p>
+      )}
+
+      <div className="flex flex-col gap-2">
+        <button
+          type="button"
+          onClick={onAccept}
+          disabled={!canRespond}
+          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md bg-nv-navy px-5 font-semibold text-sm text-white disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <Check className="size-5" aria-hidden />
+          Aceptar
+        </button>
+        <button
+          type="button"
+          onClick={onReject}
+          disabled={!canRespond}
+          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md border-[1.5px] border-nv-line bg-white px-5 font-semibold text-nv-navy text-sm disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <X className="size-5" aria-hidden />
+          Rechazar
+        </button>
+        <button
+          type="button"
+          onClick={onView}
+          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md border-[1.5px] border-nv-line bg-white px-5 font-semibold text-nv-navy text-sm"
+        >
+          <Eye className="size-5" aria-hidden />
+          Visualizar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * "Solicitudes": the ONE panel for the whole request flow. It keeps the live
+ * inbox at the top — the `C.d4`/`C.d5` mission rail while a mission is open, the
+ * actionable card of the offered broadcast, or the empty state — and below it
+ * the ENTIRE registry, every row selectable.
+ *
+ * Selecting a row expands its detail INLINE (the retired sheet), so the panel
+ * never needs a full-screen overlay nor a bottom strip that collides with the
+ * rail. Only the offered broadcast is actionable; every other row is
+ * informational with the honest disabled state.
+ */
+function SolicitudesPanel({
   mission,
   missionDistanceKm,
   missionEtaMin,
@@ -612,27 +816,57 @@ function RequestsPanel({
   onDeclareArrival,
   onFinish,
   units,
+  solicitudes,
+  selectedSolicitud,
+  selectedCanRespond,
+  selectedDistanceKm,
+  onSelectSolicitud,
+  onAcceptSelected,
+  onRejectSelected,
+  onViewSelected,
+  onCloseSelected,
   ...request
 }: RequestPanelProps &
-  MissionPanelProps & { mission: Mission | null; units: readonly Ambulancia[] }) {
+  MissionPanelProps & {
+    mission: Mission | null;
+    units: readonly Ambulancia[];
+    solicitudes: SolicitudAmbulancia[];
+    selectedSolicitud: SolicitudAmbulancia | null;
+    selectedCanRespond: boolean;
+    selectedDistanceKm: number | null;
+    onSelectSolicitud: (solicitud: SolicitudAmbulancia) => void;
+    onAcceptSelected: () => void;
+    onRejectSelected: () => void;
+    onViewSelected: () => void;
+    onCloseSelected: () => void;
+  }) {
   const requestOpen = request.phase === 'idle' || request.phase === 'submitting';
-  // The sound affordance lives in the inbox header in every state, so it is
-  // always reachable (the user unlocks audio once, before the next request).
+  const hasRegistry = solicitudes.length > 0;
+  // The sound affordance lives in the panel header in every state, so it is
+  // always reachable (the user unlocks audio once, before the next request), and
+  // it stays the ONLY instance: the unlock state is a module singleton.
   const header = (
     <div className="flex items-center gap-2">
       <h4 className="flex items-center gap-2 font-bold text-sm">
         <ClipboardList className="size-4 text-nv-navy" aria-hidden />
         Solicitudes
       </h4>
+      <span className="shrink-0 rounded-nv-pill bg-nv-mint px-2.5 py-1 font-semibold text-nv-navy text-xs">
+        {solicitudes.length}
+      </span>
       <span className="ml-auto">
         <SoundToggle />
       </span>
     </div>
   );
-  if (mission && !requestOpen) {
-    return (
-      <RailPanel label="Solicitudes">
-        {header}
+
+  return (
+    <RailPanel label="Solicitudes">
+      {header}
+      {/* Mission precedence: an occupied unit keeps its `C.d4`/`C.d5` panel. A new
+          broadcast while occupied still shows its card, because the driver may
+          be asked to answer it. */}
+      {mission && !requestOpen ? (
         <DriverMissionPanel
           tipo={mission.tipo}
           nivel={mission.nivel}
@@ -647,13 +881,9 @@ function RequestsPanel({
           onDeclareArrival={onDeclareArrival}
           onFinish={onFinish}
         />
-      </RailPanel>
-    );
-  }
-  if (!request.broadcast) {
-    return (
-      <RailPanel label="Solicitudes">
-        {header}
+      ) : request.broadcast ? (
+        <RequestCard {...request} units={units} broadcast={request.broadcast} />
+      ) : hasRegistry ? null : (
         <div className="flex flex-col items-center gap-1.5 rounded-nv-md border border-dashed border-nv-line px-4 py-6 text-center">
           <Radio className="size-6 text-nv-teal" aria-hidden />
           <b className="font-semibold text-sm">Sin solicitudes por ahora</b>
@@ -661,13 +891,36 @@ function RequestsPanel({
             Cuando alguien cerca pida una ambulancia te avisaremos aquí, con sonido.
           </span>
         </div>
-      </RailPanel>
-    );
-  }
-  return (
-    <RailPanel label="Solicitudes">
-      {header}
-      <RequestCard {...request} units={units} broadcast={request.broadcast} />
+      )}
+
+      {hasRegistry && (
+        <div className="flex flex-col gap-2 border-nv-line border-t pt-3">
+          <span className="nv-label text-nv-navy-400">Registro</span>
+          <ul aria-label="Lista de solicitudes" className="flex list-none flex-col gap-2 p-0">
+            {solicitudes.map((solicitud) => (
+              <SolicitudRow
+                key={solicitud.id}
+                solicitud={solicitud}
+                selected={selectedSolicitud?.id === solicitud.id}
+                onSelect={onSelectSolicitud}
+              />
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {selectedSolicitud && (
+        <SolicitudDetail
+          solicitud={selectedSolicitud}
+          distanceKm={selectedDistanceKm}
+          units={units}
+          canRespond={selectedCanRespond}
+          onAccept={onAcceptSelected}
+          onReject={onRejectSelected}
+          onView={onViewSelected}
+          onClose={onCloseSelected}
+        />
+      )}
     </RailPanel>
   );
 }
@@ -724,67 +977,6 @@ function AidCentersPanel({ centros }: { centros: CentroAyuda[] }) {
         <ul className="flex list-none flex-col gap-2.5 p-0">
           {centros.map((centro) => (
             <AidCenterRow key={centro.id} centro={centro} />
-          ))}
-        </ul>
-      )}
-    </RailPanel>
-  );
-}
-
-/**
- * U5: the bottom list of EVERY request in the registry, not just the one the
- * inbox is currently offering. The count comes from the real data (`solicitudes
- * .length`), never a fixed number. Each row is a button: tapping it opens the
- * request sheet (U6) with Aceptar / Rechazar / Visualizar.
- */
-function SolicitudesListPanel({
-  solicitudes,
-  onSelect,
-}: {
-  solicitudes: SolicitudAmbulancia[];
-  onSelect: (solicitud: SolicitudAmbulancia) => void;
-}) {
-  return (
-    <RailPanel label="Todas las solicitudes">
-      <h4 className="flex items-center gap-2 font-bold text-sm">
-        <ClipboardList className="size-4 text-nv-navy" aria-hidden />
-        Todas las solicitudes
-        <span className="ml-auto shrink-0 rounded-nv-pill bg-nv-mint px-2.5 py-1 font-semibold text-nv-navy text-xs">
-          {solicitudes.length}
-        </span>
-      </h4>
-      {solicitudes.length === 0 ? (
-        <p className="text-nv-navy-400 text-sm">No hay solicitudes registradas.</p>
-      ) : (
-        <ul aria-label="Lista de solicitudes" className="flex list-none flex-col gap-2 p-0">
-          {solicitudes.map((solicitud) => (
-            <li key={solicitud.id}>
-              <button
-                type="button"
-                onClick={() => onSelect(solicitud)}
-                className="flex w-full flex-col gap-1 rounded-nv-md border border-nv-line bg-white p-3 text-left"
-              >
-                <span className="flex items-center gap-2">
-                  <b className="min-w-0 flex-1 truncate font-semibold text-[13.5px]">
-                    {solicitud.id}
-                  </b>
-                  <span className="shrink-0 rounded-nv-pill bg-nv-mint px-2 py-0.5 font-medium text-nv-navy-400 text-[11px]">
-                    {REQUEST_STATE_LABEL_ES[solicitud.estado]}
-                  </span>
-                </span>
-                <small className="block truncate text-nv-navy-400 text-xs">
-                  {[
-                    solicitud.tipo,
-                    solicitud.zonaId ||
-                      (solicitud.ubicacion ? formatCoordinates(solicitud.ubicacion) : ''),
-                  ]
-                    .filter(Boolean)
-                    .join(' · ') ||
-                    solicitud.emergenciaId ||
-                    'Sin detalle'}
-                </small>
-              </button>
-            </li>
           ))}
         </ul>
       )}
@@ -852,10 +1044,24 @@ interface DriverRailProps extends MissionPanelProps {
   request: RequestPanelProps;
   /** Aid centers to list, nearest first is not guaranteed by the fixture. */
   centros: CentroAyuda[];
-  /** Every request in the registry, rendered as the bottom list (U5). */
+  /** Every request in the registry, rendered as the panel's list. */
   solicitudes: SolicitudAmbulancia[];
-  /** Opens the request sheet for a tapped row (U6). */
+  /** The row whose detail is expanded inline, or null when none is selected. */
+  selectedSolicitud: SolicitudAmbulancia | null;
+  /** Whether the selected row is the offered broadcast (enables its actions). */
+  selectedCanRespond: boolean;
+  /** Distance to the selected row's scene, or null without a resolvable scene. */
+  selectedDistanceKm: number | null;
+  /** Selects a row: expands its detail and centres the map on it. */
   onSelectSolicitud: (solicitud: SolicitudAmbulancia) => void;
+  /** Inbox accept for the selected (offered) row. */
+  onAcceptSelected: () => void;
+  /** Inbox reject for the selected (offered) row. */
+  onRejectSelected: () => void;
+  /** Collapses the detail and centres the map on the selected scene. */
+  onViewSelected: () => void;
+  /** Collapses the detail without moving the map. */
+  onCloseSelected: () => void;
 }
 
 /** Driver rail: own unit, the live request inbox and the nearby aid centers. */
@@ -882,7 +1088,14 @@ export function DriverRail({
   request,
   centros,
   solicitudes,
+  selectedSolicitud,
+  selectedCanRespond,
+  selectedDistanceKm,
   onSelectSolicitud,
+  onAcceptSelected,
+  onRejectSelected,
+  onViewSelected,
+  onCloseSelected,
 }: DriverRailProps) {
   return (
     <aside
@@ -900,7 +1113,7 @@ export function DriverRail({
         mission={mission}
         location={location}
       />
-      <RequestsPanel
+      <SolicitudesPanel
         {...request}
         units={units}
         mission={mission}
@@ -913,9 +1126,17 @@ export function DriverRail({
         missionConfirmedAt={missionConfirmedAt}
         onDeclareArrival={onDeclareArrival}
         onFinish={onFinish}
+        solicitudes={solicitudes}
+        selectedSolicitud={selectedSolicitud}
+        selectedCanRespond={selectedCanRespond}
+        selectedDistanceKm={selectedDistanceKm}
+        onSelectSolicitud={onSelectSolicitud}
+        onAcceptSelected={onAcceptSelected}
+        onRejectSelected={onRejectSelected}
+        onViewSelected={onViewSelected}
+        onCloseSelected={onCloseSelected}
       />
       <AidCentersPanel centros={centros} />
-      <SolicitudesListPanel solicitudes={solicitudes} onSelect={onSelectSolicitud} />
     </aside>
   );
 }

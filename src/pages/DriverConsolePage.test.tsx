@@ -97,6 +97,19 @@ function driverStatusChip() {
   return screen.getByTestId('driver-status-chip');
 }
 
+/**
+ * The registry row button for a solicitud id. Rows are labelled by their human
+ * title ("type · short reference"), never the raw id, so the short reference is
+ * the stable handle. The trailing digit lookahead keeps `#1` from matching
+ * `#1001` (the accessible name joins nodes without spaces).
+ */
+function solicitudRowButton(id: string): HTMLElement {
+  const demo = /^REQ-(\d+)$/.exec(id);
+  const ref = demo ? `#${demo[1]}` : `#${id.replace(/-/g, '').slice(0, 6)}`;
+  const list = within(driverRail()).getByRole('list', { name: 'Lista de solicitudes' });
+  return within(list).getByRole('button', { name: new RegExp(`${ref}(?!\\d)`) });
+}
+
 /** Drives the page from a broadcast to a mission won by A-07 (`C.d4`). */
 async function winMission(user: ReturnType<typeof userEvent.setup>, port: FakeRealtimePort) {
   act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
@@ -280,7 +293,8 @@ describe('DriverConsolePage', () => {
 
   it('stops claiming there are no requests and renders the request card', () => {
     const port = new FakeRealtimePort();
-    render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+    // An empty registry so the honest empty state is on screen before the offer.
+    render(<DriverConsolePage port={port} ambulanceId="A-07" solicitudes={[]} />);
 
     const rail = driverRail();
     expect(within(rail).getByText('Sin solicitudes por ahora')).toBeInTheDocument();
@@ -814,45 +828,59 @@ describe('DriverConsolePage', () => {
     expect(dataRowValue(card, 'Distancia')).toBe('12,8 km · 29 min');
   });
 
-  it('U5: lists every request from the real registry, never just one', () => {
+  it('U5: the single "Solicitudes" panel lists every request from the real registry', () => {
     render(<DriverConsolePage port={new FakeRealtimePort()} ambulanceId="A-07" />);
 
     const rail = driverRail();
-    expect(within(rail).getByText('Todas las solicitudes')).toBeInTheDocument();
+    // ONE panel: the old "Todas las solicitudes" surface is gone.
+    expect(within(rail).queryByText('Todas las solicitudes')).not.toBeInTheDocument();
+    expect(within(rail).getByRole('heading', { name: 'Solicitudes' })).toBeInTheDocument();
+
     const list = within(rail).getByRole('list', { name: 'Lista de solicitudes' });
     // The count comes from the fixtures' real registry, not a fixed one.
     expect(within(list).getAllByRole('listitem')).toHaveLength(MOCK_SOLICITUDES.length);
-    // Every row is a real request id from the registry, not a placeholder.
-    expect(within(list).getAllByText(/^REQ-\d+$/)).toHaveLength(MOCK_SOLICITUDES.length);
+    // No row is titled with the raw request id: every row carries a human label
+    // (the declared type plus a short reference).
+    expect(within(list).queryByText(MOCK_SOLICITUDES[0].id)).not.toBeInTheDocument();
+    expect(within(list).getByText(/Traffic collision · #1001/)).toBeInTheDocument();
+    // Two different solicitudes stay distinguishable: no two rows share a label.
+    const labels = within(list)
+      .getAllByRole('button')
+      .map((row) => row.textContent ?? '');
+    expect(new Set(labels).size).toBe(labels.length);
   });
 
-  it('U6: a tapped request opens the sliding sheet with the three actions', async () => {
+  it('U6: a tapped request expands its detail inline inside the panel', async () => {
     const user = userEvent.setup();
     render(<DriverConsolePage port={new FakeRealtimePort()} ambulanceId="A-07" />);
 
-    const list = within(driverRail()).getByRole('list', { name: 'Lista de solicitudes' });
-    const row = within(list).getByText(MOCK_SOLICITUDES[0].id).closest('button');
-    expect(row).not.toBeNull();
-    await user.click(row as HTMLElement);
+    await user.click(solicitudRowButton(MOCK_SOLICITUDES[0].id));
 
-    const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByRole('button', { name: 'Aceptar' })).toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: 'Rechazar' })).toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: 'Visualizar' })).toBeInTheDocument();
+    // No modal, no overlay: the detail lives inside the rail.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    const detail = within(driverRail()).getByTestId('solicitud-detail');
+    expect(within(detail).getByRole('button', { name: 'Aceptar' })).toBeInTheDocument();
+    expect(within(detail).getByRole('button', { name: 'Rechazar' })).toBeInTheDocument();
+    expect(within(detail).getByRole('button', { name: 'Visualizar' })).toBeInTheDocument();
+    // The detail keeps the facts the sheet showed.
+    for (const label of ['Emergencia', 'Tipo', 'Ubicación', 'Distancia', 'Unidades avisadas']) {
+      expect(within(detail).getByText(label)).toBeInTheDocument();
+    }
   });
 
-  it('U6: "Aceptar" in the sheet reuses the inbox accept and bids for the open request', async () => {
+  it('U6: "Aceptar" in the inline detail reuses the inbox accept and bids for the open request', async () => {
     const user = userEvent.setup();
     const port = new FakeRealtimePort();
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
 
-    // Make REQ-1 the inbox's open broadcast, then open its row in the sheet.
+    // Make REQ-1 the inbox's open broadcast, then open its row's inline detail.
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
-    const list = within(driverRail()).getByRole('list', { name: 'Lista de solicitudes' });
-    await user.click(within(list).getByText('REQ-1').closest('button') as HTMLElement);
+    await user.click(solicitudRowButton('REQ-1'));
 
-    const dialog = await screen.findByRole('dialog');
-    await user.click(within(dialog).getByRole('button', { name: 'Aceptar' }));
+    const detail = within(driverRail()).getByTestId('solicitud-detail');
+    const accept = within(detail).getByRole('button', { name: 'Aceptar' });
+    expect(accept).toBeEnabled();
+    await user.click(accept);
 
     expect(port.published[0]?.payload).toEqual({
       type: 'solicitud.accept',
@@ -861,7 +889,24 @@ describe('DriverConsolePage', () => {
     });
   });
 
-  it('U7: "Visualizar" closes the sheet and focuses the map on the requester', async () => {
+  it('U6: a non-offered row keeps Aceptar/Rechazar disabled with an honest reason', async () => {
+    const user = userEvent.setup();
+    render(<DriverConsolePage port={new FakeRealtimePort()} ambulanceId="A-07" />);
+
+    // REQ-1001 is in the registry but is not the inbox's offered broadcast.
+    await user.click(solicitudRowButton(MOCK_SOLICITUDES[0].id));
+
+    const detail = within(driverRail()).getByTestId('solicitud-detail');
+    expect(within(detail).getByRole('button', { name: 'Aceptar' })).toBeDisabled();
+    expect(within(detail).getByRole('button', { name: 'Rechazar' })).toBeDisabled();
+    // "Visualizar" never acts on the inbox, so it stays available.
+    expect(within(detail).getByRole('button', { name: 'Visualizar' })).toBeEnabled();
+    expect(
+      within(detail).getByText(/solo puedes aceptar o rechazar la solicitud vigente/),
+    ).toBeInTheDocument();
+  });
+
+  it('U7: "Visualizar" collapses the detail and focuses the map on the requester', async () => {
     const user = userEvent.setup();
     const port = new FakeRealtimePort();
     render(
@@ -869,14 +914,15 @@ describe('DriverConsolePage', () => {
     );
 
     // Open REQ-1001 (its emergency EMG-002 sits at the fixture position 4.628/-74.148).
-    const list = within(driverRail()).getByRole('list', { name: 'Lista de solicitudes' });
-    await user.click(within(list).getByText('REQ-1001').closest('button') as HTMLElement);
-    const dialog = await screen.findByRole('dialog');
+    await user.click(solicitudRowButton('REQ-1001'));
+    const detail = within(driverRail()).getByTestId('solicitud-detail');
 
-    await user.click(within(dialog).getByRole('button', { name: 'Visualizar' }));
+    await user.click(within(detail).getByRole('button', { name: 'Visualizar' }));
 
-    // The sheet is gone and the map was handed the requester's real coordinates.
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    // The detail is collapsed and the map was handed the requester's real coordinates.
+    await waitFor(() =>
+      expect(within(driverRail()).queryByTestId('solicitud-detail')).not.toBeInTheDocument(),
+    );
     const map = screen.getByTestId('map-canvas');
     expect(Number(map.getAttribute('data-focus-lat'))).toBeCloseTo(4.628, 3);
     expect(Number(map.getAttribute('data-focus-lng'))).toBeCloseTo(-74.148, 3);
@@ -891,8 +937,7 @@ describe('DriverConsolePage', () => {
 
     // REQ-1001 points at EMG-002 (fixture 4.628 / -74.148). The ROW click alone —
     // no "Visualizar" — must move the viewport there.
-    const list = within(driverRail()).getByRole('list', { name: 'Lista de solicitudes' });
-    await user.click(within(list).getByText('REQ-1001').closest('button') as HTMLElement);
+    await user.click(solicitudRowButton('REQ-1001'));
 
     const map = screen.getByTestId('map-canvas');
     await waitFor(() => expect(Number(map.getAttribute('data-focus-lat'))).toBeCloseTo(4.628, 3));
@@ -916,8 +961,7 @@ describe('DriverConsolePage', () => {
     // The one-shot first centering is already consumed: no focus is pending.
     await waitFor(() => expect(map).toHaveAttribute('data-focus-lat', ''));
 
-    const list = within(driverRail()).getByRole('list', { name: 'Lista de solicitudes' });
-    await user.click(within(list).getByText('REQ-ORPHAN').closest('button') as HTMLElement);
+    await user.click(solicitudRowButton('REQ-ORPHAN'));
 
     // Still no focus: the map was not sent to an invented point.
     expect(map).toHaveAttribute('data-focus-lat', '');
@@ -936,15 +980,14 @@ describe('DriverConsolePage', () => {
     expect(map).toHaveAttribute('data-request-lng', '-74.148');
 
     // Select REQ-1002 (EMG-001 at 4.598 / -74.075): pin and route follow it.
-    const list = within(driverRail()).getByRole('list', { name: 'Lista de solicitudes' });
-    await user.click(within(list).getByText('REQ-1002').closest('button') as HTMLElement);
+    await user.click(solicitudRowButton('REQ-1002'));
     await waitFor(() => expect(map).toHaveAttribute('data-request-lat', '4.598'));
     expect(map).toHaveAttribute('data-request-lng', '-74.075');
     const route = mockFetchRuta.mock.calls[mockFetchRuta.mock.calls.length - 1];
     expect(route?.[1]).toEqual({ lat: 4.598, lng: -74.075 });
 
-    // Closing the sheet clears the selection: the map returns to the active scene.
-    await user.click(screen.getByRole('button', { name: 'Cerrar' }));
+    // Closing the detail clears the selection: the map returns to the active scene.
+    await user.click(within(driverRail()).getByRole('button', { name: 'Cerrar' }));
     await waitFor(() => expect(map).toHaveAttribute('data-request-lat', '4.628'));
     expect(map).toHaveAttribute('data-request-lng', '-74.148');
   });
