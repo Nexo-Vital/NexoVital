@@ -126,14 +126,14 @@ describe('MapCanvas smoke', () => {
 
     const labels = markerLabels(renderMap().container);
 
-    expect(labels).not.toContain('A-07');
+    expect(labels).not.toContain('WNR-418');
     expect(labels).toContain('EMG-001');
   });
 
   it('draws an inline glyph for units, emergencies and aid centers', () => {
     const { container } = renderMapWithCenters(() => undefined);
 
-    for (const label of ['A-07', 'EMG-001', 'Suba Norte']) {
+    for (const label of ['WNR-418', 'EMG-001', 'Suba Norte']) {
       expect(markerByLabel(container, label).querySelector('.nv-marker__glyph')).not.toBeNull();
     }
     // The anonymous dot is gone: every marker now has a shaped glyph.
@@ -242,8 +242,8 @@ describe('MapCanvas smoke', () => {
   it('draws free and busy unit variants without a heading rotation', () => {
     const { container } = renderMap();
 
-    const free = markerByLabel(container, 'A-07'); // AVAILABLE
-    const busy = markerByLabel(container, 'A-15'); // EN_ROUTE
+    const free = markerByLabel(container, 'WNR-418'); // AVAILABLE
+    const busy = markerByLabel(container, 'JTP-604'); // EN_ROUTE
 
     expect(free.classList.contains('nv-marker--available')).toBe(true);
     expect(free.querySelector('.nv-marker__badge')).not.toBeNull();
@@ -276,8 +276,12 @@ describe('MapCanvas smoke', () => {
     expect(container.querySelector('.nv-connector-line--solid')).toBeNull();
 
     // Only the notified unit carries the static teal ring.
-    expect(markerByLabel(container, 'A-15').classList.contains('nv-marker--notified')).toBe(true);
-    expect(markerByLabel(container, 'A-07').classList.contains('nv-marker--notified')).toBe(false);
+    expect(markerByLabel(container, 'JTP-604').classList.contains('nv-marker--notified')).toBe(
+      true,
+    );
+    expect(markerByLabel(container, 'WNR-418').classList.contains('nv-marker--notified')).toBe(
+      false,
+    );
   });
 
   it('draws the live-mission connector solid and lets a unit carry its own label', () => {
@@ -497,13 +501,13 @@ describe('MapCanvas smoke', () => {
   it('marks the alerted units with the notified ring and dims the rest', () => {
     const { container } = renderMapWithSearch();
 
-    for (const id of ['A-07', 'A-12', 'A-03']) {
-      const marker = markerByLabel(container, id);
+    for (const label of ['WNR-418', 'SNK-742', 'HGV-259']) {
+      const marker = markerByLabel(container, label);
       expect(marker.classList.contains('nv-marker--notified')).toBe(true);
       expect(marker.classList.contains('nv-marker--dim')).toBe(false);
     }
-    for (const id of ['A-09', 'A-15']) {
-      expect(markerByLabel(container, id).classList.contains('nv-marker--dim')).toBe(true);
+    for (const label of ['LQZ-813', 'JTP-604']) {
+      expect(markerByLabel(container, label).classList.contains('nv-marker--dim')).toBe(true);
     }
   });
 

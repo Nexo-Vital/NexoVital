@@ -73,18 +73,12 @@ export interface UnitDetailRow {
 }
 
 /**
- * Human handle of an ambulance: its plate (`ABC101`), never the internal id.
- *
- * Off demo the id is a UUID, so painting it as the unit's name gives the user a
- * long, unreadable identifier. The plate is the short, real handle the domain
- * already carries (and the one the user recognises), so every user-facing unit
- * label goes through here. Falls back to the id only when a unit arrives with a
- * blank plate.
+ * Re-exported so the rails keep importing the unit label from this module. The
+ * single definition lives in `@/lib/unit-label`, which is neutral (no React, no
+ * component) so a plain module like the map marker builder can share it without
+ * depending on this `.tsx`.
  */
-export function unitPlateLabel(unit: Pick<Ambulancia, 'id' | 'placa'>): string {
-  const plate = unit.placa.trim();
-  return plate === '' ? unit.id : plate;
-}
+export { unitPlateLabel } from '@/lib/unit-label';
 
 /**
  * "Placa / Modelo / Tipo" from the assigned unit (mockup `C.c4`).

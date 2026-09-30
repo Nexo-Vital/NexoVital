@@ -86,7 +86,12 @@ function applyLivePosition(
       payload.source === 'device' || payload.source === 'simulated' ? payload.source : undefined;
     upsert({
       id: rawId,
-      placa: 'TBD',
+      // The realtime frame (`PosicionPushPayload` / `FlotaActualizadaEvent`)
+      // carries NO plate, so it is genuinely unknown for a unit first seen here.
+      // An empty plate is the honest "unknown": `unitPlateLabel` then falls back
+      // to the id, a handle the user can still recognise, instead of an invented
+      // 'TBD' that pretends to be a plate.
+      placa: '',
       estado,
       ubicacion: incoming,
       zona: 'Unassigned',

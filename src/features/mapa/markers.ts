@@ -6,6 +6,7 @@ import {
   centerShortName,
   NOT_DECLARED_CENTER_STYLE,
 } from '@/features/ciudadano/citizen-view';
+import { unitPlateLabel } from '@/lib/unit-label';
 import type { Ambulancia, CentroAyuda, Emergencia, TrafficLight } from '@/types/domain';
 
 /**
@@ -109,8 +110,9 @@ function buildMarkerIcon(html: string, size: number): L.DivIcon {
  *
  * `notified` adds the static teal ring a unit gets while it is part of an open
  * request's `notificadas`. It defaults to false, so the citizen and CRUE maps
- * draw exactly the same marker they always did. `label` overrides the default
- * unit-id label (the citizen tracking screen writes "A-07 · 5 min").
+ * draw exactly the same marker they always did. The default label is the unit's
+ * plate, never its internal (UUID off demo) id; `label` overrides it (the
+ * citizen tracking screen writes "A-07 · 5 min").
  */
 export function ambulanceIcon(
   ambulance: Ambulancia,
@@ -129,7 +131,7 @@ export function ambulanceIcon(
     `<div class="nv-marker nv-marker--unit ${stateClass}${selectedClass}${simulatedClass}${notifiedClass}${dimClass}">` +
     `<span class="nv-marker__shape">${AMBULANCE_GLYPH}</span>` +
     `<span class="nv-marker__badge">${badge}</span>` +
-    `<span class="nv-marker__label">${escapeHtml(label ?? ambulance.id)}</span>` +
+    `<span class="nv-marker__label">${escapeHtml(label ?? unitPlateLabel(ambulance))}</span>` +
     `</div>`;
   return buildMarkerIcon(html, 40);
 }

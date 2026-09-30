@@ -68,6 +68,9 @@ describe('useFleetSync', () => {
     );
 
     expect(units().map((item) => item.id)).toEqual(['AMB-99']);
+    // The frame carries no plate, so a unit first seen here keeps an EMPTY plate
+    // (the honest unknown) instead of an invented 'TBD'.
+    expect(units()[0]?.placa).toBe('');
   });
 
   it('applies a state-only frame (Spanish enum, no position) to a known unit', () => {

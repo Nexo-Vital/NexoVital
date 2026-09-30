@@ -363,12 +363,24 @@ function RequestDataRow({
   );
 }
 
-/** "A-12 y A-03" / "A-01, A-12 y A-03"; the notified list, never the own unit. */
-function unitListLabel(ids: string[]): string {
-  if (ids.length === 1) {
-    return ids[0];
+/**
+ * "SNK-742 y HGV-259" / "WNR-418, SNK-742 y HGV-259"; the notified list, never
+ * the own unit.
+ *
+ * Each id is resolved to its unit's plate through `unitPlateLabel`. An id with
+ * no matching fleet unit keeps the raw id instead of being dropped, so the user
+ * still sees that the unit was notified; the same honest fallback the helper
+ * already encodes for a unit with an unknown plate.
+ */
+function unitListLabel(ids: string[], units: readonly Ambulancia[]): string {
+  const labels = ids.map((id) => {
+    const unit = units.find((candidate) => candidate.id === id);
+    return unit ? unitPlateLabel(unit) : id;
+  });
+  if (labels.length === 1) {
+    return labels[0];
   }
-  return `${ids.slice(0, -1).join(', ')} y ${ids[ids.length - 1]}`;
+  return `${labels.slice(0, -1).join(', ')} y ${labels[labels.length - 1]}`;
 }
 
 /**
@@ -427,6 +439,11 @@ interface RequestCardProps {
   onAccept: () => void;
   onReject: () => void;
   onTimeout: () => void;
+  /**
+   * Fleet units, so the notified ids can be resolved to their plate. An id with
+   * no matching unit keeps the raw id (never silently dropped).
+   */
+  units: readonly Ambulancia[];
 }
 
 /**
@@ -449,6 +466,7 @@ function RequestCard({
   onAccept,
   onReject,
   onTimeout,
+  units,
 }: RequestCardProps) {
   const now = useClock(1000);
   const decided =
@@ -468,7 +486,7 @@ function RequestCard({
     broadcast.mode === 'direct'
       ? `Solicitud dirigida solo a tu unidad. Si no respondes en ${windowSeconds} s, deja de mostrarse aquí.`
       : others.length > 0
-        ? `También se avisó a ${unitListLabel(others)}. La solicitud es de quien acepte primero; si no respondes en ${windowSeconds} s, deja de mostrarse aquí.`
+        ? `También se avisó a ${unitListLabel(others, units)}. La solicitud es de quien acepte primero; si no respondes en ${windowSeconds} s, deja de mostrarse aquí.`
         : `La solicitud es de quien acepte primero; si no respondes en ${windowSeconds} s, deja de mostrarse aquí.`;
 
   return (
@@ -593,8 +611,10 @@ function RequestsPanel({
   missionConfirmedAt,
   onDeclareArrival,
   onFinish,
+  units,
   ...request
-}: RequestPanelProps & MissionPanelProps & { mission: Mission | null }) {
+}: RequestPanelProps &
+  MissionPanelProps & { mission: Mission | null; units: readonly Ambulancia[] }) {
   const requestOpen = request.phase === 'idle' || request.phase === 'submitting';
   // The sound affordance lives in the inbox header in every state, so it is
   // always reachable (the user unlocks audio once, before the next request).
@@ -647,7 +667,7 @@ function RequestsPanel({
   return (
     <RailPanel label="Solicitudes">
       {header}
-      <RequestCard {...request} broadcast={request.broadcast} />
+      <RequestCard {...request} units={units} broadcast={request.broadcast} />
     </RailPanel>
   );
 }
@@ -814,6 +834,8 @@ interface DriverRailProps extends MissionPanelProps {
   unitId: string;
   /** The unit as hydrated in the fleet store, or null before it is known. */
   unit: Ambulancia | null;
+  /** The rest of the fleet, so notified ids resolve to their plate. */
+  units: readonly Ambulancia[];
   /** The driver's declared status, the source of the availability chip. */
   status: DriverStatus;
   /** Whether the driver is connected to the service. */
@@ -840,6 +862,7 @@ interface DriverRailProps extends MissionPanelProps {
 export function DriverRail({
   unitId,
   unit,
+  units,
   status,
   online,
   onStatusChange,
@@ -879,6 +902,7 @@ export function DriverRail({
       />
       <RequestsPanel
         {...request}
+        units={units}
         mission={mission}
         missionDistanceKm={missionDistanceKm}
         missionEtaMin={missionEtaMin}

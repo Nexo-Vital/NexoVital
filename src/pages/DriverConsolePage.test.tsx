@@ -393,15 +393,32 @@ describe('DriverConsolePage', () => {
     act(() => port.emit(DESTINATIONS.solicitudes, longWindow));
 
     const card = within(driverRail()).getByRole('region', { name: 'Solicitud de ambulancia' });
-    // The own unit is never listed among the notified ones.
+    // The own unit is never listed among the notified ones. Both units are named
+    // by their plate (never the internal id): A-12 is SNK-742, the own A-07 is
+    // WNR-418 and must not appear.
     const hint = within(card).getByText(/También se avisó a/);
-    expect(hint).toHaveTextContent('También se avisó a A-12');
-    expect(hint).not.toHaveTextContent('A-07');
+    expect(hint).toHaveTextContent('También se avisó a SNK-742');
+    expect(hint).not.toHaveTextContent('WNR-418');
     // The window is the inbox's real one (10 min here), never a hardcoded 30 s.
     expect(hint).toHaveTextContent('si no respondes en 600 s');
     expect(hint).not.toHaveTextContent('30 s');
     // The chip is the live countdown towards that same real deadline.
     expect(within(card).getByRole('timer')).toHaveTextContent(/^\d+:\d{2}$/);
+  });
+
+  it('keeps an unlisted notified unit by its id instead of dropping it', () => {
+    const port = new FakeRealtimePort();
+    // The fleet is empty, so AMB-XX cannot be resolved to a plate: the raw id
+    // must stay visible rather than silently disappearing from the list.
+    render(<DriverConsolePage port={port} ambulanceId="A-07" ambulancias={[]} />);
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, { ...BROADCAST, notificadas: ['A-07', 'AMB-XX'] }),
+    );
+
+    const card = within(driverRail()).getByRole('region', { name: 'Solicitud de ambulancia' });
+    expect(within(card).getByText(/También se avisó a/)).toHaveTextContent(
+      'También se avisó a AMB-XX',
+    );
   });
 
   it('U4: raises an ephemeral toast with the distance, without blocking the card', async () => {

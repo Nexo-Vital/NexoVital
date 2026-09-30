@@ -542,6 +542,7 @@ export default function DriverConsolePage({
       <DriverRail
         unitId={unitId}
         unit={ownUnit}
+        units={fleet}
         status={status}
         online={online}
         onStatusChange={setStatus}
