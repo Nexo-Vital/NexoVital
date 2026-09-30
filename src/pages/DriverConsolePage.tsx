@@ -11,7 +11,14 @@ import { DriverRail } from '@/features/conductor/DriverRail';
 import { useDriverAlertsStore } from '@/features/conductor/driver-alerts-store';
 import { resolveDriverAmbulanceId } from '@/features/conductor/driver-session';
 import { DRIVER_STATUS_META, type DriverStatus } from '@/features/conductor/driver-status';
-import { useSolicitudInbox } from '@/features/conductor/use-solicitud-inbox';
+import {
+  canRespondToSolicitud,
+  solicitudResponseBlockReason,
+} from '@/features/conductor/solicitud-response';
+import {
+  UNIT_UNRESOLVED_REASON,
+  useSolicitudInbox,
+} from '@/features/conductor/use-solicitud-inbox';
 import { fetchEmergencias } from '@/features/emergencias/emergency-api';
 import { useEmergencyStore } from '@/features/emergencias/emergency-store';
 import { useEmergencySync } from '@/features/emergencias/use-emergency-sync';
@@ -279,15 +286,23 @@ export default function DriverConsolePage({
   // actually waiting for an answer (phase idle/submitting).
   const missionActive = inbox.mission !== null && !requestOpen;
 
-  // The selected row is actionable only while it is the inbox's open broadcast
-  // AND the driver's own unit is resolved. The accept/reject actions send
-  // `ambulanciaId`, so without a resolved unit they must stay disabled (FIX B)
-  // instead of firing an empty id.
-  const selectedIsActive =
-    unitResolved &&
-    selectedSolicitud !== null &&
-    inbox.broadcast?.requestId === selectedSolicitud.id &&
-    requestOpen;
+  // The selected row is actionable by the SERVER's own rule — still PENDING and
+  // notified to this unit (`canRespondToSolicitud`) — regardless of which
+  // request arrived first or whether it is the inbox's open broadcast. The
+  // accept/reject actions send `ambulanciaId`, so an unresolved unit keeps them
+  // disabled (FIX B) with its honest reason instead of firing an empty id.
+  const selectedCanRespond =
+    selectedSolicitud !== null && canRespondToSolicitud(selectedSolicitud, unitId);
+  const selectedBlockReason =
+    selectedSolicitud === null
+      ? null
+      : !unitResolved
+        ? UNIT_UNRESOLVED_REASON
+        : solicitudResponseBlockReason(selectedSolicitud, unitId);
+  // Only the outcome of the row currently selected is shown, so answering one
+  // row never paints its result onto another.
+  const selectedOutcome =
+    inbox.responseOutcome?.requestId === selectedSolicitud?.id ? inbox.responseOutcome : null;
 
   /*
     MAP-2: the ONE definition of a solicitud's scene, shared by the inline
@@ -340,24 +355,25 @@ export default function DriverConsolePage({
     [centerSolicitudScene],
   );
 
-  // The inline detail's "Aceptar" reuses the inbox accept and collapses the
-  // detail. Accept acts on the offered broadcast only, and the detail disables
-  // the button for every other row, so this path is reached only for it.
+  // The inline detail's "Aceptar" answers the SELECTED row by its own id through
+  // the inbox's row transport (REST against the backend, the relay in demo). It
+  // never touches the inbox's single broadcast slot, and the detail stays open
+  // so the server's answer stays on screen instead of being hidden by a collapse.
   const handleAcceptSelected = useCallback(() => {
-    inbox.accept();
-    setSelectedSolicitud(null);
-  }, [inbox.accept]);
-
-  // Defense-in-depth for the inline detail's "Rechazar": only the offered
-  // broadcast is actionable, so any other row refuses to fire a reject for a
-  // mission the inbox is not offering.
-  const handleRejectSelected = useCallback(() => {
-    if (!selectedIsActive) {
+    if (!selectedSolicitud || !selectedCanRespond) {
       return;
     }
-    inbox.reject();
-    setSelectedSolicitud(null);
-  }, [selectedIsActive, inbox.reject]);
+    inbox.respondTo(selectedSolicitud, 'accept');
+  }, [selectedSolicitud, selectedCanRespond, inbox.respondTo]);
+
+  // "Rechazar" answers the SAME selected row by id: the server leaves it
+  // PENDIENTE for the other units and the outcome is shown in the detail.
+  const handleRejectSelected = useCallback(() => {
+    if (!selectedSolicitud || !selectedCanRespond) {
+      return;
+    }
+    inbox.respondTo(selectedSolicitud, 'reject');
+  }, [selectedSolicitud, selectedCanRespond, inbox.respondTo]);
 
   // "Visualizar": collapse the detail and centre the map on the requester,
   // reusing the SAME scene resolution as the row click (MAP-2). With no
@@ -627,7 +643,9 @@ export default function DriverConsolePage({
         centros={centros}
         solicitudes={solicitudesRegistry}
         selectedSolicitud={selectedSolicitud}
-        selectedCanRespond={selectedIsActive}
+        selectedCanRespond={selectedCanRespond}
+        selectedBlockReason={selectedBlockReason}
+        selectedOutcome={selectedOutcome}
         selectedDistanceKm={selectedSolicitud ? mapSceneDistance : null}
         onSelectSolicitud={handleSelectSolicitud}
         onAcceptSelected={handleAcceptSelected}

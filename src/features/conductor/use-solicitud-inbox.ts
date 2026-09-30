@@ -16,7 +16,7 @@ import {
   type SolicitudRejectPayload,
   solicitudFrameFromWire,
 } from '@/shared/realtime';
-import type { EmergencyLevel, Ubicacion } from '@/types/domain';
+import type { EmergencyLevel, SolicitudAmbulancia, Ubicacion } from '@/types/domain';
 import { playRequestDing } from './request-sound';
 import {
   aceptarSolicitud,
@@ -73,6 +73,33 @@ export interface Mission {
   confirmedAt: number | null;
 }
 
+/**
+ * Minimal request description `winMission` needs. `SolicitudBroadcastPayload`
+ * satisfies it structurally, and a registry `SolicitudAmbulancia` row projects
+ * onto it through its own `zonaId`/`tipo`/`ubicacion`, so a win on a row that
+ * never was the inbox's broadcast opens the SAME mission.
+ */
+interface MissionSource {
+  zonaId: string;
+  tipo: string;
+  nivel?: EmergencyLevel;
+  escena?: Ubicacion;
+}
+
+/**
+ * Honest outcome of answering a registry row that is NOT the inbox's open
+ * broadcast (the inline detail's Aceptar/Rechazar). It reuses the inbox
+ * `SolicitudPhase` vocabulary so the rail's inline detail renders the same
+ * status UI; the message is the server's own answer, never a fabricated win.
+ */
+export interface SolicitudResponseOutcome {
+  /** The registry row this outcome belongs to. */
+  requestId: string;
+  /** A response is either in flight (`submitting`) or terminal. */
+  phase: 'submitting' | 'assigned' | 'taken' | 'rejected';
+  message: string;
+}
+
 export interface SolicitudInboxState {
   broadcast: SolicitudBroadcastPayload | null;
   /** Absolute deadline (epoch ms) of the accept window. */
@@ -95,11 +122,23 @@ export interface SolicitudInboxState {
   accepting: boolean;
   /** Human-readable Spanish outcome; announced through aria-live by the rail. */
   outcomeMessage: string | null;
+  /**
+   * Honest outcome of the last inline-detail response for a row that is NOT the
+   * open broadcast, keyed by its request id. `null` until the driver answers one.
+   */
+  responseOutcome: SolicitudResponseOutcome | null;
   mission: Mission | null;
   /** Derived mission phase; `en_route` until the arrival event arrives. */
   missionPhase: DriverMissionPhase;
   accept: () => void;
   reject: () => void;
+  /**
+   * Answers a SPECIFIC registry row by its id through the same REST/realtime
+   * transport `accept`/`reject` use, WITHOUT touching the inbox's open
+   * broadcast slot. The server stays the source of truth: a win opens the
+   * mission, a loss or a refusal is reported honestly in `responseOutcome`.
+   */
+  respondTo: (solicitud: SolicitudAmbulancia, action: 'accept' | 'reject') => void;
   /** Called by the request card when the countdown reaches zero. */
   notifyTimeout: () => void;
   /** Declares arrival: publishes `solicitud.llegada` and waits for the relay. */
@@ -141,6 +180,7 @@ export function useSolicitudInbox(
   const [phase, setPhase] = useState<SolicitudPhase>('idle');
   const [accepting, setAccepting] = useState(false);
   const [outcomeMessage, setOutcomeMessage] = useState<string | null>(null);
+  const [responseOutcome, setResponseOutcome] = useState<SolicitudResponseOutcome | null>(null);
   const [mission, setMission] = useState<Mission | null>(null);
 
   const broadcastRef = useRef<SolicitudBroadcastPayload | null>(null);
@@ -152,6 +192,12 @@ export function useSolicitudInbox(
    * request is in flight would race two CAS bids and one would lose for nothing.
    */
   const acceptingRef = useRef(false);
+  /**
+   * Guards a selected-row REST accept against a double submit, exactly like
+   * `acceptingRef` does for the broadcast: two CAS bids for one click only race
+   * one of them for nothing.
+   */
+  const respondingRef = useRef(false);
   /**
    * Request id this unit has already won. The relay broadcasts
    * `request.already-taken` to every client, so without this guard the winner
@@ -185,17 +231,17 @@ export function useSolicitudInbox(
    * (demo) and the REST accept path (backend): the server decided the winner in
    * both cases, so the client only adopts it.
    */
-  const winMission = useCallback((requestId: string, active: SolicitudBroadcastPayload) => {
+  const winMission = useCallback((requestId: string, source: MissionSource) => {
     wonRequestIdRef.current = requestId;
-    const scene = active.escena;
+    const scene = source.escena;
     const from = positionRef.current ?? scene;
     setPhase('assigned');
     setOutcomeMessage('Te la asignaron');
     setMission({
       requestId,
-      zonaId: active.zonaId,
-      tipo: active.tipo,
-      nivel: active.nivel,
+      zonaId: source.zonaId,
+      tipo: source.tipo,
+      nivel: source.nivel,
       ...(scene ? { escena: scene } : {}),
       // No scene means no honest ETA: 0 rather than an invented figure.
       etaMinutes: from && scene ? etaMinutes(from, scene) : 0,
@@ -545,6 +591,127 @@ export function useSolicitudInbox(
     setOutcomeMessage('Solicitud rechazada');
   }, [port, ambulanceId, dismiss]);
 
+  /**
+   * Answers a registry row by its OWN id, without going through the inbox's
+   * single broadcast slot. It mirrors `accept`/`reject` exactly — same guards,
+   * same transports, same honest outcome — but targets the row the driver
+   * selected. The backend stays the arbiter: a win opens the mission, a lost
+   * CAS or a refusal lands in `responseOutcome`, and this client never
+   * announces a result the server did not give.
+   */
+  const respondTo = useCallback(
+    (solicitud: SolicitudAmbulancia, action: 'accept' | 'reject') => {
+      const requestId = solicitud.id;
+      const source: MissionSource = {
+        zonaId: solicitud.zonaId,
+        tipo: solicitud.tipo,
+        ...(solicitud.ubicacion ? { escena: solicitud.ubicacion } : {}),
+      };
+
+      if (action === 'reject') {
+        if (isDemoMode()) {
+          if (!port) {
+            return;
+          }
+          port.publish<SolicitudRejectPayload>(DESTINATIONS.solicitudes, {
+            type: 'solicitud.reject',
+            requestId,
+            ambulanceId,
+          });
+          setResponseOutcome({ requestId, phase: 'rejected', message: 'Solicitud rechazada' });
+          return;
+        }
+        // FIX B: without a resolved unit there is no `ambulanciaId` to send, so
+        // the POST would only 400. Refuse honestly and keep the row usable.
+        if (!ambulanceId) {
+          setResponseOutcome({ requestId, phase: 'rejected', message: UNIT_UNRESOLVED_REASON });
+          return;
+        }
+        // Same id guard as the broadcast path: never send an id the backend does
+        // not know (`REQ-…`), which would only 400.
+        if (!isUuid(requestId)) {
+          setResponseOutcome({ requestId, phase: 'rejected', message: UNKNOWN_REQUEST_REASON });
+          return;
+        }
+        if (respondingRef.current) {
+          return;
+        }
+        respondingRef.current = true;
+        void rechazarSolicitud(requestId, ambulanceId)
+          .then(() => {
+            setResponseOutcome({ requestId, phase: 'rejected', message: 'Solicitud rechazada' });
+          })
+          .catch((error: unknown) => {
+            setResponseOutcome({
+              requestId,
+              phase: 'rejected',
+              message: error instanceof Error ? error.message : 'No fue posible rechazar',
+            });
+          })
+          .finally(() => {
+            respondingRef.current = false;
+          });
+        return;
+      }
+
+      // Accept: the backend exposes it ONLY as REST, so in demo the relay is the
+      // arbiter. Submitting is announced, then the SERVER's answer decides.
+      if (isDemoMode()) {
+        if (!port) {
+          return;
+        }
+        setResponseOutcome({ requestId, phase: 'submitting', message: 'Enviando…' });
+        port.publish<SolicitudAcceptPayload>(DESTINATIONS.solicitudes, {
+          type: 'solicitud.accept',
+          requestId,
+          ambulanceId,
+        });
+        return;
+      }
+      // FIX B: without a resolved unit there is no `ambulanciaId` to send, so
+      // the POST would only 400. Refuse honestly and keep the row usable.
+      if (!ambulanceId) {
+        setResponseOutcome({ requestId, phase: 'rejected', message: UNIT_UNRESOLVED_REASON });
+        return;
+      }
+      // Same id guard as the broadcast path: never send an id the backend does
+      // not know (`REQ-…`), which would only 400.
+      if (!isUuid(requestId)) {
+        setResponseOutcome({ requestId, phase: 'rejected', message: UNKNOWN_REQUEST_REASON });
+        return;
+      }
+      if (respondingRef.current) {
+        return;
+      }
+      respondingRef.current = true;
+      setResponseOutcome({ requestId, phase: 'submitting', message: 'Enviando…' });
+      void aceptarSolicitud(requestId, ambulanceId)
+        .then((outcome) => {
+          // The server is the source of truth. `winner=false` and the 409
+          // CAS-lost response both mean "someone else got it first".
+          if (outcome.winner) {
+            winMission(requestId, source);
+            setResponseOutcome({ requestId, phase: 'assigned', message: 'Te la asignaron' });
+          } else {
+            setResponseOutcome({ requestId, phase: 'taken', message: 'Tomada por otra unidad' });
+          }
+        })
+        .catch((error: unknown) => {
+          // A 409 is the backend denying or losing the race: show it honestly
+          // instead of leaving the row stuck on "Enviando…".
+          setResponseOutcome({
+            requestId,
+            phase: 'rejected',
+            message: error instanceof Error ? error.message : 'No fue posible aceptar',
+          });
+        })
+        .finally(() => {
+          respondingRef.current = false;
+        });
+    },
+    [port, ambulanceId, winMission],
+  );
+
   const notifyTimeout = useCallback(() => {
     if (phaseRef.current === 'idle' || phaseRef.current === 'submitting') {
       setPhase('timeout');
@@ -646,10 +813,12 @@ export function useSolicitudInbox(
     phase,
     accepting,
     outcomeMessage,
+    responseOutcome,
     mission,
     missionPhase,
     accept,
     reject,
+    respondTo,
     notifyTimeout,
     declareArrival,
     finishService,

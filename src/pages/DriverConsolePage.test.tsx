@@ -868,7 +868,7 @@ describe('DriverConsolePage', () => {
     }
   });
 
-  it('U6: "Aceptar" in the inline detail reuses the inbox accept and bids for the open request', async () => {
+  it('U6: "Aceptar" in the inline detail bids for the selected row over the relay in demo', async () => {
     const user = userEvent.setup();
     const port = new FakeRealtimePort();
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
@@ -889,21 +889,34 @@ describe('DriverConsolePage', () => {
     });
   });
 
-  it('U6: a non-offered row keeps Aceptar/Rechazar disabled with an honest reason', async () => {
+  it('RES-2: a notified PENDING row is respondible even when it is not the inbox broadcast', async () => {
     const user = userEvent.setup();
     render(<DriverConsolePage port={new FakeRealtimePort()} ambulanceId="A-07" />);
 
-    // REQ-1001 is in the registry but is not the inbox's offered broadcast.
+    // REQ-1001 is PENDING and lists A-07 among its notified units, so the server
+    // would accept it even though it is not the inbox's open broadcast. The UI
+    // must not hide an action the server accepts.
     await user.click(solicitudRowButton(MOCK_SOLICITUDES[0].id));
+
+    const detail = within(driverRail()).getByTestId('solicitud-detail');
+    expect(within(detail).getByRole('button', { name: 'Aceptar' })).toBeEnabled();
+    expect(within(detail).getByRole('button', { name: 'Rechazar' })).toBeEnabled();
+  });
+
+  it('RES-2: a PENDING row this unit was not notified about stays disabled with its reason', async () => {
+    const user = userEvent.setup();
+    render(<DriverConsolePage port={new FakeRealtimePort()} ambulanceId="A-07" />);
+
+    // REQ-1006 is PENDING but only notifies A-12/A-03: the server would refuse,
+    // so the front keeps the action disabled and says why.
+    await user.click(solicitudRowButton('REQ-1006'));
 
     const detail = within(driverRail()).getByTestId('solicitud-detail');
     expect(within(detail).getByRole('button', { name: 'Aceptar' })).toBeDisabled();
     expect(within(detail).getByRole('button', { name: 'Rechazar' })).toBeDisabled();
     // "Visualizar" never acts on the inbox, so it stays available.
     expect(within(detail).getByRole('button', { name: 'Visualizar' })).toBeEnabled();
-    expect(
-      within(detail).getByText(/solo puedes aceptar o rechazar la solicitud vigente/),
-    ).toBeInTheDocument();
+    expect(within(detail).getByText(/No fuiste avisado de esta solicitud/)).toBeInTheDocument();
   });
 
   it('U7: "Visualizar" collapses the detail and focuses the map on the requester', async () => {

@@ -50,7 +50,12 @@ import {
   subscribeSoundStatus,
   unlockSound,
 } from './request-sound';
-import type { DriverMissionPhase, Mission, SolicitudPhase } from './use-solicitud-inbox';
+import type {
+  DriverMissionPhase,
+  Mission,
+  SolicitudPhase,
+  SolicitudResponseOutcome,
+} from './use-solicitud-inbox';
 import { UNIT_UNRESOLVED_REASON } from './use-solicitud-inbox';
 
 /** Panel shell shared by the three rail blocks: same card as the citizen rail. */
@@ -619,15 +624,19 @@ function SolicitudRow({
  * sheet with the same facts (title, emergency, type, location, distance and the
  * notified units) and the same three actions.
  *
- * Aceptar/Rechazar act on the inbox's open broadcast ONLY, so they stay disabled
- * for any other row, with the honest reason the sheet already gave. The detail
- * never offers an action the server would refuse without saying why.
+ * Aceptar/Rechazar act on THIS row by its id: any request the server would
+ * accept — still PENDING and notified to this unit — is actionable, regardless
+ * of whether it is the inbox's open broadcast. A row the server would refuse
+ * stays disabled with its honest reason, and the response outcome the server
+ * gave (won / taken by another unit / refused) is shown right here.
  */
 function SolicitudDetail({
   solicitud,
   distanceKm,
   units,
   canRespond,
+  blockReason,
+  outcome,
   onAccept,
   onReject,
   onView,
@@ -637,6 +646,10 @@ function SolicitudDetail({
   distanceKm: number | null;
   units: readonly Ambulancia[];
   canRespond: boolean;
+  /** Honest reason the actions are disabled; null while the row is respondible. */
+  blockReason: string | null;
+  /** Server's answer to this row's last response, or null. */
+  outcome: SolicitudResponseOutcome | null;
   onAccept: () => void;
   onReject: () => void;
   onView: () => void;
@@ -692,10 +705,24 @@ function SolicitudDetail({
         />
       </div>
 
-      {!canRespond && (
+      {!canRespond && blockReason && (
         <p className="rounded-nv-md bg-nv-mint p-3 text-nv-navy-400 text-xs leading-[18px]">
-          Esta solicitud ya no está abierta en tu panel: solo puedes aceptar o rechazar la solicitud
-          vigente que tienes arriba.
+          {blockReason}
+        </p>
+      )}
+
+      {outcome && (
+        <p
+          role="status"
+          aria-live="assertive"
+          className={cn(
+            'min-h-5 text-xs',
+            outcome.phase === 'assigned' && 'font-medium text-ok',
+            outcome.phase === 'taken' && 'text-warning',
+            outcome.phase === 'submitting' && 'text-nv-navy-400',
+          )}
+        >
+          {outcome.message}
         </p>
       )}
 
@@ -739,8 +766,9 @@ function SolicitudDetail({
  *
  * Selecting a row expands its detail INLINE (the retired sheet), so the panel
  * never needs a full-screen overlay nor a bottom strip that collides with the
- * rail. Only the offered broadcast is actionable; every other row is
- * informational with the honest disabled state.
+ * rail. Every row the server would accept (still PENDING and notified to this
+ * unit) is actionable; the rest stay informational with the honest disabled
+ * state and its reason.
  */
 function SolicitudesPanel({
   mission,
@@ -757,6 +785,8 @@ function SolicitudesPanel({
   solicitudes,
   selectedSolicitud,
   selectedCanRespond,
+  selectedBlockReason,
+  selectedOutcome,
   selectedDistanceKm,
   onSelectSolicitud,
   onAcceptSelected,
@@ -771,6 +801,10 @@ function SolicitudesPanel({
     solicitudes: SolicitudAmbulancia[];
     selectedSolicitud: SolicitudAmbulancia | null;
     selectedCanRespond: boolean;
+    /** Honest reason the selected row's actions are disabled, when they are. */
+    selectedBlockReason: string | null;
+    /** Server's answer to the selected row's last response, or null. */
+    selectedOutcome: SolicitudResponseOutcome | null;
     selectedDistanceKm: number | null;
     onSelectSolicitud: (solicitud: SolicitudAmbulancia) => void;
     onAcceptSelected: () => void;
@@ -853,6 +887,8 @@ function SolicitudesPanel({
           distanceKm={selectedDistanceKm}
           units={units}
           canRespond={selectedCanRespond}
+          blockReason={selectedBlockReason}
+          outcome={selectedOutcome}
           onAccept={onAcceptSelected}
           onReject={onRejectSelected}
           onView={onViewSelected}
@@ -986,15 +1022,19 @@ interface DriverRailProps extends MissionPanelProps {
   solicitudes: SolicitudAmbulancia[];
   /** The row whose detail is expanded inline, or null when none is selected. */
   selectedSolicitud: SolicitudAmbulancia | null;
-  /** Whether the selected row is the offered broadcast (enables its actions). */
+  /** Whether the selected row can be answered (PENDING and notified to this unit). */
   selectedCanRespond: boolean;
+  /** Honest reason the selected row's actions are disabled, when they are. */
+  selectedBlockReason: string | null;
+  /** Server's answer to the selected row's last response, or null. */
+  selectedOutcome: SolicitudResponseOutcome | null;
   /** Distance to the selected row's scene, or null without a resolvable scene. */
   selectedDistanceKm: number | null;
   /** Selects a row: expands its detail and centres the map on it. */
   onSelectSolicitud: (solicitud: SolicitudAmbulancia) => void;
-  /** Inbox accept for the selected (offered) row. */
+  /** Answers the selected row (by its id) with an accept. */
   onAcceptSelected: () => void;
-  /** Inbox reject for the selected (offered) row. */
+  /** Answers the selected row (by its id) with a reject. */
   onRejectSelected: () => void;
   /** Collapses the detail and centres the map on the selected scene. */
   onViewSelected: () => void;
@@ -1028,6 +1068,8 @@ export function DriverRail({
   solicitudes,
   selectedSolicitud,
   selectedCanRespond,
+  selectedBlockReason,
+  selectedOutcome,
   selectedDistanceKm,
   onSelectSolicitud,
   onAcceptSelected,
@@ -1067,6 +1109,8 @@ export function DriverRail({
         solicitudes={solicitudes}
         selectedSolicitud={selectedSolicitud}
         selectedCanRespond={selectedCanRespond}
+        selectedBlockReason={selectedBlockReason}
+        selectedOutcome={selectedOutcome}
         selectedDistanceKm={selectedDistanceKm}
         onSelectSolicitud={onSelectSolicitud}
         onAcceptSelected={onAcceptSelected}

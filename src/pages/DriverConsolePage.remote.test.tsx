@@ -1,4 +1,5 @@
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useEmergencyStore } from '@/features/emergencias/emergency-store';
 import { useFleetStore } from '@/features/flota/fleet-store';
@@ -7,6 +8,7 @@ import { useSessionStore } from '@/features/usuarios/session';
 import { setToken } from '@/services/apiClient';
 import { DESTINATIONS, type SolicitudBroadcastPayload } from '@/shared/realtime';
 import { FakeRealtimePort } from '@/test/fake-realtime-port';
+import type { SolicitudAmbulancia } from '@/types/domain';
 import DriverConsolePage from './DriverConsolePage';
 
 /**
@@ -159,6 +161,115 @@ describe('DriverConsolePage against the real backend', () => {
     expect(screen.queryByText('Misión actual')).not.toBeInTheDocument();
     const rail = screen.getByRole('complementary', { name: 'Panel del conductor' });
     expect(within(rail).getByRole('status')).toHaveTextContent(`Tomada por ${OTHER_UNIT}`);
+  });
+
+  /**
+   * A PENDING registry row this unit was notified about, injected as a prop so
+   * the page never receives it as the inbox broadcast. It exists to prove the
+   * inline detail answers the SELECTED row by its own id.
+   */
+  function notifiedRegistryRow(id: string): SolicitudAmbulancia {
+    return {
+      id,
+      emergenciaId: '',
+      estado: 'PENDING',
+      centroAyudaId: '',
+      zonaId: 'Kennedy',
+      ubicacion: { lat: 4.6, lng: -74.1 },
+      tipo: 'Traffic collision',
+      solicitadaEn: new Date(Date.now() - 60_000).toISOString(),
+      timeoutEn: new Date(Date.now() + 45_000).toISOString(),
+      ambulanciasNotificadas: [REAL_UNIT],
+      notifiedCount: 1,
+      ambulanciaAsignadaId: null,
+    };
+  }
+
+  /** Reads the fleet, the emergencies and `mia`, plus one accept response. */
+  function stubReadsWithAccept(
+    requestId: string,
+    response: () => Response,
+  ): (input: RequestInfo | URL) => Promise<Response> {
+    return (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/ambulancias/mia')) {
+        return Promise.resolve(mockResponse(200, MIA_UNIT));
+      }
+      if (url.includes('/flota/ambulancias')) {
+        return Promise.resolve(mockResponse(200, FLEET));
+      }
+      if (url.includes('/emergencias')) {
+        return Promise.resolve(mockResponse(200, []));
+      }
+      if (url.endsWith(`/solicitudes/${requestId}/accept`)) {
+        return Promise.resolve(response());
+      }
+      return Promise.resolve(mockResponse(200, []));
+    };
+  }
+
+  it('RES-3: accepting a selected row POSTs accept with that row id, not the inbox broadcast', async () => {
+    const user = userEvent.setup();
+    const REQUEST_ID = '8b6f2f0e-0000-4000-8000-0000000000c1';
+    const row = notifiedRegistryRow(REQUEST_ID);
+    fetchMock.mockImplementation(
+      stubReadsWithAccept(REQUEST_ID, () =>
+        mockResponse(200, {
+          ganador: true,
+          solicitud: { ...row, estado: 'ASIGNADA', ambulanciaAsignadaId: REAL_UNIT },
+        }),
+      ),
+    );
+
+    render(<DriverConsolePage port={port} solicitudes={[row]} />);
+    await screen.findByText('ABC202');
+
+    const rail = screen.getByRole('complementary', { name: 'Panel del conductor' });
+    const list = within(rail).getByRole('list', { name: 'Lista de solicitudes' });
+    await user.click(within(list).getByRole('button', { name: /#8b6f2f/ }));
+
+    const detail = within(rail).getByTestId('solicitud-detail');
+    const accept = within(detail).getByRole('button', { name: 'Aceptar' });
+    expect(accept).toBeEnabled();
+    await user.click(accept);
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        `/api/v1/solicitudes/${REQUEST_ID}/accept`,
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ ambulanciaId: REAL_UNIT }),
+        }),
+      ),
+    );
+  });
+
+  it('RES-4: a lost CAS is shown honestly and never as a win', async () => {
+    const user = userEvent.setup();
+    const REQUEST_ID = '8b6f2f0e-0000-4000-8000-0000000000c2';
+    const row = notifiedRegistryRow(REQUEST_ID);
+    fetchMock.mockImplementation(
+      stubReadsWithAccept(REQUEST_ID, () =>
+        mockResponse(409, { codigo: 'CAS_PERDIDO', mensaje: 'Otra unidad aceptó primero.' }),
+      ),
+    );
+
+    render(<DriverConsolePage port={port} solicitudes={[row]} />);
+    await screen.findByText('ABC202');
+
+    const rail = screen.getByRole('complementary', { name: 'Panel del conductor' });
+    const list = within(rail).getByRole('list', { name: 'Lista de solicitudes' });
+    await user.click(within(list).getByRole('button', { name: /#8b6f2f/ }));
+
+    const detail = within(rail).getByTestId('solicitud-detail');
+    await user.click(within(detail).getByRole('button', { name: 'Aceptar' }));
+
+    // The server's own message is surfaced; the UI never fabricates a win.
+    await waitFor(() =>
+      expect(within(detail).getByRole('status')).toHaveTextContent('Otra unidad aceptó primero.'),
+    );
+    expect(screen.queryByText('Misión actual')).not.toBeInTheDocument();
+    expect(screen.queryByText('Te la asignaron')).not.toBeInTheDocument();
   });
 
   it('FIX B: accept is disabled and explained while the own unit is unresolved', async () => {

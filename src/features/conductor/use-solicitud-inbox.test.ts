@@ -8,6 +8,7 @@ import {
   type SolicitudDirectPayload,
 } from '@/shared/realtime';
 import { FakeRealtimePort } from '@/test/fake-realtime-port';
+import type { SolicitudAmbulancia } from '@/types/domain';
 import {
   UNIT_UNRESOLVED_REASON,
   UNKNOWN_REQUEST_REASON,
@@ -491,6 +492,27 @@ describe('useSolicitudInbox against the backend (no demo mode)', () => {
     return { port, ...view };
   }
 
+  /**
+   * A registry row the unit was notified about, NOT delivered as the inbox's
+   * open broadcast. `respondTo` must answer it by its own id.
+   */
+  function notifiedRow(): SolicitudAmbulancia {
+    return {
+      id: REAL_REQUEST,
+      emergenciaId: 'EMG-002',
+      estado: 'PENDING',
+      centroAyudaId: '',
+      zonaId: 'Kennedy',
+      ubicacion: { lat: 4.72, lng: -74.08 },
+      tipo: 'Traffic collision',
+      solicitadaEn: '2026-01-01T00:00:00.000Z',
+      timeoutEn: '2026-01-01T00:45:00.000Z',
+      ambulanciasNotificadas: [REAL_UNIT],
+      notifiedCount: 1,
+      ambulanciaAsignadaId: null,
+    };
+  }
+
   afterEach(() => {
     cleanup();
     useToastStore.setState({ toasts: [] });
@@ -558,6 +580,55 @@ describe('useSolicitudInbox against the backend (no demo mode)', () => {
     });
 
     expect(result.current.phase).toBe('taken');
+    expect(result.current.mission).toBeNull();
+  });
+
+  it('RES-3: respondTo answers a selected registry row by its OWN id through REST', async () => {
+    enableBackend();
+    fetchMock.mockResolvedValue(mockResponse(200, acceptBody(true)));
+    const { port, result } = setupBackend();
+
+    // No open broadcast: the row arrived earlier and the inbox no longer holds
+    // it as its single active request. The server still accepts it by id.
+    await act(async () => {
+      result.current.respondTo(notifiedRow(), 'accept');
+    });
+
+    const [path, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe(`/api/v1/solicitudes/${REAL_REQUEST}/accept`);
+    expect(options.method).toBe('POST');
+    expect(JSON.parse(options.body as string)).toEqual({ ambulanciaId: REAL_UNIT });
+    // The inbox's broadcast slot is untouched: no publish, no broadcast.
+    expect(port.published).toHaveLength(0);
+    expect(result.current.broadcast).toBeNull();
+    // The SERVER's win is adopted, honestly reported against that row.
+    expect(result.current.responseOutcome).toEqual({
+      requestId: REAL_REQUEST,
+      phase: 'assigned',
+      message: 'Te la asignaron',
+    });
+    expect(result.current.mission?.requestId).toBe(REAL_REQUEST);
+  });
+
+  it('RES-4: respondTo never reports success when the backend wins the CAS', async () => {
+    enableBackend();
+    fetchMock.mockResolvedValue(
+      mockResponse(409, {
+        codigo: 'CAS_PERDIDO',
+        mensaje: 'Solicitud ya asignada a otra ambulancia.',
+      }),
+    );
+    const { result } = setupBackend();
+
+    await act(async () => {
+      result.current.respondTo(notifiedRow(), 'accept');
+    });
+
+    expect(result.current.responseOutcome).toEqual({
+      requestId: REAL_REQUEST,
+      phase: 'rejected',
+      message: 'Solicitud ya asignada a otra ambulancia.',
+    });
     expect(result.current.mission).toBeNull();
   });
 
