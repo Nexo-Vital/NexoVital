@@ -119,11 +119,11 @@ describe('RequireAuth', () => {
     expect(await screen.findByTestId('login-screen')).toBeInTheDocument();
     expect(screen.queryByTestId('protected')).not.toBeInTheDocument();
     await waitFor(() => expect(useSessionStore.getState().token).toBeNull());
-    expect(localStorage.getItem('nexovital.token')).toBeNull();
+    expect(sessionStorage.getItem('nexovital.token')).toBeNull();
   });
 
   it('lets the server role decide the destination over the stale stored role', async () => {
-    // localStorage says CIUDADANO, the server says CONDUCTOR: server wins.
+    // The stored session says CIUDADANO, the server says CONDUCTOR: server wins.
     signInAs('CIUDADANO', 'jwt.reassigned');
     fetchMock.mockResolvedValue(mockResponse(200, usuario('CONDUCTOR')));
 

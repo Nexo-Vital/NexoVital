@@ -18,6 +18,16 @@ export function isDemoMode(): boolean {
   return import.meta.env.VITE_DEMO_MODE === '1';
 }
 
+/**
+ * The session lives in `sessionStorage`, never `localStorage`.
+ *
+ * `localStorage` is origin-global: every tab of the origin shares it, so a
+ * second tab signing in as another role would overwrite the first tab's
+ * `nexovital.token` / `nexovital.session`. That broke the multi-role demo — the
+ * first tab would send a foreign token and the backend would answer a
+ * misleading 403. `sessionStorage` is scoped per tab, so two roles can stay
+ * signed in at the same time; each tab travels with its own token.
+ */
 export const TOKEN_KEY = 'nexovital.token';
 export const SESSION_KEY = 'nexovital.session';
 
@@ -53,20 +63,20 @@ export interface LoginResponse {
 }
 
 export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  return sessionStorage.getItem(TOKEN_KEY);
 }
 
 export function setToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
+  sessionStorage.setItem(TOKEN_KEY, token);
 }
 
 export function clearToken(): void {
-  localStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
 }
 
 export function getSession(): Usuario | null {
   try {
-    const raw = localStorage.getItem(SESSION_KEY);
+    const raw = sessionStorage.getItem(SESSION_KEY);
     return raw ? (JSON.parse(raw) as Usuario) : null;
   } catch {
     return null;
@@ -74,11 +84,11 @@ export function getSession(): Usuario | null {
 }
 
 export function setSession(usuario: Usuario): void {
-  localStorage.setItem(SESSION_KEY, JSON.stringify(usuario));
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify(usuario));
 }
 
 export function clearSession(): void {
-  localStorage.removeItem(SESSION_KEY);
+  sessionStorage.removeItem(SESSION_KEY);
 }
 
 export function logout(): void {

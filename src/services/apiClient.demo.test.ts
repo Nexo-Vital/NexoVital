@@ -60,9 +60,9 @@ describe('apiClient demo mode', () => {
     });
     expect(token).toBeTruthy();
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(localStorage.getItem(TOKEN_KEY)).toBe(token);
+    expect(sessionStorage.getItem(TOKEN_KEY)).toBe(token);
     // Identical persisted shape to the real path, with no extra fields.
-    expect(JSON.parse(localStorage.getItem(SESSION_KEY) ?? 'null')).toEqual(usuario);
+    expect(JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? 'null')).toEqual(usuario);
   });
 
   it('rejects an email outside the catalog with the backend 401 contract', async () => {
@@ -77,8 +77,8 @@ describe('apiClient demo mode', () => {
       codigo: 'CREDENCIALES_INVALIDAS',
     });
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
-    expect(localStorage.getItem(SESSION_KEY)).toBeNull();
+    expect(sessionStorage.getItem(TOKEN_KEY)).toBeNull();
+    expect(sessionStorage.getItem(SESSION_KEY)).toBeNull();
   });
 
   it('rejects a catalog email paired with the wrong password', async () => {

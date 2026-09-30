@@ -43,30 +43,30 @@ describe('session hydration', () => {
   });
 
   it('drops a stored session whose role has no screen and clears storage', async () => {
-    localStorage.setItem(TOKEN_KEY, 'jwt.stale');
-    localStorage.setItem(SESSION_KEY, JSON.stringify(UNKNOWN_ROLE));
+    sessionStorage.setItem(TOKEN_KEY, 'jwt.stale');
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(UNKNOWN_ROLE));
 
     const { useSessionStore } = await import('./session');
 
     expect(useSessionStore.getState()).toMatchObject({ user: null, role: null, token: null });
-    expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
-    expect(localStorage.getItem(SESSION_KEY)).toBeNull();
+    expect(sessionStorage.getItem(TOKEN_KEY)).toBeNull();
+    expect(sessionStorage.getItem(SESSION_KEY)).toBeNull();
   });
 
   it('drops a stored administrative session that has no screen', async () => {
-    localStorage.setItem(TOKEN_KEY, 'jwt.admin');
-    localStorage.setItem(SESSION_KEY, JSON.stringify(ADMIN));
+    sessionStorage.setItem(TOKEN_KEY, 'jwt.admin');
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(ADMIN));
 
     const { useSessionStore } = await import('./session');
 
     expect(useSessionStore.getState()).toMatchObject({ user: null, role: null, token: null });
-    expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
-    expect(localStorage.getItem(SESSION_KEY)).toBeNull();
+    expect(sessionStorage.getItem(TOKEN_KEY)).toBeNull();
+    expect(sessionStorage.getItem(SESSION_KEY)).toBeNull();
   });
 
   it('restores a stored session whose role has a screen', async () => {
-    localStorage.setItem(TOKEN_KEY, 'jwt.ok');
-    localStorage.setItem(SESSION_KEY, JSON.stringify(CITIZEN));
+    sessionStorage.setItem(TOKEN_KEY, 'jwt.ok');
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(CITIZEN));
 
     const { useSessionStore } = await import('./session');
 
@@ -90,8 +90,8 @@ describe('applyServerSession', () => {
   });
 
   it('replaces the stored session with the server user and persists it', async () => {
-    localStorage.setItem(TOKEN_KEY, 'jwt.stale');
-    localStorage.setItem(SESSION_KEY, JSON.stringify(ADMIN));
+    sessionStorage.setItem(TOKEN_KEY, 'jwt.stale');
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(ADMIN));
 
     const { useSessionStore } = await import('./session');
     const CONDUCTOR = {
@@ -108,8 +108,8 @@ describe('applyServerSession', () => {
       role: 'CONDUCTOR',
       user: { email: CONDUCTOR.email },
     });
-    expect(localStorage.getItem(TOKEN_KEY)).toBe('jwt.renewed');
-    expect(JSON.parse(localStorage.getItem(SESSION_KEY) ?? 'null')).toMatchObject({
+    expect(sessionStorage.getItem(TOKEN_KEY)).toBe('jwt.renewed');
+    expect(JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? 'null')).toMatchObject({
       rol: 'CONDUCTOR',
     });
   });

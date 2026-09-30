@@ -84,12 +84,12 @@ describe('StompRealtimeAdapter', () => {
     const { client, adapter: a } = buildAdapter();
     adapter = a;
 
-    localStorage.setItem('nexovital.token', 'token-uno');
+    sessionStorage.setItem('nexovital.token', 'token-uno');
     a.connect();
     expect(client.connectHeaders).toEqual({ Authorization: 'Bearer token-uno' });
 
     a.disconnect();
-    localStorage.setItem('nexovital.token', 'token-dos');
+    sessionStorage.setItem('nexovital.token', 'token-dos');
     a.connect();
     expect(client.connectHeaders).toEqual({ Authorization: 'Bearer token-dos' });
   });
@@ -98,7 +98,7 @@ describe('StompRealtimeAdapter', () => {
     const { client, adapter: a } = buildAdapter();
     adapter = a;
 
-    localStorage.removeItem('nexovital.token');
+    sessionStorage.removeItem('nexovital.token');
     a.connect();
     expect(client.connectHeaders).toEqual({});
   });

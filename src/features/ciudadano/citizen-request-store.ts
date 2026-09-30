@@ -188,10 +188,12 @@ export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => 
     // longer depends on an affected zone, so there is nothing else to anchor.
     //
     // Before anything is sent, the persisted session must still belong to this
-    // screen. Another tab can replace `nexovital.token` while this citizen screen
-    // stays mounted; `apiFetch` would then authenticate with a FOREIGN token and
-    // the backend would answer a misleading 403 permission error. Block it and
-    // state the real reason: the session changed.
+    // screen. The session now lives in per-tab `sessionStorage`, so another tab
+    // can no longer replace `nexovital.token` while this citizen screen stays
+    // mounted. This guard is kept as defence in depth: if this tab's persisted
+    // copy ever drifts from memory, `apiFetch` would authenticate with a FOREIGN
+    // token and the backend would answer a misleading 403 permission error.
+    // Block it and state the real reason: the session changed.
     if (!isSessionInSync()) {
       set({ ...IDLE_STATE, startError: SESSION_CHANGED_MESSAGE });
       return false;

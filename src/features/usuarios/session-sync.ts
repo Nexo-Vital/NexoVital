@@ -5,12 +5,16 @@ import { useSessionStore } from './session';
 /**
  * Honest explanation for a DESYNCED session, never a permission problem.
  *
- * `apiFetch` reads the token from localStorage on every call, so the persisted
- * copy can change under a mounted screen (the real case: another tab of the same
- * origin signs in and replaces the shared `nexovital.token` / `nexovital.session`
- * keys). The backend then answers `403 ACCESO_DENEGADO`, whose text ("No tiene
- * permisos para este recurso") is misleading: the user did not lose a role, the
- * screen is simply holding an older session. This is the truthful replacement.
+ * This machinery is kept as defence in depth. The session now lives in per-tab
+ * `sessionStorage`, so another tab can no longer replace this tab's
+ * `nexovital.token` / `nexovital.session`: the cross-tab overwrite that
+ * motivated this message is structurally impossible. It is kept for the
+ * residual case where this tab's persisted copy drifts from the in-memory one.
+ * If that happens, `apiFetch` would authenticate with a token that is not this
+ * screen's, and the backend would answer `403 ACCESO_DENEGADO`, whose text ("No
+ * tiene permisos para este recurso") is misleading: the user did not lose a
+ * role, the screen is simply holding an older session. This is the truthful
+ * replacement.
  */
 export const SESSION_CHANGED_MESSAGE =
   'Tu sesión cambió en otra pestaña o expiró. Vuelve a iniciar sesión para continuar.';
@@ -19,9 +23,12 @@ export const SESSION_CHANGED_MESSAGE =
  * True when the in-memory session still owns the persisted credentials.
  *
  * The store keeps THIS tab's session in memory, while `apiFetch` authenticates
- * with whatever token localStorage currently holds. When the two disagree, any
- * request from this screen would travel with a token that is not its own. A
- * signed-out store has nothing to protect and is treated as in sync.
+ * with whatever token `sessionStorage` currently holds. Because that storage is
+ * scoped per tab, another tab can no longer overwrite it, so this is a
+ * defence-in-depth check: it still catches this tab's persisted copy drifting
+ * from memory. When the two disagree, any request from this screen would travel
+ * with a token that is not its own. A signed-out store has nothing to protect
+ * and is treated as in sync.
  */
 export function isSessionInSync(): boolean {
   const { token, user } = useSessionStore.getState();
@@ -39,10 +46,12 @@ export function isSessionInSync(): boolean {
 const WATCHED_KEYS = new Set([TOKEN_KEY, SESSION_KEY]);
 
 /**
- * Watches the shared session keys through the `storage` event, which fires in
- * every OTHER document of the origin when one of them changes. `onChanged` runs
- * only when the change actually desyncs this tab, so unrelated storage writes
- * (map filter, theme) never trigger it.
+ * Watches the session keys through the `storage` event, kept as defence in
+ * depth. Since the session moved to per-tab `sessionStorage`, another tab can no
+ * longer change these keys under a mounted screen: the event only reaches
+ * documents that share this tab's storage area (for example an iframe). The
+ * listener stays bound so a drift inside this tab still reaches `onChanged`,
+ * and unrelated storage writes (map filter, theme) never trigger it.
  *
  * The listener is bound once; the latest callback is kept in a ref so an inline
  * handler does not re-subscribe on every render.

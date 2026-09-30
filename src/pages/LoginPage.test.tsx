@@ -167,8 +167,8 @@ describe('LoginPage', () => {
       token: 'jwt.real',
       role: 'CONDUCTOR',
     });
-    expect(localStorage.getItem(TOKEN_KEY)).toBe('jwt.real');
-    expect(JSON.parse(localStorage.getItem(SESSION_KEY) ?? 'null')).toMatchObject({
+    expect(sessionStorage.getItem(TOKEN_KEY)).toBe('jwt.real');
+    expect(JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? 'null')).toMatchObject({
       email: CONDUCTOR.email,
     });
   });
@@ -206,8 +206,8 @@ describe('LoginPage', () => {
       token: 'jwt.ciudadano',
       role: 'CIUDADANO',
     });
-    expect(localStorage.getItem(TOKEN_KEY)).toBe('jwt.ciudadano');
-    expect(JSON.parse(localStorage.getItem(SESSION_KEY) ?? 'null')).toMatchObject({
+    expect(sessionStorage.getItem(TOKEN_KEY)).toBe('jwt.ciudadano');
+    expect(JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? 'null')).toMatchObject({
       rol: 'CIUDADANO',
     });
   });
