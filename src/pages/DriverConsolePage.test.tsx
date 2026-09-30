@@ -9,6 +9,7 @@ import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
 import { MOCK_CENTROS_AYUDA, MOCK_SOLICITUDES } from '@/mocks/fixtures';
 import { DESTINATIONS, type SolicitudBroadcastPayload } from '@/shared/realtime';
 import { FakeRealtimePort } from '@/test/fake-realtime-port';
+import type { SolicitudAmbulancia } from '@/types/domain';
 import DriverConsolePage from './DriverConsolePage';
 
 // Leaflet needs a real layout engine; stub the map so the driver unit panel, the
@@ -19,7 +20,7 @@ vi.mock('@/features/mapa/MapCanvas', () => ({
   MapCanvas: (props: {
     centros?: unknown[];
     self?: { label?: string; simulated?: boolean } | null;
-    request?: { label?: string } | null;
+    request?: { label?: string; position?: { lat: number; lng: number } } | null;
     requestConnector?: { dashed?: boolean } | null;
     ruta?: { geometria?: unknown[] } | null;
     notifiedAmbulanceIds?: readonly string[];
@@ -31,6 +32,8 @@ vi.mock('@/features/mapa/MapCanvas', () => ({
       data-self-label={props.self?.label ?? ''}
       data-self-sim={props.self?.simulated ? 'yes' : 'no'}
       data-request-label={props.request?.label ?? ''}
+      data-request-lat={String(props.request?.position?.lat ?? '')}
+      data-request-lng={String(props.request?.position?.lng ?? '')}
       data-connector={props.requestConnector ? 'yes' : 'no'}
       data-connector-dashed={props.requestConnector?.dashed === false ? 'no' : 'yes'}
       data-ruta={props.ruta ? 'yes' : 'no'}
@@ -877,6 +880,73 @@ describe('DriverConsolePage', () => {
     const map = screen.getByTestId('map-canvas');
     expect(Number(map.getAttribute('data-focus-lat'))).toBeCloseTo(4.628, 3);
     expect(Number(map.getAttribute('data-focus-lng'))).toBeCloseTo(-74.148, 3);
+  });
+
+  it('MAP-3: clicking a solicitud row centres the map on its location', async () => {
+    const user = userEvent.setup();
+    const port = new FakeRealtimePort();
+    render(
+      <DriverConsolePage port={port} ambulanceId="A-07" solicitudes={[MOCK_SOLICITUDES[0]]} />,
+    );
+
+    // REQ-1001 points at EMG-002 (fixture 4.628 / -74.148). The ROW click alone —
+    // no "Visualizar" — must move the viewport there.
+    const list = within(driverRail()).getByRole('list', { name: 'Lista de solicitudes' });
+    await user.click(within(list).getByText('REQ-1001').closest('button') as HTMLElement);
+
+    const map = screen.getByTestId('map-canvas');
+    await waitFor(() => expect(Number(map.getAttribute('data-focus-lat'))).toBeCloseTo(4.628, 3));
+    expect(Number(map.getAttribute('data-focus-lng'))).toBeCloseTo(-74.148, 3);
+  });
+
+  it('MAP-3: a solicitud with no resolvable location does not move the map', async () => {
+    const user = userEvent.setup();
+    const port = new FakeRealtimePort();
+    // No emergency, no aid center, no zone and no pickup point: nothing resolves.
+    const orphan: SolicitudAmbulancia = {
+      ...MOCK_SOLICITUDES[0],
+      id: 'REQ-ORPHAN',
+      emergenciaId: '',
+      centroAyudaId: '',
+      zonaId: '',
+    };
+    render(<DriverConsolePage port={port} ambulanceId="A-07" solicitudes={[orphan]} />);
+
+    const map = screen.getByTestId('map-canvas');
+    // The one-shot first centering is already consumed: no focus is pending.
+    await waitFor(() => expect(map).toHaveAttribute('data-focus-lat', ''));
+
+    const list = within(driverRail()).getByRole('list', { name: 'Lista de solicitudes' });
+    await user.click(within(list).getByText('REQ-ORPHAN').closest('button') as HTMLElement);
+
+    // Still no focus: the map was not sent to an invented point.
+    expect(map).toHaveAttribute('data-focus-lat', '');
+    expect(map).toHaveAttribute('data-focus-lng', '');
+  });
+
+  it('MAP-4: the selected solicitud drives the pin and the route, and clearing restores the active scene', async () => {
+    const user = userEvent.setup();
+    const port = new FakeRealtimePort();
+    render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+
+    // Active broadcast REQ-1 at 4.628 / -74.148: the pin and the route point there.
+    act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+    const map = screen.getByTestId('map-canvas');
+    await waitFor(() => expect(map).toHaveAttribute('data-request-lat', '4.628'));
+    expect(map).toHaveAttribute('data-request-lng', '-74.148');
+
+    // Select REQ-1002 (EMG-001 at 4.598 / -74.075): pin and route follow it.
+    const list = within(driverRail()).getByRole('list', { name: 'Lista de solicitudes' });
+    await user.click(within(list).getByText('REQ-1002').closest('button') as HTMLElement);
+    await waitFor(() => expect(map).toHaveAttribute('data-request-lat', '4.598'));
+    expect(map).toHaveAttribute('data-request-lng', '-74.075');
+    const route = mockFetchRuta.mock.calls[mockFetchRuta.mock.calls.length - 1];
+    expect(route?.[1]).toEqual({ lat: 4.598, lng: -74.075 });
+
+    // Closing the sheet clears the selection: the map returns to the active scene.
+    await user.click(screen.getByRole('button', { name: 'Cerrar' }));
+    await waitFor(() => expect(map).toHaveAttribute('data-request-lat', '4.628'));
+    expect(map).toHaveAttribute('data-request-lng', '-74.148');
   });
 
   it('rejects from the card and keeps the rejection feedback', async () => {

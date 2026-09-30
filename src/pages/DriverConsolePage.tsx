@@ -290,9 +290,55 @@ export default function DriverConsolePage({
     inbox.broadcast?.requestId === selectedSolicitud.id &&
     requestOpen;
 
-  const handleSelectSolicitud = useCallback((solicitud: SolicitudAmbulancia) => {
-    setSelectedSolicitud(solicitud);
-  }, []);
+  /*
+    MAP-2: the ONE definition of a solicitud's scene, shared by the sheet's
+    "Visualizar" (U7) and the row click (MAP-3). The fallback order is preserved:
+    the active broadcast only when it IS this request, then the request's own
+    pickup point, the emergency, the aid center and finally the zone reference
+    point. With none of them it returns null, so no caller can invent a location.
+  */
+  const resolveSolicitudScene = useCallback(
+    (solicitud: SolicitudAmbulancia): Ubicacion | null => {
+      const emergency = emergencies.find((item) => item.id === solicitud.emergenciaId) ?? null;
+      const centro = centros.find((item) => item.id === solicitud.centroAyudaId) ?? null;
+      // A backend wire frame declares the zone, not coordinates: those come from
+      // the emergency or the (real) aid center, both resolved by id.
+      const zone = solicitud.zonaId
+        ? centros.find((item) => item.zonaId === solicitud.zonaId)?.ubicacion
+        : undefined;
+      return (
+        (inbox.broadcast?.requestId === solicitud.id ? inbox.broadcast?.escena : undefined) ??
+        solicitud.ubicacion ??
+        emergency?.ubicacion ??
+        centro?.ubicacion ??
+        zone ??
+        null
+      );
+    },
+    [emergencies, centros, inbox.broadcast],
+  );
+
+  // MAP-3: centre the viewport on a solicitud's scene. An unresolvable scene
+  // leaves the map untouched (no invented point), exactly as "Visualizar" did.
+  const centerSolicitudScene = useCallback(
+    (solicitud: SolicitudAmbulancia) => {
+      const scene = resolveSolicitudScene(solicitud);
+      if (scene) {
+        // A fresh object so a repeated focus re-flies even to the same point.
+        setMapFocus({ lat: scene.lat, lng: scene.lng });
+      }
+    },
+    [resolveSolicitudScene],
+  );
+
+  // The row click selects the solicitud AND centres the map on it (MAP-3).
+  const handleSelectSolicitud = useCallback(
+    (solicitud: SolicitudAmbulancia) => {
+      setSelectedSolicitud(solicitud);
+      centerSolicitudScene(solicitud);
+    },
+    [centerSolicitudScene],
+  );
 
   const handleAcceptFromSheet = useCallback(() => {
     inbox.accept();
@@ -311,36 +357,17 @@ export default function DriverConsolePage({
     return true;
   }, [selectedIsActive, inbox.reject]);
 
-  // U7 "Visualizar": close the sheet and centre the map on the requester. The
-  // scene comes from the active broadcast when it is the open request, and from
-  // the emergency store otherwise; the last resort is the request's own location
-  // in the registry (the map source already knows the centers/zones by id). With
-  // none of them the map stays put instead of flying to an invented point.
+  // U7 "Visualizar": close the sheet and centre the map on the requester, reusing
+  // the SAME scene resolution as the row click (MAP-2). With no resolvable scene
+  // the map stays put instead of flying to an invented point.
   const handleViewSolicitud = useCallback(() => {
     const solicitud = selectedSolicitud;
     setSelectedSolicitud(null);
     if (!solicitud) {
       return;
     }
-    const emergency = emergencies.find((item) => item.id === solicitud.emergenciaId) ?? null;
-    const centro = centros.find((item) => item.id === solicitud.centroAyudaId) ?? null;
-    // A backend wire frame declares the zone, not coordinates: those come from
-    // the emergency or the (real) aid center, both resolved by id.
-    const zone = solicitud.zonaId
-      ? centros.find((item) => item.zonaId === solicitud.zonaId)?.ubicacion
-      : undefined;
-    const scene =
-      (inbox.broadcast?.requestId === solicitud.id ? inbox.broadcast?.escena : undefined) ??
-      solicitud.ubicacion ??
-      emergency?.ubicacion ??
-      centro?.ubicacion ??
-      zone ??
-      null;
-    if (scene) {
-      // A fresh object so a repeated "Visualizar" re-flies even to the same point.
-      setMapFocus({ lat: scene.lat, lng: scene.lng });
-    }
-  }, [selectedSolicitud, emergencies, inbox.broadcast, centros]);
+    centerSolicitudScene(solicitud);
+  }, [selectedSolicitud, centerSolicitudScene]);
 
   useEffect(() => {
     if (!hasCentered && effectivePosition) {
@@ -412,6 +439,12 @@ export default function DriverConsolePage({
   );
 
   const activeScene = (missionActive ? inbox.mission : inbox.broadcast)?.escena ?? null;
+  // MAP-4: while a solicitud is selected its own scene drives the map — route,
+  // request pin and connector — falling back to the active inbox scene when there
+  // is no selection or the selection has no resolvable scene. The row's distance
+  // and ETA below deliberately keep reading `activeScene`.
+  const selectedScene = selectedSolicitud ? resolveSolicitudScene(selectedSolicitud) : null;
+  const mapScene = selectedScene ?? activeScene;
   const requestDistance =
     activeScene && effectivePosition ? distanceKm(effectivePosition, activeScene) : null;
   // Straight-line estimate: the honest fallback while no route is available (AC3).
@@ -419,11 +452,12 @@ export default function DriverConsolePage({
     activeScene && effectivePosition ? etaMinutes(effectivePosition, activeScene) : null;
 
   // Real street routing (OSRM), the same hook the citizen page uses, from the
-  // driver's own position (`effectivePosition`) to the citizen's scene
-  // (`activeScene`). It returns null until a route resolves and on any failure
+  // driver's own position (`effectivePosition`) to the map's request scene
+  // (`mapScene`: the selected solicitud when there is one, the active inbox scene
+  // otherwise). It returns null until a route resolves and on any failure
   // (timeout, error, demo mode without coordinates), so the map and the ETA fall
   // back to today's straight-line behaviour (AC3).
-  const ruta = useRuta(effectivePosition, activeScene);
+  const ruta = useRuta(effectivePosition, mapScene);
   // The REAL routed duration in whole minutes, or null when there is no route.
   const routeEtaMin = ruta ? Math.max(1, Math.round(ruta.duracionMin)) : null;
   // The driver reads the routed time when it exists and the straight-line
@@ -446,29 +480,38 @@ export default function DriverConsolePage({
     ? (missionActive ? inbox.mission?.zonaId : inbox.broadcast?.zonaId) ||
       formatCoordinates(activeScene)
     : '';
+  // MAP-4: the pin and its label follow the SELECTED solicitud when there is one
+  // (its own zone/coordinates and the real distance to it), so selecting a
+  // non-active row is never marked with the active scene's zone or distance.
+  const mapSceneLabel = selectedScene
+    ? selectedSolicitud?.zonaId || formatCoordinates(selectedScene)
+    : sceneLabel;
+  const mapSceneDistance =
+    mapScene && effectivePosition ? distanceKm(effectivePosition, mapScene) : null;
 
   const requestMarker: RequestMarker | null = useMemo(
     () =>
-      activeScene
+      mapScene
         ? {
-            position: activeScene,
+            position: mapScene,
             label:
-              requestDistance !== null
-                ? `${sceneLabel} · ${formatDistance(requestDistance)}`
-                : sceneLabel,
+              mapSceneDistance !== null
+                ? `${mapSceneLabel} · ${formatDistance(mapSceneDistance)}`
+                : mapSceneLabel,
           }
         : null,
-    [activeScene, sceneLabel, requestDistance],
+    [mapScene, mapSceneLabel, mapSceneDistance],
   );
 
   // A straight visual connector, NOT a calculated route: no routing engine. A
-  // live mission draws it solid (`C.d4`); a pending request keeps it dashed.
+  // live mission draws it solid (`C.d4`); a pending request keeps it dashed. It
+  // points at the map scene, so it tracks the selected solicitud too (MAP-4).
   const requestConnector: RequestConnector | null = useMemo(
     () =>
-      activeScene && effectivePosition
-        ? { from: effectivePosition, to: activeScene, dashed: !missionActive }
+      mapScene && effectivePosition
+        ? { from: effectivePosition, to: mapScene, dashed: !missionActive }
         : null,
-    [activeScene, effectivePosition, missionActive],
+    [mapScene, effectivePosition, missionActive],
   );
 
   const missionLocation = inbox.mission
