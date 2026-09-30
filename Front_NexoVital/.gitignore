@@ -1,0 +1,42 @@
+# Node
+node_modules/
+
+# Build artifacts
+dist/
+
+# Test coverage
+coverage/
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Wrangler / Cloudflare local state
+.wrangler/
+.dev.vars
+
+# IDEs
+.idea/
+.vscode/
+
+# Local tooling state
+.atl/
+.engram/
+
+# Secrets
+.env
+.env.*
+!.env.example
+# Committed on purpose: the production build flag, not a secret.
+!.env.production
+
+# OS
+.DS_Store
+Thumbs.db

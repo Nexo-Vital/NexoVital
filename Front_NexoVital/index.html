@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Light is the default theme; the inline script below repaints this on dark. -->
+    <meta name="theme-color" content="#e9eef4" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <title>Nexo Vital</title>
+    <script>
+      // Apply the persisted theme before first paint to avoid a light/dark flash.
+      // ThemeProvider re-applies (and listens for OS changes) once React mounts.
+      (() => {
+        try {
+          const preference = localStorage.getItem('nexovital.theme');
+          const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          // Light is the default, so an absent preference must NOT follow the OS:
+          // only an explicit 'dark', or an explicit 'system' on a dark OS, goes dark.
+          const dark = preference === 'dark' || (preference === 'system' && prefersDark);
+          document.documentElement.classList.toggle('dark', dark);
+          // Mirror the `--nv-bg` token onto the browser chrome before first paint.
+          // Literals on purpose: the stylesheet is not applied this early, so the
+          // token cannot be read back here. Keep them in sync with globals.css.
+          const chrome = document.querySelector('meta[name="theme-color"]');
+          if (chrome) {
+            chrome.setAttribute('content', dark ? '#060a10' : '#e9eef4');
+          }
+        } catch {
+          // localStorage can be unavailable; ThemeProvider applies the class anyway.
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,112 @@
+import type { RolUsuario } from '@/types/domain';
+
+/**
+ * Build-time demo catalog for the deployed build (`VITE_DEMO_MODE=1`).
+ *
+ * It matches the eleven users the backend seeds (`DataSeeder.java`, design
+ * decision D2) on the credentials that actually authenticate: same emails,
+ * same passwords, same roles and the SAME display names. Keeping both lists in
+ * sync is what makes the login screen, the demo profiles panel and the deployed
+ * demo agree about who can sign in and what the header shows.
+ *
+ * The names are short and realistic: the header renders the login's name, so a
+ * label like "Ciudadano Demo" or "Conductor ABC101" is what the user actually
+ * reads. Only email, password and role authenticate; the names are demo data
+ * shared by both lists. The plaintext password exists only here and in the
+ * seeder: the real backend stores it as a BCrypt hash.
+ */
+export interface DemoAccount {
+  id: string;
+  nombre: string;
+  email: string;
+  rol: RolUsuario;
+  password: string;
+}
+
+/** Shared password for every seeded conductor, as in `DataSeeder`. */
+const CONDUCTOR_PASSWORD = 'conductor123';
+
+export const DEMO_ACCOUNTS: DemoAccount[] = [
+  {
+    id: 'usr-demo-rangel',
+    nombre: 'Andrés Rangel',
+    email: 'rangel@nexovital.co',
+    rol: 'ADMIN_CENTRO_AYUDA',
+    password: 'rangel123',
+  },
+  {
+    id: 'usr-demo-admin-plataforma',
+    nombre: 'Diana Torres',
+    email: 'admin@nexovital.co',
+    rol: 'ADMIN_PLATAFORMA',
+    password: 'admin123',
+  },
+  {
+    id: 'usr-demo-centro-ayuda',
+    nombre: 'Camilo Rojas',
+    email: 'centro@nexovital.co',
+    rol: 'ADMIN_CENTRO_AYUDA',
+    password: 'centro123',
+  },
+  {
+    id: 'usr-demo-acopio',
+    nombre: 'Paula Méndez',
+    email: 'acopio@nexovital.co',
+    rol: 'ADMIN_ACOPIO',
+    password: 'acopio123',
+  },
+  {
+    id: 'usr-demo-ciudadano',
+    nombre: 'Ana Gómez',
+    email: 'ciudadano@nexovital.co',
+    rol: 'CIUDADANO',
+    password: 'ciudadano123',
+  },
+  {
+    id: 'usr-demo-ciudadano-2',
+    nombre: 'Sofía Ramírez',
+    email: 'ciudadano2@nexovital.co',
+    rol: 'CIUDADANO',
+    password: 'ciudadano123',
+  },
+  {
+    id: 'usr-demo-conductor-1',
+    nombre: 'Carlos Pérez',
+    email: 'conductor1@nexovital.co',
+    rol: 'CONDUCTOR',
+    password: CONDUCTOR_PASSWORD,
+  },
+  {
+    id: 'usr-demo-conductor-2',
+    nombre: 'Laura Restrepo',
+    email: 'conductor2@nexovital.co',
+    rol: 'CONDUCTOR',
+    password: CONDUCTOR_PASSWORD,
+  },
+  {
+    id: 'usr-demo-conductor-3',
+    nombre: 'Andrés Gómez',
+    email: 'conductor3@nexovital.co',
+    rol: 'CONDUCTOR',
+    password: CONDUCTOR_PASSWORD,
+  },
+  {
+    id: 'usr-demo-conductor-4',
+    nombre: 'Valentina Ruiz',
+    email: 'conductor4@nexovital.co',
+    rol: 'CONDUCTOR',
+    password: CONDUCTOR_PASSWORD,
+  },
+  {
+    id: 'usr-demo-conductor-5',
+    nombre: 'Diego Herrera',
+    email: 'conductor5@nexovital.co',
+    rol: 'CONDUCTOR',
+    password: CONDUCTOR_PASSWORD,
+  },
+];
+
+/** The seeded account whose email AND password match, or `undefined`. */
+export function findDemoAccount(email: string, password: string): DemoAccount | undefined {
+  return DEMO_ACCOUNTS.find((account) => account.email === email && account.password === password);
+}
