@@ -30,8 +30,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Import(TestClockConfig.class)
 class DataSeederIdempotenciaTest extends LoginTestBase {
 
-    /** Catalog D2: 10 users covering the 5 roles. */
-    private static final int TAMANO_CATALOGO = 10;
+    /** Catalog D2: 11 users covering the 5 roles, with two citizens. */
+    private static final int TAMANO_CATALOGO = 11;
 
     private static final List<String> EMAILS_DEL_CATALOGO = List.of(
             "rangel@nexovital.co",
@@ -39,6 +39,7 @@ class DataSeederIdempotenciaTest extends LoginTestBase {
             "centro@nexovital.co",
             "acopio@nexovital.co",
             "ciudadano@nexovital.co",
+            "ciudadano2@nexovital.co",
             "conductor1@nexovital.co",
             "conductor2@nexovital.co",
             "conductor3@nexovital.co",
@@ -49,10 +50,10 @@ class DataSeederIdempotenciaTest extends LoginTestBase {
     private DataSeeder dataSeeder;
 
     @Test
-    @DisplayName("T8 - re-running the seeder does not duplicate users: the count stays at 10")
+    @DisplayName("T8 - re-running the seeder does not duplicate users: the count stays at 11")
     void t8_elSeederEsIdempotente() {
         assertEquals(TAMANO_CATALOGO, usuarioJpaRepository.count(),
-                "startup must seed exactly the 10 users of the catalog (D2)");
+                "startup must seed exactly the 11 users of the catalog (D2)");
 
         assertDoesNotThrow(() -> dataSeeder.run(), "re-running the seeder must not fail");
         assertEquals(TAMANO_CATALOGO, usuarioJpaRepository.count(),

@@ -81,8 +81,9 @@ public class DataSeeder implements CommandLineRunner {
     }
 
     /**
-     * Los 10 usuarios de demostración que cubren los 5 roles canónicos.
-     * Un conductor por ambulancia para poder probar el broadcast de C2.
+     * Los 11 usuarios de demostración que cubren los 5 roles canónicos.
+     * Un conductor por ambulancia para poder probar el broadcast de C2, y dos
+     * ciudadanos para poder demostrar dos solicitudes simultáneas.
      */
     private static final List<UsuarioSemilla> CATALOGO = List.of(
             new UsuarioSemilla("Andrés Rangel", "rangel@nexovital.co", "rangel123", RolUsuario.ADMIN_CENTRO_AYUDA),
@@ -90,6 +91,7 @@ public class DataSeeder implements CommandLineRunner {
             new UsuarioSemilla("Camilo Rojas", "centro@nexovital.co", "centro123", RolUsuario.ADMIN_CENTRO_AYUDA),
             new UsuarioSemilla("Paula Méndez", "acopio@nexovital.co", "acopio123", RolUsuario.ADMIN_ACOPIO),
             new UsuarioSemilla("Ana Gómez", "ciudadano@nexovital.co", "ciudadano123", RolUsuario.CIUDADANO),
+            new UsuarioSemilla("Sofía Ramírez", "ciudadano2@nexovital.co", "ciudadano123", RolUsuario.CIUDADANO),
             new UsuarioSemilla("Carlos Pérez", "conductor1@nexovital.co", PASSWORD_CONDUCTOR, RolUsuario.CONDUCTOR),
             new UsuarioSemilla("Laura Restrepo", "conductor2@nexovital.co", PASSWORD_CONDUCTOR, RolUsuario.CONDUCTOR),
             new UsuarioSemilla("Andrés Gómez", "conductor3@nexovital.co", PASSWORD_CONDUCTOR, RolUsuario.CONDUCTOR),
