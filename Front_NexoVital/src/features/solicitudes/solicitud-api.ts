@@ -77,6 +77,8 @@ function asUbicacion(value: unknown): Ubicacion | null {
  * `emergenciaId`, `centroAyudaId` and `zonaId` are nullable: a standalone request
  * sends none. `tipo` is NOT part of the DTO, so it is left empty here; the caller
  * fills it from its own request label instead of this mapper inventing one.
+ * `llegadaEn` is carried through when the DTO declares the arrival milestone, so
+ * the service history can show it without a second, drifting mapping.
  */
 export function fromWireSolicitudAmbulancia(value: unknown): SolicitudAmbulancia | null {
   if (!isRecord(value)) {
@@ -94,6 +96,7 @@ export function fromWireSolicitudAmbulancia(value: unknown): SolicitudAmbulancia
     timeoutEn,
     ambulanciasNotificadas,
     ambulanciaAsignadaId,
+    llegadaEn,
   } = value;
 
   if (typeof id !== 'string' || id.length === 0) {
@@ -133,6 +136,11 @@ export function fromWireSolicitudAmbulancia(value: unknown): SolicitudAmbulancia
   ) {
     return null;
   }
+  // Arrival is an optional milestone: JSON `null`/absent while the unit has not
+  // declared it. A present-but-unparsable value is malformed, never coerced.
+  if (llegadaEn !== null && llegadaEn !== undefined && !isTimestamp(llegadaEn)) {
+    return null;
+  }
 
   return {
     id,
@@ -147,6 +155,7 @@ export function fromWireSolicitudAmbulancia(value: unknown): SolicitudAmbulancia
     ambulanciasNotificadas: [...ambulanciasNotificadas],
     notifiedCount: ambulanciasNotificadas.length,
     ambulanciaAsignadaId: typeof ambulanciaAsignadaId === 'string' ? ambulanciaAsignadaId : null,
+    ...(typeof llegadaEn === 'string' ? { llegadaEn } : {}),
   };
 }
 

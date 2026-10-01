@@ -3,6 +3,18 @@ export function formatClock(date: Date): string {
   return date.toLocaleTimeString('en-GB', { hour12: false });
 }
 
+/** Local date + time for a history row, e.g. "1/01/2026, 14:07". */
+export function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString('es-CO', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
 /** Elapsed time as mm:ss (or h:mm:ss past one hour) from an ISO timestamp. */
 export function formatElapsed(fromIso: string, now: Date): string {
   const diffMs = Math.max(0, now.getTime() - new Date(fromIso).getTime());

@@ -151,7 +151,7 @@ describe('DriverConsolePage', () => {
 
   afterEach(() => {
     cleanup();
-    useDriverAlertsStore.setState({ pendingRequests: 0 });
+    useDriverAlertsStore.setState({ pending: [], pendingRequests: 0, focusRequestId: null });
     // Connection is a module store: every case starts disconnected again.
     useDriverOnlineStore.setState({ online: false });
     // The arrival toast lives in a module store: clear it so counts never leak.
@@ -653,6 +653,46 @@ describe('DriverConsolePage', () => {
     // Connecting surfaces that same offer, and the bell mirrors it.
     connectDriver();
     expect(useDriverAlertsStore.getState().pendingRequests).toBe(1);
+  });
+
+  it('feeds the store the surfaced offers, and none while disconnected', () => {
+    const port = new FakeRealtimePort();
+    render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+
+    expect(useDriverAlertsStore.getState().pending).toEqual([]);
+
+    // The gate: disconnected, the offer never reaches the bell list either.
+    act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+    expect(useDriverAlertsStore.getState().pending).toEqual([]);
+    expect(useDriverAlertsStore.getState().pendingRequests).toBe(0);
+
+    connectDriver();
+
+    expect(useDriverAlertsStore.getState().pending).toEqual([
+      {
+        requestId: 'REQ-1',
+        tipo: 'Traffic collision',
+        nivel: 'HIGH',
+        escena: { lat: 4.628, lng: -74.148 },
+        timeoutEn: BROADCAST.timeoutEn,
+      },
+    ]);
+    expect(useDriverAlertsStore.getState().pendingRequests).toBe(1);
+  });
+
+  it('selects and centres the request the shell asks to focus', () => {
+    const port = new FakeRealtimePort();
+    render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+    connectDriver();
+    act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+
+    act(() => useDriverAlertsStore.getState().focusRequest('REQ-1'));
+
+    const map = screen.getByTestId('map-canvas');
+    expect(map).toHaveAttribute('data-focus-lat', '4.628');
+    expect(map).toHaveAttribute('data-focus-lng', '-74.148');
+    // The signal is consumed so it cannot re-fire on the next render.
+    expect(useDriverAlertsStore.getState().focusRequestId).toBeNull();
   });
 
   it('shows submitting after accept and Taken by another unit in the card', async () => {

@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSessionStore } from '@/features/usuarios/session';
 import type { RolUsuario } from '@/types/domain';
-import { AppFrame, type AppFrameNavItem } from './AppFrame';
+import { AppFrame, type AppFrameNavItem, type AppFrameNotification } from './AppFrame';
 
 // The shell owns the realtime connection; it is irrelevant to the chrome here.
 vi.mock('@/shared/realtime/use-realtime-connection', () => ({
@@ -47,6 +47,67 @@ function renderFrame(role: RolUsuario = 'CIUDADANO', roleDetail?: string, bellCo
 
 function sidebar() {
   return screen.getByRole('complementary', { name: 'Barra lateral' });
+}
+
+const NOTIFICATION: AppFrameNotification = {
+  id: 'REQ-7',
+  title: 'Trauma',
+  levelLabel: 'Alto',
+  locationLabel: '4.6280, -74.1480',
+  timeoutEn: new Date(Date.now() + 60_000).toISOString(),
+};
+
+/**
+ * Renders the driver shell with the bell notifications wired. `/other` is the
+ * landing route so the notification's `/` navigation is observable, and it
+ * carries a sibling button the "no scrim" case can click.
+ */
+function renderBellFrame(
+  notifications: AppFrameNotification[],
+  options: { onSelect?: (id: string) => void; initialPath?: string } = {},
+) {
+  const { onSelect, initialPath = '/' } = options;
+  useSessionStore.setState({
+    user: {
+      id: 'usr-driver',
+      nombre: 'Conductor Demo',
+      email: 'conductor@nexovital.co',
+      rol: 'CONDUCTOR',
+    },
+    role: 'CONDUCTOR',
+    token: 'jwt.test',
+  });
+  return render(
+    <MemoryRouter
+      initialEntries={[initialPath]}
+      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+    >
+      <Routes>
+        <Route path="/login" element={<div data-testid="login-screen" />} />
+        <Route
+          element={
+            <AppFrame
+              nav={NAV}
+              activeKey="map"
+              bellCount={notifications.length}
+              notifications={notifications}
+              onNotificationSelect={onSelect}
+            />
+          }
+        >
+          <Route path="/" element={<div data-testid="outlet-content" />} />
+          <Route
+            path="/other"
+            element={
+              <button type="button" data-testid="outside-button">
+                Otra pantalla
+              </button>
+            }
+          />
+        </Route>
+      </Routes>
+    </MemoryRouter>,
+  );
 }
 
 describe('AppFrame', () => {
@@ -182,5 +243,87 @@ describe('AppFrame', () => {
     expect(useSessionStore.getState().user).toBeNull();
     expect(useSessionStore.getState().role).toBeNull();
     expect(useSessionStore.getState().token).toBeNull();
+  });
+
+  it('renders the bell as a button even without notifications and opens no panel', async () => {
+    const user = userEvent.setup();
+    renderFrame('CONDUCTOR', 'A-07', 2);
+
+    const bell = screen.getByRole('button', { name: 'Notificaciones' });
+    await user.click(bell);
+
+    expect(screen.queryByRole('menu', { name: 'Notificaciones' })).not.toBeInTheDocument();
+  });
+
+  it('opens the notification panel from the bell button and lists the offers', async () => {
+    const user = userEvent.setup();
+    renderBellFrame([NOTIFICATION]);
+
+    const bell = screen.getByRole('button', { name: 'Notificaciones' });
+    expect(bell).toHaveAttribute('aria-haspopup', 'menu');
+    expect(bell).toHaveAttribute('aria-expanded', 'false');
+
+    await user.click(bell);
+
+    expect(bell).toHaveAttribute('aria-expanded', 'true');
+    const panel = screen.getByRole('menu', { name: 'Notificaciones' });
+    expect(within(panel).getByText('Trauma')).toBeInTheDocument();
+    expect(within(panel).getByText('Alto')).toBeInTheDocument();
+    expect(within(panel).getByText(/4\.6280, -74\.1480/)).toBeInTheDocument();
+    expect(within(panel).getByText(/Cierra en/)).toBeInTheDocument();
+  });
+
+  it('shows an explicit empty state when there are no notifications', async () => {
+    const user = userEvent.setup();
+    renderBellFrame([]);
+
+    await user.click(screen.getByRole('button', { name: 'Notificaciones' }));
+
+    const panel = screen.getByRole('menu', { name: 'Notificaciones' });
+    expect(within(panel).getByText('Sin notificaciones')).toBeInTheDocument();
+  });
+
+  it('navigates to the map and signals the focus when a notification is opened', async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    renderBellFrame([NOTIFICATION], { onSelect, initialPath: '/other' });
+
+    await user.click(screen.getByRole('button', { name: 'Notificaciones' }));
+    await user.click(screen.getByRole('menuitem', { name: /Trauma/ }));
+
+    expect(onSelect).toHaveBeenCalledWith('REQ-7');
+    expect(screen.getByTestId('outlet-content')).toBeInTheDocument();
+    expect(screen.queryByRole('menu', { name: 'Notificaciones' })).not.toBeInTheDocument();
+  });
+
+  it('closes the notification panel on Escape and restores focus to the bell', async () => {
+    const user = userEvent.setup();
+    renderBellFrame([NOTIFICATION]);
+
+    const bell = screen.getByRole('button', { name: 'Notificaciones' });
+    await user.click(bell);
+    expect(screen.getByRole('menu', { name: 'Notificaciones' })).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByRole('menu', { name: 'Notificaciones' })).not.toBeInTheDocument();
+    expect(bell).toHaveFocus();
+  });
+
+  it('renders no overlay and keeps a sibling control outside the panel clickable', async () => {
+    const user = userEvent.setup();
+    const onOutside = vi.fn();
+    renderBellFrame([NOTIFICATION], { initialPath: '/other' });
+
+    await user.click(screen.getByRole('button', { name: 'Notificaciones' }));
+    expect(screen.getByRole('menu', { name: 'Notificaciones' })).toBeInTheDocument();
+    expect(document.querySelectorAll('[data-slot="dialog-overlay"]').length).toBe(0);
+
+    const outside = screen.getByTestId('outside-button');
+    outside.addEventListener('click', onOutside);
+    await user.click(outside);
+
+    expect(onOutside).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('menu', { name: 'Notificaciones' })).not.toBeInTheDocument();
   });
 });

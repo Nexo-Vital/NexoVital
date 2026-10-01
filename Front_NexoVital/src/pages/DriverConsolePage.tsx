@@ -8,7 +8,7 @@ import {
   formatDistance,
 } from '@/features/ciudadano/citizen-view';
 import { DriverRail } from '@/features/conductor/DriverRail';
-import { useDriverAlertsStore } from '@/features/conductor/driver-alerts-store';
+import { type DriverAlert, useDriverAlertsStore } from '@/features/conductor/driver-alerts-store';
 import { useDriverOnlineStore } from '@/features/conductor/driver-online-store';
 import { resolveDriverAmbulanceId } from '@/features/conductor/driver-session';
 import { DRIVER_STATUS_META, type DriverStatus } from '@/features/conductor/driver-status';
@@ -135,6 +135,9 @@ export default function DriverConsolePage({
   const online = useDriverOnlineStore((state) => state.online);
   const setOnline = useDriverOnlineStore((state) => state.goOnline);
   const setOffline = useDriverOnlineStore((state) => state.goOffline);
+  // The shell writes this when the driver opens a bell notification; the effect
+  // below consumes it with the page's own selection/centering logic.
+  const focusRequestId = useDriverAlertsStore((state) => state.focusRequestId);
   const [status, setStatus] = useState<DriverStatus>('OFF_DUTY');
   const [hasCentered, setHasCentered] = useState(false);
   const [selectedSolicitud, setSelectedSolicitud] = useState<SolicitudAmbulancia | null>(null);
@@ -364,6 +367,32 @@ export default function DriverConsolePage({
     [centerSolicitudScene],
   );
 
+  /*
+    Consumes the bell's "focus this request" signal. It reuses the SAME row
+    selection + centering as the rail (`handleSelectSolicitud`), so opening a
+    notification lands on the exact card the driver would get by clicking the
+    row. While the registry has not loaded the row yet the signal stays pending
+    (this effect re-runs when the registry changes); `setPending` drops it if the
+    offer disappears before the row arrives.
+  */
+  useEffect(() => {
+    if (focusRequestId === null) {
+      return;
+    }
+    const solicitud = solicitudesRegistry.find((item) => item.id === focusRequestId) ?? null;
+    if (solicitud) {
+      handleSelectSolicitud(solicitud);
+    } else if (inbox.broadcast?.requestId === focusRequestId && inbox.broadcast.escena) {
+      // Surfaced offer whose registry row is not loaded yet: centre on its own
+      // scene without inventing a registry row.
+      const { lat, lng } = inbox.broadcast.escena;
+      setMapFocus({ lat, lng });
+    } else {
+      return;
+    }
+    useDriverAlertsStore.getState().clearFocus();
+  }, [focusRequestId, solicitudesRegistry, handleSelectSolicitud, inbox.broadcast]);
+
   // The inline detail's "Aceptar" answers the SELECTED row by its own id through
   // the inbox's row transport (REST against the backend, the relay in demo). It
   // never touches the inbox's single broadcast slot, and the detail stays open
@@ -496,15 +525,31 @@ export default function DriverConsolePage({
   // estimate otherwise: never a routed time that does not exist.
   const requestEta = routeEtaMin ?? straightLineEta;
 
-  // The shell bell mirrors the pending request count. The driver console is the
-  // only writer; it resets to zero when the page unmounts. A won mission is not
-  // a pending request, so the bell drops with the card it mirrored.
-  const pendingRequests = inbox.broadcast && !missionActive ? 1 : 0;
+  // The shell bell mirrors the pending request COUNT and lists its offers. The
+  // driver console is the only writer; while disconnected the inbox surfaces no
+  // offer, so both the count and the list stay empty (gate consistency). A won
+  // mission is not a pending request, so the bell drops with the card it
+  // mirrored. The store resets when the page unmounts.
+  const pendingAlerts = useMemo<DriverAlert[]>(
+    () =>
+      inbox.broadcast && !missionActive
+        ? [
+            {
+              requestId: inbox.broadcast.requestId,
+              tipo: inbox.broadcast.tipo,
+              ...(inbox.broadcast.nivel ? { nivel: inbox.broadcast.nivel } : {}),
+              ...(inbox.broadcast.escena ? { escena: inbox.broadcast.escena } : {}),
+              timeoutEn: inbox.broadcast.timeoutEn,
+            },
+          ]
+        : [],
+    [inbox.broadcast, missionActive],
+  );
   useEffect(() => {
-    const { setPendingRequests } = useDriverAlertsStore.getState();
-    setPendingRequests(pendingRequests);
-    return () => setPendingRequests(0);
-  }, [pendingRequests]);
+    const { setPending } = useDriverAlertsStore.getState();
+    setPending(pendingAlerts);
+    return () => setPending([]);
+  }, [pendingAlerts]);
 
   // The request has no reverse geocoding: the label is the declared zone, or the
   // real reported coordinates when the citizen declared none.
