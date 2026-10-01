@@ -81,7 +81,7 @@ export function LocationPermissionDialog({
       <DialogContent
         aria-describedby="location-permission-desc"
         showOverlay={false}
-        className="top-auto right-4 bottom-4 left-auto w-[min(24rem,calc(100vw-2rem))] translate-x-0 translate-y-0"
+        className="top-auto right-auto bottom-4 w-[min(24rem,calc(100vw-2rem))] translate-y-0"
       >
         <DialogHeader>
           <div className="flex items-center gap-2">

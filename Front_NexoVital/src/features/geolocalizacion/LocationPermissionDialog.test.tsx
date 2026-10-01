@@ -141,18 +141,21 @@ describe('LocationPermissionDialog', () => {
     expect(onBackgroundClick).toHaveBeenCalledTimes(1);
   });
 
-  it('positions the notice in the bottom-right corner', () => {
+  it('positions the notice centered at the bottom, clear of the rail', () => {
     renderDialog('denied', 'prompt');
 
     const notice = screen.getByRole('dialog', { name: 'Permiso de ubicación' });
+    // Anchored to the bottom edge and horizontally centered over the map: the
+    // right-hand rail (and its aid-centers panel) stays clickable underneath.
     expect(notice.className).toContain('bottom-4');
-    expect(notice.className).toContain('right-4');
     expect(notice.className).toContain('top-auto');
-    expect(notice.className).toContain('left-auto');
-    // tailwind-merge must drop the centered defaults, not leave both classes.
+    expect(notice.className).toContain('right-auto');
+    // The centered defaults are KEPT on the horizontal axis...
+    expect(notice.className).toContain('left-1/2');
+    expect(notice.className).toContain('-translate-x-1/2');
+    // ...and dropped on the vertical one, so it is not vertically centered.
     expect(notice.className).not.toContain('top-1/2');
-    expect(notice.className).not.toContain('left-1/2');
-    expect(notice.className).not.toContain('-translate-x-1/2');
     expect(notice.className).not.toContain('-translate-y-1/2');
+    expect(notice.className).not.toContain('right-4');
   });
 });
