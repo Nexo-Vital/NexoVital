@@ -476,4 +476,42 @@ describe('CenterDetailRail', () => {
 
     expect(screen.queryByTestId('centro-alerta-escasez')).not.toBeInTheDocument();
   });
+
+  it('always shows a back arrow that returns to the previous panel', () => {
+    const onBackToMap = vi.fn();
+    render(
+      <CenterDetailRail
+        centro={subaNorte()}
+        origin={SUBAS}
+        lastDonation={null}
+        onDonate={vi.fn()}
+        onBackToMap={onBackToMap}
+      />,
+    );
+
+    // Reachable by its accessible name in the c7 normal state.
+    const back = screen.getByRole('button', { name: 'Volver al panel' });
+    fireEvent.click(back);
+    expect(onBackToMap).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the back arrow after a donation, next to the existing exit', () => {
+    const onBackToMap = vi.fn();
+    const { centro, record } = donatedSubaNorte();
+    render(
+      <CenterDetailRail
+        centro={centro}
+        origin={SUBAS}
+        lastDonation={record}
+        onDonate={vi.fn()}
+        onBackToMap={onBackToMap}
+      />,
+    );
+
+    const back = screen.getByRole('button', { name: 'Volver al panel' });
+    fireEvent.click(back);
+    expect(onBackToMap).toHaveBeenCalledTimes(1);
+    // The post-donation "Volver al mapa" exit is preserved.
+    expect(screen.getByRole('button', { name: 'Volver al mapa' })).toBeInTheDocument();
+  });
 });

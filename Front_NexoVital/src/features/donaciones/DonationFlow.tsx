@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  ArrowLeft,
   ArrowRight,
   HandHeart,
   Info,
@@ -141,6 +142,19 @@ export function CenterDetailRail({
     >
       <section className="flex flex-col gap-3.5 rounded-nv-lg bg-white p-4 shadow-nv-card">
         <div className="flex items-center gap-2.5">
+          {/*
+            Always-present exit (C.c7 and C.c9): choosing a center must never
+            trap the citizen. It reuses `onBackToMap`, the same callback the
+            post-donation "Volver al mapa" bottom button calls.
+          */}
+          <button
+            type="button"
+            onClick={onBackToMap}
+            aria-label="Volver al panel"
+            className="flex size-9 shrink-0 items-center justify-center rounded-nv-md text-nv-navy-400 transition-colors hover:bg-nv-mint hover:text-nv-navy focus-visible:outline-2 focus-visible:outline-nv-teal focus-visible:outline-offset-2"
+          >
+            <ArrowLeft className="size-5" aria-hidden />
+          </button>
           <span
             className="flex size-10 shrink-0 items-center justify-center rounded-nv-md"
             style={{ background: style.bg, color: style.fg }}
