@@ -19,7 +19,7 @@ import {
   Warehouse,
   X,
 } from 'lucide-react';
-import { type ReactNode, useEffect, useRef, useSyncExternalStore } from 'react';
+import { type ReactNode, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import { formatCoordinates } from '@/features/ciudadano/citizen-request';
 import {
   CENTER_LEVEL_STYLE,
@@ -27,6 +27,7 @@ import {
   CITIZEN_UNIT_META,
   centerLevel,
   centerNeedLabel,
+  citizenCenterLevel,
   citizenUnitStatus,
   formatDistance,
 } from '@/features/ciudadano/citizen-view';
@@ -41,7 +42,13 @@ import { useClock } from '@/hooks/use-clock';
 import { formatCountdown, formatElapsed } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { SolicitudBroadcastPayload } from '@/shared/realtime';
-import type { Ambulancia, CentroAyuda, EmergencyLevel, SolicitudAmbulancia } from '@/types/domain';
+import type {
+  Ambulancia,
+  CentroAyuda,
+  EmergencyLevel,
+  InventarioItem,
+  SolicitudAmbulancia,
+} from '@/types/domain';
 import { DriverMissionPanel } from './DriverMissionPanel';
 import { DRIVER_STATUS_META, DRIVER_STATUS_ORDER, type DriverStatus } from './driver-status';
 import {
@@ -916,45 +923,136 @@ function SolicitudesPanel({
 }
 
 /**
- * One aid-center row. Level icon, name, need and level chip all read the shared
- * `citizen-view` meta; no second colour table is declared here.
+ * One inventory line of an expanded aid center: item name, its traffic-light
+ * label and the declared quantity. The label reads the SAME
+ * `citizenCenterLevel`/`CITIZEN_LEVEL_META` pair the row chip uses, so an item
+ * level and the center's worst level can never disagree. The quantity shows
+ * `disponible/requerido` when a requirement was declared, else the bare stock;
+ * the unit is appended only when the data carries one.
  */
-function AidCenterRow({ centro }: { centro: CentroAyuda }) {
-  const level = centerLevel(centro);
+function AidCenterItemRow({ item }: { item: InventarioItem }) {
+  const level = citizenCenterLevel(item.semaforo);
   const meta = level ? CITIZEN_LEVEL_META[level] : null;
   const swatchStyle = level
     ? { background: CENTER_LEVEL_STYLE[level].bg, color: CENTER_LEVEL_STYLE[level].fg }
     : undefined;
+  const unit = item.unidad ? ` ${item.unidad}` : '';
+  const quantity =
+    item.requerido > 0
+      ? `${item.disponible}/${item.requerido}${unit}`
+      : `${item.disponible}${unit}`;
 
   return (
-    <li className="flex items-center gap-2.5 rounded-nv-md border border-nv-line p-2.5">
+    <li className="flex items-center gap-2.5">
+      <span className="min-w-0 flex-1 truncate text-[13px] text-nv-navy">{item.nombre}</span>
       <span
         className={cn(
-          'flex size-9 shrink-0 items-center justify-center rounded-nv-md',
-          !swatchStyle && 'bg-idle/15 text-idle ring-1 ring-idle/40',
-        )}
-        style={swatchStyle}
-      >
-        <Warehouse className="size-4" aria-hidden />
-      </span>
-      <span className="min-w-0 flex-1">
-        <b className="block truncate font-semibold text-[13.5px]">{centro.nombre}</b>
-        <small className="block truncate text-nv-navy-400 text-xs">{centerNeedLabel(centro)}</small>
-      </span>
-      <span
-        className={cn(
-          'shrink-0 rounded-nv-pill px-2.5 py-1 font-semibold text-xs',
+          'shrink-0 rounded-nv-pill px-2 py-0.5 font-semibold text-[11px]',
           !swatchStyle && 'bg-idle/15 text-idle ring-1 ring-idle/40',
         )}
         style={swatchStyle}
       >
         {meta ? meta.label : 'Sin declarar'}
       </span>
+      <span className="tabular shrink-0 text-nv-navy-400 text-xs">{quantity}</span>
     </li>
   );
 }
 
+/**
+ * One aid-center row of the accordion. Level icon, name, need and level chip all
+ * read the shared `citizen-view` meta; no second colour table is declared here.
+ *
+ * The row is a full-width button: clicking it (or its chevron) toggles the
+ * center's detail, which renders IMMEDIATELY BELOW the row, still inside the
+ * same `<li>`. An open row carries `aria-expanded`/`aria-controls` and rotates
+ * the chevron; the single-open behaviour is owned by `AidCentersPanel`.
+ */
+function AidCenterRow({
+  centro,
+  open,
+  onToggle,
+}: {
+  centro: CentroAyuda;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const level = centerLevel(centro);
+  const meta = level ? CITIZEN_LEVEL_META[level] : null;
+  const swatchStyle = level
+    ? { background: CENTER_LEVEL_STYLE[level].bg, color: CENTER_LEVEL_STYLE[level].fg }
+    : undefined;
+  const detailId = useId();
+
+  return (
+    <li className="rounded-nv-md border border-nv-line">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={detailId}
+        onClick={onToggle}
+        className="flex w-full items-center gap-2.5 rounded-nv-md p-2.5 text-left"
+      >
+        <span
+          className={cn(
+            'flex size-9 shrink-0 items-center justify-center rounded-nv-md',
+            !swatchStyle && 'bg-idle/15 text-idle ring-1 ring-idle/40',
+          )}
+          style={swatchStyle}
+        >
+          <Warehouse className="size-4" aria-hidden />
+        </span>
+        <span className="min-w-0 flex-1">
+          <b className="block truncate font-semibold text-[13.5px]">{centro.nombre}</b>
+          <small className="block truncate text-nv-navy-400 text-xs">
+            {centerNeedLabel(centro)}
+          </small>
+        </span>
+        <span
+          className={cn(
+            'shrink-0 rounded-nv-pill px-2.5 py-1 font-semibold text-xs',
+            !swatchStyle && 'bg-idle/15 text-idle ring-1 ring-idle/40',
+          )}
+          style={swatchStyle}
+        >
+          {meta ? meta.label : 'Sin declarar'}
+        </span>
+        {open ? (
+          <ChevronUp className="size-4 shrink-0 text-nv-navy-400" aria-hidden />
+        ) : (
+          <ChevronDown className="size-4 shrink-0 text-nv-navy-400" aria-hidden />
+        )}
+      </button>
+
+      {open && (
+        <div
+          id={detailId}
+          data-testid="aid-center-detail"
+          className="flex flex-col gap-2 px-2.5 pb-2.5"
+        >
+          {centro.items.length === 0 ? (
+            <p className="text-nv-navy-400 text-xs">Este centro no declara inventario.</p>
+          ) : (
+            <ul className="flex list-none flex-col gap-1.5 p-0">
+              {centro.items.map((item) => (
+                <AidCenterItemRow key={item.id} item={item} />
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
+
+/**
+ * "Centros de acopio cercanos" accordion. It owns the single-open state: only
+ * one center id is remembered, so opening a center collapses the previous one
+ * and toggling the open one closes it. Each detail is rendered by its own row.
+ */
 function AidCentersPanel({ centros }: { centros: CentroAyuda[] }) {
+  const [openId, setOpenId] = useState<string | null>(null);
+
   return (
     <RailPanel label="Centros de acopio cercanos">
       <h4 className="flex items-center gap-2 font-bold text-sm">
@@ -966,7 +1064,12 @@ function AidCentersPanel({ centros }: { centros: CentroAyuda[] }) {
       ) : (
         <ul className="flex list-none flex-col gap-2.5 p-0">
           {centros.map((centro) => (
-            <AidCenterRow key={centro.id} centro={centro} />
+            <AidCenterRow
+              key={centro.id}
+              centro={centro}
+              open={openId === centro.id}
+              onToggle={() => setOpenId((current) => (current === centro.id ? null : centro.id))}
+            />
           ))}
         </ul>
       )}

@@ -1,4 +1,5 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useFleetStore } from '@/features/flota/fleet-store';
 import { useInventarioStore } from '@/features/recursos/inventory-store';
@@ -84,11 +85,24 @@ function driverRail() {
   return screen.getByRole('complementary', { name: 'Panel del conductor' });
 }
 
-/** The level chip text of the rail row that carries the center's full name. */
+function centersPanel() {
+  return screen.getByRole('region', { name: 'Centros de acopio cercanos' });
+}
+
+/** The interactive row (a button) whose accessible name carries the center. */
+function centerRow(fullName: string): HTMLElement {
+  return within(centersPanel()).getByRole('button', { name: new RegExp(fullName) });
+}
+
+/**
+ * The level chip text of the rail row that carries the center's full name. The
+ * chip is the last `<span>` inside the row's button (the chevron is an svg, so
+ * it is not a span), not the last child: the chevron sits after it.
+ */
 function railLevel(fullName: string): string {
   const row = within(driverRail()).getByText(fullName).closest('li');
-  const chip = row?.querySelector('span:last-child');
-  return chip?.textContent ?? '';
+  const spans = row?.querySelector('button')?.querySelectorAll('span');
+  return spans?.[spans.length - 1]?.textContent ?? '';
 }
 
 describe('DriverConsolePage aid-center levels from the real inventory', () => {
@@ -161,5 +175,106 @@ describe('DriverConsolePage aid-center levels from the real inventory', () => {
 
     await waitFor(() => expect(railLevel('Acopio Suba Norte')).toBe('Sin declarar'));
     expect(railLevel('Acopio Tibabuyes')).toBe('Sin declarar');
+  });
+
+  it('starts collapsed and expands only the clicked center inline in its own row', async () => {
+    const user = userEvent.setup();
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('centro-suba')) {
+        return Promise.resolve(mockResponse(200, [wireItem('i-suba', 'centro-suba', 'ROJO')]));
+      }
+      return Promise.resolve(mockResponse(200, []));
+    });
+
+    render(<DriverConsolePage port={new FakeRealtimePort()} />);
+
+    // At rest the panel is fully collapsed: no detail and every row collapsed.
+    expect(within(centersPanel()).queryByTestId('aid-center-detail')).not.toBeInTheDocument();
+    for (const row of within(centersPanel()).getAllByRole('button')) {
+      expect(row).toHaveAttribute('aria-expanded', 'false');
+    }
+
+    await waitFor(() => expect(railLevel('Acopio Suba Norte')).toBe('Crítico'));
+
+    const row = centerRow('Acopio Suba Norte');
+    await user.click(row);
+
+    // Only the clicked row opens, and its detail lives INSIDE that same <li>:
+    // it is not a shared block at the bottom of the list.
+    expect(row).toHaveAttribute('aria-expanded', 'true');
+    expect(centerRow('Acopio Tibabuyes')).toHaveAttribute('aria-expanded', 'false');
+    const detail = within(centersPanel()).getByTestId('aid-center-detail');
+    expect(row.closest('li')?.contains(detail)).toBe(true);
+    // The detail lists the center's real inventory: name + level + quantity.
+    expect(within(detail).getByText('Agua potable')).toBeInTheDocument();
+    expect(within(detail).getByText('Crítico')).toBeInTheDocument();
+    expect(within(detail).getByText('1/100')).toBeInTheDocument();
+
+    // Clicking the open row collapses it again.
+    await user.click(row);
+    expect(row).toHaveAttribute('aria-expanded', 'false');
+    expect(within(centersPanel()).queryByTestId('aid-center-detail')).not.toBeInTheDocument();
+  });
+
+  it('keeps a single center open at a time', async () => {
+    const user = userEvent.setup();
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('centro-suba')) {
+        return Promise.resolve(mockResponse(200, [wireItem('i-suba', 'centro-suba', 'ROJO')]));
+      }
+      if (url.includes('centro-tibabuyes')) {
+        return Promise.resolve(
+          mockResponse(200, [wireItem('i-tib', 'centro-tibabuyes', 'AMARILLO')]),
+        );
+      }
+      return Promise.resolve(mockResponse(200, []));
+    });
+
+    render(<DriverConsolePage port={new FakeRealtimePort()} />);
+    await waitFor(() => expect(railLevel('Acopio Suba Norte')).toBe('Crítico'));
+
+    await user.click(centerRow('Acopio Suba Norte'));
+    expect(centerRow('Acopio Suba Norte')).toHaveAttribute('aria-expanded', 'true');
+
+    await user.click(centerRow('Acopio Tibabuyes'));
+
+    // Opening the second collapses the first: exactly one open row and detail.
+    expect(centerRow('Acopio Suba Norte')).toHaveAttribute('aria-expanded', 'false');
+    expect(centerRow('Acopio Tibabuyes')).toHaveAttribute('aria-expanded', 'true');
+    const details = within(centersPanel()).getAllByTestId('aid-center-detail');
+    expect(details).toHaveLength(1);
+    expect(centerRow('Acopio Tibabuyes').closest('li')?.contains(details[0])).toBe(true);
+  });
+
+  it('toggles the row with the keyboard (Enter and Space)', async () => {
+    const user = userEvent.setup();
+    fetchMock.mockImplementation(() => Promise.resolve(mockResponse(200, [])));
+
+    render(<DriverConsolePage port={new FakeRealtimePort()} />);
+
+    const row = centerRow('Acopio Suba Norte');
+    row.focus();
+
+    await user.keyboard('{Enter}');
+    expect(row).toHaveAttribute('aria-expanded', 'true');
+
+    await user.keyboard(' ');
+    expect(row).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('shows an honest empty state when the center declares no inventory', async () => {
+    const user = userEvent.setup();
+    // No inventory answers: the center keeps the `items: []` `/mapa` sent.
+    fetchMock.mockImplementation(() => Promise.resolve(mockResponse(200, [])));
+
+    render(<DriverConsolePage port={new FakeRealtimePort()} />);
+    await waitFor(() => expect(railLevel('Acopio Suba Norte')).toBe('Sin declarar'));
+
+    await user.click(centerRow('Acopio Suba Norte'));
+
+    const detail = within(centersPanel()).getByTestId('aid-center-detail');
+    expect(within(detail).getByText('Este centro no declara inventario.')).toBeInTheDocument();
   });
 });
