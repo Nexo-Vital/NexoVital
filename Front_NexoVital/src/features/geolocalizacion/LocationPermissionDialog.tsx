@@ -43,6 +43,10 @@ interface LocationPermissionDialogProps {
  *
  * It appears once per denial event and is fully dismissible, so the map keeps
  * working with its simulated-position fallback.
+ *
+ * It is a NON-modal corner notice: no scrim, no focus trap, rendered at the
+ * bottom-right. The rest of the app (sidebar, map, rail) stays visible and
+ * clickable while the notice is open.
  */
 export function LocationPermissionDialog({
   status,
@@ -73,8 +77,12 @@ export function LocationPermissionDialog({
   const blocked = permission === 'denied';
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent aria-describedby="location-permission-desc">
+    <Dialog open={open} onOpenChange={setOpen} modal={false}>
+      <DialogContent
+        aria-describedby="location-permission-desc"
+        showOverlay={false}
+        className="top-auto right-4 bottom-4 left-auto w-[min(24rem,calc(100vw-2rem))] translate-x-0 translate-y-0"
+      >
         <DialogHeader>
           <div className="flex items-center gap-2">
             <span

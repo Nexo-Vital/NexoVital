@@ -119,4 +119,40 @@ describe('LocationPermissionDialog', () => {
 
     expect(screen.getByRole('dialog', { name: 'Permiso de ubicación' })).toBeInTheDocument();
   });
+
+  it('is a non-modal notice: no scrim and the rest of the UI stays clickable', () => {
+    const onBackgroundClick = vi.fn();
+    render(
+      <>
+        <button type="button" onClick={onBackgroundClick}>
+          Ir al mapa
+        </button>
+        <LocationPermissionDialog status="denied" permission="prompt" onRetry={vi.fn()} />
+      </>,
+    );
+
+    const notice = screen.getByRole('dialog', { name: 'Permiso de ubicación' });
+    // The full-viewport scrim is the element that swallowed every click.
+    expect(document.querySelectorAll('[data-slot="dialog-overlay"]')).toHaveLength(0);
+    // A modal Radix dialog marks its content `aria-modal="true"`; ours must not.
+    expect(notice).not.toHaveAttribute('aria-modal', 'true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ir al mapa' }));
+    expect(onBackgroundClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('positions the notice in the bottom-right corner', () => {
+    renderDialog('denied', 'prompt');
+
+    const notice = screen.getByRole('dialog', { name: 'Permiso de ubicación' });
+    expect(notice.className).toContain('bottom-4');
+    expect(notice.className).toContain('right-4');
+    expect(notice.className).toContain('top-auto');
+    expect(notice.className).toContain('left-auto');
+    // tailwind-merge must drop the centered defaults, not leave both classes.
+    expect(notice.className).not.toContain('top-1/2');
+    expect(notice.className).not.toContain('left-1/2');
+    expect(notice.className).not.toContain('-translate-x-1/2');
+    expect(notice.className).not.toContain('-translate-y-1/2');
+  });
 });

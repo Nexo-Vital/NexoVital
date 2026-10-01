@@ -11,6 +11,7 @@ const DialogPortal = DialogPrimitive.Portal;
 function DialogOverlay({ className, ...props }: ComponentProps<typeof DialogPrimitive.Overlay>) {
   return (
     <DialogPrimitive.Overlay
+      data-slot="dialog-overlay"
       className={cn('fixed inset-0 z-[1300] bg-background/80 backdrop-blur-[1px]', className)}
       {...props}
     />
@@ -21,6 +22,7 @@ function DialogContent({
   className,
   overlayClassName,
   showClose = true,
+  showOverlay = true,
   children,
   ...props
 }: ComponentProps<typeof DialogPrimitive.Content> & {
@@ -28,10 +30,16 @@ function DialogContent({
   overlayClassName?: string;
   /** Hides the built-in close affordance; a dialog with its own "Cancelar" can opt out. */
   showClose?: boolean;
+  /**
+   * Removes the full-viewport scrim. A non-modal notice (e.g. the location
+   * permission prompt) needs this so the app behind it stays visible and
+   * clickable.
+   */
+  showOverlay?: boolean;
 }) {
   return (
     <DialogPortal>
-      <DialogOverlay className={overlayClassName} />
+      {showOverlay && <DialogOverlay className={overlayClassName} />}
       <DialogPrimitive.Content
         className={cn(
           // z-index clears the Leaflet control panes (up to 1000) and the
