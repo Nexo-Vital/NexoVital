@@ -83,6 +83,14 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
     }
 
     @Override
+    public List<SolicitudAmbulancia> listarPorAmbulanciaAsignada(UUID ambulanciaId) {
+        return jpaRepository
+                .findByAmbulanciaAsignadaIdOrderBySolicitadaEnDesc(ambulanciaId).stream()
+                .map(SolicitudRepositoryAdapter::toDomain)
+                .toList();
+    }
+
+    @Override
     @Transactional
     public int transicionAtomicaExpirar(UUID idSolicitud, EstadoSolicitud estadoEsperado,
                                         EstadoSolicitud nuevoEstado, Instant ahora) {

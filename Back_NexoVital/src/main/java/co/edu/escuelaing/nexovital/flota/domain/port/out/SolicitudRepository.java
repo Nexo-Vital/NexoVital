@@ -53,6 +53,15 @@ public interface SolicitudRepository {
     List<SolicitudAmbulancia> listarPendientesVencidas(Instant ahora);
 
     /**
+     * Services ASSIGNED to {@code ambulanciaId}, newest first (request creation
+     * instant descending). Only requests whose assigned unit is that one
+     * qualify: a request that was merely broadcast (PENDIENTE) or closed before
+     * any assignment (TIMEOUT/CANCELADA) has no assigned unit and is never part
+     * of the history.
+     */
+    List<SolicitudAmbulancia> listarPorAmbulanciaAsignada(UUID ambulanciaId);
+
+    /**
      * CAS de expiración: UNA sola UPDATE que cierra la solicitud solo si sigue
      * PENDIENTE Y su {@code timeoutEn} ya pasó. Devuelve filas afectadas: 1 =
      * este llamador la expiró, 0 = otro la atendió o expiró primero. Es

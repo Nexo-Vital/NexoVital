@@ -72,6 +72,13 @@ public interface SolicitudJpaRepository extends JpaRepository<SolicitudJpaEntity
             EstadoSolicitud estado, Instant ahora);
 
     /**
+     * Services ASSIGNED to a unit, newest first (creation instant descending).
+     * The derived query filters by the assignment column, so a broadcast-only
+     * request (null assignment) can never match.
+     */
+    List<SolicitudJpaEntity> findByAmbulanciaAsignadaIdOrderBySolicitadaEnDesc(UUID ambulanciaId);
+
+    /**
      * CAS de expiración: UNA sola {@code UPDATE} que cierra la solicitud solo si
      * sigue PENDIENTE Y su {@code timeoutEn} ya pasó. La condición del
      * {@code WHERE} es la garantía: no compite con el accept (que exige

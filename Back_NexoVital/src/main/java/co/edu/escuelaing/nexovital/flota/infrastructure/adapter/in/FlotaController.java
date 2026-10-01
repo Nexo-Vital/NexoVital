@@ -5,9 +5,11 @@ import co.edu.escuelaing.nexovital.flota.domain.exception.AmbulanciaAjenaExcepti
 import co.edu.escuelaing.nexovital.flota.domain.exception.AmbulanciaNoDisponibleException;
 import co.edu.escuelaing.nexovital.flota.domain.model.Ambulancia;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.ConsultarFlotaUseCase;
+import co.edu.escuelaing.nexovital.flota.domain.port.in.ListarSolicitudesDeMiAmbulanciaUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.ReportarPosicionUseCase;
 import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in.dto.AmbulanciaDto;
 import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in.dto.ReportarPosicionRequest;
+import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in.dto.SolicitudAmbulanciaDto;
 import co.edu.escuelaing.nexovital.shared.infrastructure.dto.ErrorResponse;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.Usuario;
 import io.swagger.v3.oas.annotations.Operation;
@@ -45,6 +47,8 @@ public class FlotaController {
     private static final String MENSAJE_ERROR_CONSULTA = "No fue posible consultar la flota.";
     private static final String MENSAJE_ERROR_CONSULTA_PROPIA =
             "No fue posible consultar tu ambulancia.";
+    private static final String MENSAJE_ERROR_CONSULTA_HISTORIAL =
+            "No fue posible consultar el historial de tu ambulancia.";
     private static final String MENSAJE_DATOS_POSICION =
             "El reporte de posición no es válido: indique la ubicación.";
     private static final String MENSAJE_AMBULANCIA_AJENA =
@@ -54,11 +58,14 @@ public class FlotaController {
     private static final String MENSAJE_ERROR_POSICION = "No fue posible reportar la posición.";
 
     private final ConsultarFlotaUseCase consultarFlotaUseCase;
+    private final ListarSolicitudesDeMiAmbulanciaUseCase listarSolicitudesDeMiAmbulanciaUseCase;
     private final ReportarPosicionUseCase reportarPosicionUseCase;
 
     public FlotaController(ConsultarFlotaUseCase consultarFlotaUseCase,
+                           ListarSolicitudesDeMiAmbulanciaUseCase listarSolicitudesDeMiAmbulanciaUseCase,
                            ReportarPosicionUseCase reportarPosicionUseCase) {
         this.consultarFlotaUseCase = consultarFlotaUseCase;
+        this.listarSolicitudesDeMiAmbulanciaUseCase = listarSolicitudesDeMiAmbulanciaUseCase;
         this.reportarPosicionUseCase = reportarPosicionUseCase;
     }
 
@@ -99,6 +106,37 @@ public class FlotaController {
         } catch (RuntimeException e) {
             return ResponseEntity.internalServerError()
                     .body(ErrorResponse.of("ERROR_CONSULTA_FLOTA", MENSAJE_ERROR_CONSULTA_PROPIA));
+        }
+    }
+
+    /**
+     * The services of the authenticated driver's OWN unit: the requests that
+     * were actually ASSIGNED to it (ASIGNADA / CONFIRMADA / TOMADA). A request
+     * that was only broadcast is not history, so PENDIENTE / TIMEOUT / CANCELADA
+     * never appear. The unit is resolved exactly as {@code /ambulancias/mia}; a
+     * driver with no unit mirrors that read (200 with JSON {@code null}).
+     *
+     * @return 200 with the {@code SolicitudAmbulanciaDto} array, newest first, or
+     *         200 with JSON {@code null} when the caller drives no unit; 500
+     *         {@code ERROR_CONSULTA_HISTORIAL} if the query fails
+     */
+    @GetMapping("/ambulancias/mia/solicitudes")
+    @Operation(summary = "Historial de servicios de la ambulancia del conductor autenticado")
+    public ResponseEntity<Object> misSolicitudes() {
+        try {
+            UUID conductorId = usuarioAutenticadoId();
+            Optional<Ambulancia> propia = consultarFlotaUseCase.consultarPropia(conductorId);
+            if (propia.isEmpty()) {
+                return ResponseEntity.ok((Object) null);
+            }
+            List<SolicitudAmbulanciaDto> historial =
+                    listarSolicitudesDeMiAmbulanciaUseCase.listar(propia.get().getId()).stream()
+                            .map(SolicitudAmbulanciaDto::fromDomain)
+                            .toList();
+            return ResponseEntity.ok(historial);
+        } catch (RuntimeException e) {
+            return ResponseEntity.internalServerError()
+                    .body(ErrorResponse.of("ERROR_CONSULTA_HISTORIAL", MENSAJE_ERROR_CONSULTA_HISTORIAL));
         }
     }
 

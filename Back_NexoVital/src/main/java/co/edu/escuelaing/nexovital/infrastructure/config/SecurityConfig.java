@@ -169,6 +169,13 @@ public class SecurityConfig {
                         // chain is fail-closed.
                         .requestMatchers(HttpMethod.GET, "/api/v1/flota/ambulancias/mia")
                                 .hasAuthority("ROLE_CONDUCTOR")
+                        // History of the caller's OWN unit (EP-04, CON-3): only a
+                        // driver reads the services their ambulance actually
+                        // attended. The controller resolves the same server-scoped
+                        // unit as /mia. Declared explicitly because the chain is
+                        // fail-closed.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/flota/ambulancias/mia/solicitudes")
+                                .hasAuthority("ROLE_CONDUCTOR")
                         // Report the live position of the caller's OWN unit
                         // (EP-04.F1.US1): only a driver reports telemetry, and
                         // the use case additionally verifies the unit belongs to
