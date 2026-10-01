@@ -101,6 +101,12 @@ export interface SolicitudResponseOutcome {
 }
 
 export interface SolicitudInboxState {
+  /**
+   * The surfaced offer, GATED by the connection: `null` while the driver is
+   * disconnected, even though the transport keeps delivering and the internal
+   * state keeps every frame. Reconnecting re-surfaces an offer that is still
+   * within its accept window; the existing countdown owns expiry.
+   */
   broadcast: SolicitudBroadcastPayload | null;
   /** Absolute deadline (epoch ms) of the accept window. */
   deadlineMs: number | null;
@@ -167,11 +173,17 @@ const ASSIGNED_DISMISS_MS = 1600;
  * (`POST /api/v1/solicitudes/{id}/accept|reject`), because the backend has no
  * `@MessageMapping` for them; the SERVER's response is adopted as the truth
  * (a win opens the mission, a 409 is shown as a lost/toasted outcome).
+ *
+ * `online` gates ONLY the SURFACED offer: while it is false the transport keeps
+ * receiving (and the internal state keeps every frame), so reconnecting
+ * re-surfaces an offer still within its accept window. The accepted mission is
+ * never gated.
  */
 export function useSolicitudInbox(
   port: RealtimePort | null,
   ambulanceId: string,
   currentPosition: Ubicacion | null,
+  online = true,
 ): SolicitudInboxState {
   const [broadcast, setBroadcast] = useState<SolicitudBroadcastPayload | null>(null);
   const [deadlineMs, setDeadlineMs] = useState<number | null>(null);
@@ -806,7 +818,8 @@ export function useSolicitudInbox(
         : 'en_route';
 
   return {
-    broadcast,
+    // The offer surface is gated by the connection; the mission below is not.
+    broadcast: online ? broadcast : null,
     deadlineMs,
     windowMs,
     requestedAtMs,

@@ -771,6 +771,7 @@ function SolicitudDetail({
  * state and its reason.
  */
 function SolicitudesPanel({
+  online,
   mission,
   missionDistanceKm,
   missionEtaMin,
@@ -796,6 +797,8 @@ function SolicitudesPanel({
   ...request
 }: RequestPanelProps &
   MissionPanelProps & {
+    /** Whether the driver is connected; disconnected the offer surface is hidden. */
+    online: boolean;
     mission: Mission | null;
     units: readonly Ambulancia[];
     solicitudes: SolicitudAmbulancia[];
@@ -812,7 +815,9 @@ function SolicitudesPanel({
     onViewSelected: () => void;
     onCloseSelected: () => void;
   }) {
-  const requestOpen = request.phase === 'idle' || request.phase === 'submitting';
+  // An open offer takes over the panel only while connected: disconnected, the
+  // mission (if any) keeps the rail instead of being hidden by a stalled offer.
+  const requestOpen = online && (request.phase === 'idle' || request.phase === 'submitting');
   const hasRegistry = solicitudes.length > 0;
   // The sound affordance lives in the panel header in every state, so it is
   // always reachable (the user unlocks audio once, before the next request), and
@@ -853,6 +858,17 @@ function SolicitudesPanel({
           onDeclareArrival={onDeclareArrival}
           onFinish={onFinish}
         />
+      ) : !online ? (
+        <div
+          data-testid="solicitudes-offline"
+          className="flex flex-col items-center gap-1.5 rounded-nv-md border border-dashed border-nv-line px-4 py-6 text-center"
+        >
+          <Radio className="size-6 text-nv-teal" aria-hidden />
+          <b className="font-semibold text-sm">Conéctate para recibir solicitudes</b>
+          <span className="text-nv-navy-400 text-xs leading-[18px]">
+            Mientras estés desconectado no verás solicitudes de ambulancia ni podrás aceptarlas.
+          </span>
+        </div>
       ) : request.broadcast ? (
         <RequestCard {...request} units={units} broadcast={request.broadcast} />
       ) : hasRegistry ? null : (
@@ -865,7 +881,7 @@ function SolicitudesPanel({
         </div>
       )}
 
-      {hasRegistry && (
+      {online && hasRegistry && (
         <div className="flex flex-col gap-2 border-nv-line border-t pt-3">
           <span className="nv-label text-nv-navy-400">Registro</span>
           <ul aria-label="Lista de solicitudes" className="flex list-none flex-col gap-2 p-0">
@@ -881,7 +897,7 @@ function SolicitudesPanel({
         </div>
       )}
 
-      {selectedSolicitud && (
+      {online && selectedSolicitud && (
         <SolicitudDetail
           solicitud={selectedSolicitud}
           distanceKm={selectedDistanceKm}
@@ -1095,6 +1111,7 @@ export function DriverRail({
       />
       <SolicitudesPanel
         {...request}
+        online={online}
         units={units}
         mission={mission}
         missionDistanceKm={missionDistanceKm}

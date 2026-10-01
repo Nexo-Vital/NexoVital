@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useToastStore } from '@/components/ui/toast';
 import { useDriverAlertsStore } from '@/features/conductor/driver-alerts-store';
+import { useDriverOnlineStore } from '@/features/conductor/driver-online-store';
 import { useEmergencyStore } from '@/features/emergencias/emergency-store';
 import { useFleetStore } from '@/features/flota/fleet-store';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
@@ -110,8 +111,20 @@ function solicitudRowButton(id: string): HTMLElement {
   return within(list).getByRole('button', { name: new RegExp(`${ref}(?!\\d)`) });
 }
 
+/**
+ * Connects the driver console without the button. The page starts DISCONNECTED
+ * (that is the behaviour under test), so cases that only need offers surfaced use
+ * this to reach the connected state; the connection flows themselves click the
+ * real "Conectarse"/"Desconectarse" buttons.
+ */
+function connectDriver(): void {
+  act(() => useDriverOnlineStore.getState().goOnline());
+}
+
 /** Drives the page from a broadcast to a mission won by A-07 (`C.d4`). */
 async function winMission(user: ReturnType<typeof userEvent.setup>, port: FakeRealtimePort) {
+  // A mission can only be accepted while connected, so connect first.
+  connectDriver();
   act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
   await user.click(screen.getByRole('button', { name: 'Aceptar solicitud' }));
   act(() =>
@@ -139,6 +152,8 @@ describe('DriverConsolePage', () => {
   afterEach(() => {
     cleanup();
     useDriverAlertsStore.setState({ pendingRequests: 0 });
+    // Connection is a module store: every case starts disconnected again.
+    useDriverOnlineStore.setState({ online: false });
     // The arrival toast lives in a module store: clear it so counts never leak.
     useToastStore.setState({ toasts: [] });
     setGeolocation(undefined);
@@ -187,6 +202,104 @@ describe('DriverConsolePage', () => {
     // With a position, the online unit is published on /topic/flota.
     await user.click(screen.getByRole('button', { name: 'Simular posición' }));
     expect(port.published.some((frame) => frame.destination === DESTINATIONS.flota)).toBe(true);
+  });
+
+  it('enters disconnected: no offer and no accept/reject are offered', () => {
+    const port = new FakeRealtimePort();
+    render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+
+    // The driver starts disconnected, so no offer surface is on screen...
+    const rail = driverRail();
+    expect(within(rail).getByTestId('solicitudes-offline')).toBeInTheDocument();
+    expect(
+      within(rail).queryByRole('region', { name: 'Solicitud de ambulancia' }),
+    ).not.toBeInTheDocument();
+    // ...and no accept/reject action is offered anywhere.
+    expect(screen.queryByRole('button', { name: 'Aceptar solicitud' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Rechazar' })).not.toBeInTheDocument();
+
+    // Even an offer that arrives while disconnected stays off the surface.
+    act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+    expect(
+      within(rail).queryByRole('region', { name: 'Solicitud de ambulancia' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Aceptar solicitud' })).not.toBeInTheDocument();
+  });
+
+  it('surfaces the incoming offer with its actions after "Conectarse"', async () => {
+    const user = userEvent.setup();
+    const port = new FakeRealtimePort();
+    render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+
+    // An offer arrives while disconnected: kept internally, not surfaced.
+    act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+    expect(
+      within(driverRail()).queryByRole('region', { name: 'Solicitud de ambulancia' }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Conectarse' }));
+
+    // Now the offer surfaces with its real actions.
+    const card = within(driverRail()).getByRole('region', { name: 'Solicitud de ambulancia' });
+    expect(within(card).getByRole('button', { name: 'Aceptar solicitud' })).toBeInTheDocument();
+    expect(within(card).getByRole('button', { name: 'Rechazar' })).toBeInTheDocument();
+  });
+
+  it('clears the offer surface and its actions after "Desconectarse"', async () => {
+    const user = userEvent.setup();
+    const port = new FakeRealtimePort();
+    render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+
+    await user.click(screen.getByRole('button', { name: 'Conectarse' }));
+    act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+    expect(
+      within(driverRail()).getByRole('region', { name: 'Solicitud de ambulancia' }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Desconectarse' }));
+
+    expect(
+      within(driverRail()).queryByRole('region', { name: 'Solicitud de ambulancia' }),
+    ).not.toBeInTheDocument();
+    expect(driverRail().querySelector('[data-testid="solicitudes-offline"]')).not.toBeNull();
+    expect(screen.queryByRole('button', { name: 'Aceptar solicitud' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Rechazar' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the accepted mission visible after disconnecting', async () => {
+    const user = userEvent.setup();
+    const port = new FakeRealtimePort();
+    render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+
+    await user.click(screen.getByRole('button', { name: 'Conectarse' }));
+    await winMission(user, port);
+    expect(screen.getByText('Misión actual')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Desconectarse' }));
+
+    // An in-progress service is never orphaned by the toggle.
+    expect(screen.getByText('Misión actual')).toBeInTheDocument();
+    expect(within(driverRail()).getByText('Solicitud aceptada')).toBeInTheDocument();
+    expect(
+      within(driverRail()).queryByRole('region', { name: 'Solicitud de ambulancia' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Aceptar solicitud' })).not.toBeInTheDocument();
+  });
+
+  it('never connects or disconnects the realtime transport when toggling the connection', async () => {
+    const user = userEvent.setup();
+    const port = new FakeRealtimePort();
+    const disconnect = vi.spyOn(port, 'disconnect');
+    const connect = vi.spyOn(port, 'connect');
+    render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+
+    await user.click(screen.getByRole('button', { name: 'Conectarse' }));
+    await user.click(screen.getByRole('button', { name: 'Desconectarse' }));
+
+    // The gate only controls the offer surface; the shared transport keeps
+    // running so flota/emergencias stay in sync.
+    expect(disconnect).not.toHaveBeenCalled();
+    expect(connect).not.toHaveBeenCalled();
   });
 
   it('marks the active driver status accessibly, not only by colour', async () => {
@@ -297,6 +410,11 @@ describe('DriverConsolePage', () => {
     render(<DriverConsolePage port={port} ambulanceId="A-07" solicitudes={[]} />);
 
     const rail = driverRail();
+    // Disconnected: the panel offers the connect notice, never the empty state.
+    expect(within(rail).getByTestId('solicitudes-offline')).toBeInTheDocument();
+    expect(within(rail).queryByText('Sin solicitudes por ahora')).not.toBeInTheDocument();
+
+    connectDriver();
     expect(within(rail).getByText('Sin solicitudes por ahora')).toBeInTheDocument();
     expect(within(rail).getByText(/con sonido/)).toBeInTheDocument();
 
@@ -311,6 +429,7 @@ describe('DriverConsolePage', () => {
   it('renders the four data rows from the real payload fields', () => {
     const port = new FakeRealtimePort();
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+    connectDriver();
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
 
     const card = within(driverRail()).getByRole('region', { name: 'Solicitud de ambulancia' });
@@ -332,6 +451,7 @@ describe('DriverConsolePage', () => {
   it('shows the real emergency level as a chip in the card header', () => {
     const port = new FakeRealtimePort();
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+    connectDriver();
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
 
     const heading = within(driverRail()).getByRole('heading', {
@@ -358,6 +478,7 @@ describe('DriverConsolePage', () => {
   it('shows "Sin clasificar" for a citizen request that declared no severity', () => {
     const port = new FakeRealtimePort();
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+    connectDriver();
 
     // A citizen request carries no `nivel`: the driver must never read an
     // invented severity like "Medium" (C1).
@@ -384,6 +505,7 @@ describe('DriverConsolePage', () => {
   it('shows the reported coordinates when the request declared no zone', () => {
     const port = new FakeRealtimePort();
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+    connectDriver();
 
     const citizenRequest: SolicitudBroadcastPayload = {
       ...BROADCAST,
@@ -407,6 +529,7 @@ describe('DriverConsolePage', () => {
       timeoutMs: 600_000,
     };
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+    connectDriver();
     act(() => port.emit(DESTINATIONS.solicitudes, longWindow));
 
     const card = within(driverRail()).getByRole('region', { name: 'Solicitud de ambulancia' });
@@ -428,6 +551,7 @@ describe('DriverConsolePage', () => {
     // The fleet is empty, so AMB-XX cannot be resolved to a plate: the raw id
     // must stay visible rather than silently disappearing from the list.
     render(<DriverConsolePage port={port} ambulanceId="A-07" ambulancias={[]} />);
+    connectDriver();
     act(() =>
       port.emit(DESTINATIONS.solicitudes, { ...BROADCAST, notificadas: ['A-07', 'AMB-XX'] }),
     );
@@ -442,6 +566,7 @@ describe('DriverConsolePage', () => {
     const user = userEvent.setup();
     const port = new FakeRealtimePort();
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+    connectDriver();
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
 
     // No GPS: the toast carries the distance from the unit's own declared
@@ -466,6 +591,7 @@ describe('DriverConsolePage', () => {
     const user = userEvent.setup();
     const port = new FakeRealtimePort();
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+    connectDriver();
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
 
     const map = screen.getByTestId('map-canvas');
@@ -503,6 +629,7 @@ describe('DriverConsolePage', () => {
   it('keeps "Sin ubicación" when the driver has no unit to fall back to', () => {
     const port = new FakeRealtimePort();
     render(<DriverConsolePage port={port} ambulanceId="A-07" ambulancias={[]} />);
+    connectDriver();
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
 
     const map = screen.getByTestId('map-canvas');
@@ -514,12 +641,17 @@ describe('DriverConsolePage', () => {
     expect(dataRowValue(card, 'Distancia')).toBe('Sin ubicación');
   });
 
-  it('mirrors the pending request in the shell bell count', () => {
+  it('mirrors the SURFACED pending request in the shell bell count', () => {
     const port = new FakeRealtimePort();
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
 
     expect(useDriverAlertsStore.getState().pendingRequests).toBe(0);
+    // Disconnected: an arriving offer is not surfaced, so the bell stays at zero.
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+    expect(useDriverAlertsStore.getState().pendingRequests).toBe(0);
+
+    // Connecting surfaces that same offer, and the bell mirrors it.
+    connectDriver();
     expect(useDriverAlertsStore.getState().pendingRequests).toBe(1);
   });
 
@@ -527,6 +659,7 @@ describe('DriverConsolePage', () => {
     const user = userEvent.setup();
     const port = new FakeRealtimePort();
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+    connectDriver();
 
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
     expect(screen.getByRole('status')).toHaveTextContent(
@@ -553,6 +686,7 @@ describe('DriverConsolePage', () => {
     const user = userEvent.setup();
     const port = new FakeRealtimePort();
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+    connectDriver();
 
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
     await user.click(screen.getByRole('button', { name: 'Aceptar solicitud' }));
@@ -572,6 +706,7 @@ describe('DriverConsolePage', () => {
     const user = userEvent.setup();
     const port = new FakeRealtimePort();
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+    connectDriver();
 
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
     await user.click(screen.getByRole('button', { name: 'Aceptar solicitud' }));
@@ -767,6 +902,7 @@ describe('DriverConsolePage', () => {
     const user = userEvent.setup();
     const port = new FakeRealtimePort();
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+    connectDriver();
 
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
     // Dashed while the request is still pending (`d3`).
@@ -801,6 +937,7 @@ describe('DriverConsolePage', () => {
       duracionMin: 7.44,
     });
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+    connectDriver();
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
 
     // The route geometry reaches the map, which hides the straight connector.
@@ -818,6 +955,7 @@ describe('DriverConsolePage', () => {
     const port = new FakeRealtimePort();
     // The default routing mock never settles: the honest fallback stays.
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+    connectDriver();
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
 
     const map = screen.getByTestId('map-canvas');
@@ -830,6 +968,8 @@ describe('DriverConsolePage', () => {
 
   it('U5: the single "Solicitudes" panel lists every request from the real registry', () => {
     render(<DriverConsolePage port={new FakeRealtimePort()} ambulanceId="A-07" />);
+    // The registry is part of the offer surface: it shows while connected.
+    connectDriver();
 
     const rail = driverRail();
     // ONE panel: the old "Todas las solicitudes" surface is gone.
@@ -853,6 +993,7 @@ describe('DriverConsolePage', () => {
   it('U6: a tapped request expands its detail inline inside the panel', async () => {
     const user = userEvent.setup();
     render(<DriverConsolePage port={new FakeRealtimePort()} ambulanceId="A-07" />);
+    connectDriver();
 
     await user.click(solicitudRowButton(MOCK_SOLICITUDES[0].id));
 
@@ -872,6 +1013,7 @@ describe('DriverConsolePage', () => {
     const user = userEvent.setup();
     const port = new FakeRealtimePort();
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+    connectDriver();
 
     // Make REQ-1 the inbox's open broadcast, then open its row's inline detail.
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
@@ -882,7 +1024,8 @@ describe('DriverConsolePage', () => {
     expect(accept).toBeEnabled();
     await user.click(accept);
 
-    expect(port.published[0]?.payload).toEqual({
+    // Connecting published the flota position first, so read the last frame.
+    expect(port.published[port.published.length - 1]?.payload).toEqual({
       type: 'solicitud.accept',
       requestId: 'REQ-1',
       ambulanceId: 'A-07',
@@ -892,6 +1035,7 @@ describe('DriverConsolePage', () => {
   it('RES-2: a notified PENDING row is respondible even when it is not the inbox broadcast', async () => {
     const user = userEvent.setup();
     render(<DriverConsolePage port={new FakeRealtimePort()} ambulanceId="A-07" />);
+    connectDriver();
 
     // REQ-1001 is PENDING and lists A-07 among its notified units, so the server
     // would accept it even though it is not the inbox's open broadcast. The UI
@@ -906,6 +1050,7 @@ describe('DriverConsolePage', () => {
   it('RES-2: a PENDING row this unit was not notified about stays disabled with its reason', async () => {
     const user = userEvent.setup();
     render(<DriverConsolePage port={new FakeRealtimePort()} ambulanceId="A-07" />);
+    connectDriver();
 
     // REQ-1006 is PENDING but only notifies A-12/A-03: the server would refuse,
     // so the front keeps the action disabled and says why.
@@ -925,6 +1070,7 @@ describe('DriverConsolePage', () => {
     render(
       <DriverConsolePage port={port} ambulanceId="A-07" solicitudes={[MOCK_SOLICITUDES[0]]} />,
     );
+    connectDriver();
 
     // Open REQ-1001 (its emergency EMG-002 sits at the fixture position 4.628/-74.148).
     await user.click(solicitudRowButton('REQ-1001'));
@@ -947,6 +1093,7 @@ describe('DriverConsolePage', () => {
     render(
       <DriverConsolePage port={port} ambulanceId="A-07" solicitudes={[MOCK_SOLICITUDES[0]]} />,
     );
+    connectDriver();
 
     // REQ-1001 points at EMG-002 (fixture 4.628 / -74.148). The ROW click alone —
     // no "Visualizar" — must move the viewport there.
@@ -969,6 +1116,7 @@ describe('DriverConsolePage', () => {
       zonaId: '',
     };
     render(<DriverConsolePage port={port} ambulanceId="A-07" solicitudes={[orphan]} />);
+    connectDriver();
 
     const map = screen.getByTestId('map-canvas');
     // The one-shot first centering is already consumed: no focus is pending.
@@ -985,6 +1133,7 @@ describe('DriverConsolePage', () => {
     const user = userEvent.setup();
     const port = new FakeRealtimePort();
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+    connectDriver();
 
     // Active broadcast REQ-1 at 4.628 / -74.148: the pin and the route point there.
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
@@ -1009,11 +1158,13 @@ describe('DriverConsolePage', () => {
     const user = userEvent.setup();
     const port = new FakeRealtimePort();
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+    connectDriver();
 
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
     await user.click(screen.getByRole('button', { name: 'Rechazar' }));
 
-    expect(port.published[0]?.payload).toEqual({
+    // Connecting published the flota position first, so read the last frame.
+    expect(port.published[port.published.length - 1]?.payload).toEqual({
       type: 'solicitud.reject',
       requestId: 'REQ-1',
       ambulanceId: 'A-07',

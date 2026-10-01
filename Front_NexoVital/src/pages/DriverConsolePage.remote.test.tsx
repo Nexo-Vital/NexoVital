@@ -1,6 +1,7 @@
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useDriverOnlineStore } from '@/features/conductor/driver-online-store';
 import { useEmergencyStore } from '@/features/emergencias/emergency-store';
 import { useFleetStore } from '@/features/flota/fleet-store';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
@@ -86,6 +87,15 @@ function mockResponse(status: number, body: unknown): Response {
   } as unknown as Response;
 }
 
+/**
+ * Connects the driver console from a test. The page starts DISCONNECTED, so
+ * cases that need offers/registry on screen connect first; the connection flows
+ * themselves are covered in DriverConsolePage.test.tsx.
+ */
+function connectDriver(): void {
+  act(() => useDriverOnlineStore.getState().goOnline());
+}
+
 /** Serves the general fleet list and the driver's own-unit resource. */
 function stubBackendReads(miaBody: unknown) {
   return (path: string) =>
@@ -112,6 +122,7 @@ describe('DriverConsolePage against the real backend', () => {
 
   afterEach(() => {
     cleanup();
+    useDriverOnlineStore.setState({ online: false });
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
     localStorage.clear();
@@ -148,6 +159,8 @@ describe('DriverConsolePage against the real backend', () => {
     fetchMock.mockImplementation(stubBackendReads(MIA_UNIT));
     render(<DriverConsolePage port={port} />);
     await screen.findByText('ABC202');
+    // The "taken" feedback lives in the request card, so surface it while online.
+    connectDriver();
 
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
     act(() =>
@@ -223,6 +236,7 @@ describe('DriverConsolePage against the real backend', () => {
 
     render(<DriverConsolePage port={port} solicitudes={[row]} />);
     await screen.findByText('ABC202');
+    connectDriver();
 
     const rail = screen.getByRole('complementary', { name: 'Panel del conductor' });
     const list = within(rail).getByRole('list', { name: 'Lista de solicitudes' });
@@ -256,6 +270,7 @@ describe('DriverConsolePage against the real backend', () => {
 
     render(<DriverConsolePage port={port} solicitudes={[row]} />);
     await screen.findByText('ABC202');
+    connectDriver();
 
     const rail = screen.getByRole('complementary', { name: 'Panel del conductor' });
     const list = within(rail).getByRole('list', { name: 'Lista de solicitudes' });
@@ -276,6 +291,7 @@ describe('DriverConsolePage against the real backend', () => {
     // The server-scoped read answers "no unit": the driver's id is unresolved.
     fetchMock.mockImplementation(stubBackendReads(null));
     render(<DriverConsolePage port={port} />);
+    connectDriver();
 
     // The backend delivers a per-user WIRE frame (no L3 filter), so the request
     // is visible even though the driver's unit is not resolved yet.
@@ -343,6 +359,7 @@ describe('DriverConsolePage source discipline off demo mode', () => {
 
   afterEach(() => {
     cleanup();
+    useDriverOnlineStore.setState({ online: false });
     useFleetStore.getState().hydrate([]);
     useEmergencyStore.getState().hydrate([]);
     useSolicitudesStore.getState().hydrate([]);
@@ -368,6 +385,8 @@ describe('DriverConsolePage source discipline off demo mode', () => {
     });
 
     render(<DriverConsolePage port={port} />);
+    // The registry/empty state is the connected offer surface.
+    connectDriver();
 
     // The backend is the source: both endpoints are read (apiFetch adds the token).
     expect(fetchMock).toHaveBeenCalledWith(

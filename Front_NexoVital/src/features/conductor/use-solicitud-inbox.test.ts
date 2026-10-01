@@ -237,6 +237,49 @@ describe('useSolicitudInbox', () => {
     expect(port.published).toHaveLength(0);
   });
 
+  it('surfaces an offer only while connected, holding it internally while offline', () => {
+    const port = new FakeRealtimePort();
+    const { result, rerender } = renderHook(
+      ({ online }: { online: boolean }) =>
+        useSolicitudInbox(port, 'AMB-01', { lat: 4.6, lng: -74.1 }, online),
+      { initialProps: { online: false } },
+    );
+
+    // Received while disconnected: the transport delivered it, yet nothing is
+    // surfaced (no card, so no accept/reject).
+    act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+    expect(result.current.broadcast).toBeNull();
+
+    // Connecting re-surfaces the offer that is still within its accept window.
+    rerender({ online: true });
+    expect(result.current.broadcast?.requestId).toBe('REQ-1');
+
+    // Disconnecting clears the surface again, without losing the frame: a later
+    // reconnect would show it again.
+    rerender({ online: false });
+    expect(result.current.broadcast).toBeNull();
+    rerender({ online: true });
+    expect(result.current.broadcast?.requestId).toBe('REQ-1');
+  });
+
+  it('never gates the accepted mission on the connection', () => {
+    const port = new FakeRealtimePort();
+    const { result, rerender } = renderHook(
+      ({ online }: { online: boolean }) =>
+        useSolicitudInbox(port, 'AMB-01', { lat: 4.6, lng: -74.1 }, online),
+      { initialProps: { online: true } },
+    );
+
+    winMission(port, result);
+    expect(result.current.mission?.requestId).toBe('REQ-1');
+
+    rerender({ online: false });
+
+    // The mission is an in-progress service, not an offer: it stays surfaced.
+    expect(result.current.mission?.requestId).toBe('REQ-1');
+    expect(result.current.broadcast).toBeNull();
+  });
+
   it('drops the open request from the inbox when it is cancelled', () => {
     const { port, result } = setup();
 

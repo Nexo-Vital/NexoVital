@@ -9,6 +9,7 @@ import {
 } from '@/features/ciudadano/citizen-view';
 import { DriverRail } from '@/features/conductor/DriverRail';
 import { useDriverAlertsStore } from '@/features/conductor/driver-alerts-store';
+import { useDriverOnlineStore } from '@/features/conductor/driver-online-store';
 import { resolveDriverAmbulanceId } from '@/features/conductor/driver-session';
 import { DRIVER_STATUS_META, type DriverStatus } from '@/features/conductor/driver-status';
 import {
@@ -128,7 +129,12 @@ export default function DriverConsolePage({
   const unitResolved = unitId !== '';
 
   const location = useDeviceLocation();
-  const [online, setOnline] = useState(false);
+  // Connection lives in a store, not page state, so it survives navigation and a
+  // reload starts disconnected. It gates only the offer surface, never the
+  // realtime transport (flota/emergencias keep syncing).
+  const online = useDriverOnlineStore((state) => state.online);
+  const setOnline = useDriverOnlineStore((state) => state.goOnline);
+  const setOffline = useDriverOnlineStore((state) => state.goOffline);
   const [status, setStatus] = useState<DriverStatus>('OFF_DUTY');
   const [hasCentered, setHasCentered] = useState(false);
   const [selectedSolicitud, setSelectedSolicitud] = useState<SolicitudAmbulancia | null>(null);
@@ -279,9 +285,12 @@ export default function DriverConsolePage({
   const effectivePosition = location.position ?? ownUnit?.ubicacion ?? null;
   const effectiveSimulated = location.simulated || fallbackToUnit;
 
-  const inbox = useSolicitudInbox(port, unitId, effectivePosition);
+  const inbox = useSolicitudInbox(port, unitId, effectivePosition, online);
 
-  const requestOpen = inbox.phase === 'idle' || inbox.phase === 'submitting';
+  // An open offer owns the rail and the map only while the driver is connected;
+  // disconnected, the mission always wins so an in-progress service is never
+  // orphaned by the toggle.
+  const requestOpen = online && (inbox.phase === 'idle' || inbox.phase === 'submitting');
   // `C.d4`: an open mission owns the rail and the map, unless a new request is
   // actually waiting for an answer (phase idle/submitting).
   const missionActive = inbox.mission !== null && !requestOpen;
@@ -417,14 +426,14 @@ export default function DriverConsolePage({
   }, [online, port, unitId, effectivePosition, heading, effectiveSimulated, status, missionActive]);
 
   const goOnline = useCallback(() => {
-    setOnline(true);
+    setOnline();
     setStatus((current) => (current === 'OFF_DUTY' ? 'AVAILABLE' : current));
-  }, []);
+  }, [setOnline]);
 
   const goOffline = useCallback(() => {
-    setOnline(false);
+    setOffline();
     setStatus('OFF_DUTY');
-  }, []);
+  }, [setOffline]);
 
   // "Finalizar servicio": against the backend this calls
   // `POST /solicitudes/{id}/finalizar`, which closes the request and releases
