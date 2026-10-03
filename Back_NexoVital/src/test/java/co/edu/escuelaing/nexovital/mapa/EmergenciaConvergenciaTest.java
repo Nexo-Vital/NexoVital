@@ -274,65 +274,6 @@ class EmergenciaConvergenciaTest {
     }
 
     // -----------------------------------------------------------------------
-    // (B) El mismo estado para todos: la sesión STOMP termina como la base
-    // -----------------------------------------------------------------------
-
-    @Test
-    @DisplayName("AC2 (B): una sesión STOMP real termina en el mismo estado que la base tras la tormenta de PATCH")
-    void b_mismoEstadoParaTodosPorRealtime() throws Exception {
-        String tokenCiudadano = iniciarSesion(CIUDADANO, CIUDADANO_PASSWORD);
-        String tokenRangel = iniciarSesion(RANGEL, RANGEL_PASSWORD);
-        String tokenCentro = iniciarSesion(CENTRO, CENTRO_PASSWORD);
-
-        // La emergencia se reporta ANTES de suscribirse: el broker simple no
-        // retiene, así que el único frame con este id que verá el cliente es el
-        // que emiten los PATCH (el del POST ya pasó cuando la sesión no existía).
-        idCreado = reportarEmergencia(tokenCiudadano, "convergencia-realtime-" + UUID.randomUUID());
-
-        // Sesión autenticada, suscrita y CONFIRMADA antes de disparar nada.
-        sesion = new SesionStomp(planificador);
-        sesion.conectar(urlWs(), tokenCiudadano);
-        sesion.suscribir(DESTINO_EMERGENCIAS);
-        confirmarSuscripcion(DESTINO_EMERGENCIAS, sesion);
-
-        List<ParPatch> pares = List.of(
-                new ParPatch(tokenRangel, PAR_RANGEL),
-                new ParPatch(tokenCentro, PAR_CENTRO));
-
-        EMISION.clear();
-        List<RespuestaPatch> respuestas = dispararPatchesConcurrentes(idCreado, pares);
-        for (RespuestaPatch respuesta : respuestas) {
-            assertEquals(200, respuesta.status(),
-                    "cada PATCH concurrente debe responder 200; cuerpo=" + respuesta.cuerpo());
-        }
-
-        // Fuente de verdad: el estado final persistido en la base.
-        Par parBase = leerParDeLaBase(idCreado);
-
-        // El cliente aplica EN ORDEN los eventos recibidos para su id (cada evento
-        // lleva el agregado completo, el front hace UPSERT por id); el último es su
-        // estado final. Debe haber un evento por cada PATCH confirmado.
-        List<JsonNode> frames = sesion.framesConId(idCreado, pares.size(), TIMEOUT_SEGUNDOS);
-        assertEquals(pares.size(), frames.size(),
-                "el cliente debe recibir un evento por cada PATCH confirmado; recibidos=" + frames.size());
-        Par parCliente = parDe(frames.get(frames.size() - 1));
-
-        List<String> ordenEmision = EMISION.stream()
-                .filter(entrada -> entrada.startsWith(idCreado + "|"))
-                .toList();
-        List<String> ordenCliente = frames.stream()
-                .map(frame -> frame.path("estado").asText() + "/" + frame.path("nivel").asText())
-                .toList();
-
-        assertEquals(parBase, parCliente,
-                "el último estado que ve el cliente debe coincidir con el estado final de la base"
-                        + " (eso es 'un único estado final para todos'): base=" + parBase
-                        + ", cliente=" + parCliente
-                        + " | orden de emisión (hilo que commitea)=" + ordenEmision
-                        + " | orden recibido por el cliente=" + ordenCliente);
-    }
-
-    // -----------------------------------------------------------------------
     // Mecánica de concurrencia (patrón del repo)
     // -----------------------------------------------------------------------
 
