@@ -23,6 +23,11 @@ import java.util.UUID;
  * the position columns only; the domain {@link Ambulancia#actualizarPosicion}
  * keeps the same {@code estado}. A unit in a mission keeps moving.
  *
+ * <p><b>Published state is re-read (EP-04.F1.US4).</b> The {@code estado} the
+ * event carries is read AFTER the UPDATE, under the row lock, never taken from
+ * the pre-write snapshot: a report racing with an accept must not announce a
+ * unit as available once it is in a mission.
+ *
  * <p><b>Post-commit push (D-T3).</b> The position event is published inside the
  * transaction and the {@code FlotaPushListener} delivers it only after commit.
  *
@@ -57,8 +62,10 @@ public class ReportarPosicionUseCaseImpl implements ReportarPosicionUseCase {
             throw new AmbulanciaAjenaException(ambulanciaId);
         }
 
-        // Domain snapshot: same identity, driver and state; new coordinates.
-        Ambulancia actualizada = ambulancia.actualizarPosicion(lat, lng);
+        // Domain validation of the coordinates (finite numbers). The snapshot it
+        // returns is NOT what gets published: its state is the one read above,
+        // which may already be stale (see the re-read below).
+        ambulancia.actualizarPosicion(lat, lng);
 
         // The state stays untouched by construction: the UPDATE only writes
         // lat/lng (and the version).
@@ -67,9 +74,20 @@ public class ReportarPosicionUseCaseImpl implements ReportarPosicionUseCase {
             throw new AmbulanciaNoDisponibleException(ambulanciaId);
         }
 
-        eventPublisher.publishEvent(new PosicionActualizadaEvent(
-                ambulanciaId, lat, lng, actualizada.getEstado(), heading, fuente));
+        // Re-read AFTER the UPDATE (EP-04.F1.US4 / EP-04.F2.US7). The state read
+        // at the top can be stale: an accept may flip the unit to EN_MISION
+        // between that read and this write, and the position frame would then
+        // reach the map saying AVAILABLE *after* the ASSIGNED frame, painting a
+        // busy unit as free. From the UPDATE on, this transaction holds the row
+        // lock, so a concurrent state transition either committed before (and is
+        // visible here) or waits until this commit: the state read now is the one
+        // the row has when this report commits.
+        Ambulancia persistida = ambulanciaRepository.buscarPorId(ambulanciaId)
+                .orElseThrow(() -> new AmbulanciaNoDisponibleException(ambulanciaId));
 
-        return actualizada;
+        eventPublisher.publishEvent(new PosicionActualizadaEvent(
+                ambulanciaId, lat, lng, persistida.getEstado(), heading, fuente));
+
+        return persistida;
     }
 }
