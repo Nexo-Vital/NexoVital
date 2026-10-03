@@ -71,10 +71,20 @@ Cada módulo repite la misma estructura:
 
 ## Configuración: secreto JWT
 
-La aplicación **no arranca sin `NEXOVITAL_JWT_SECRET`**. No existe un valor por defecto a
-propósito: un secreto comiteado en el repositorio permitiría forjar tokens a cualquiera con
-acceso al código. La clave debe medir **al menos 32 bytes** (HS256); si falta o es más corta,
-el arranque falla con un mensaje que explica cómo generarla.
+En desarrollo local **no hace falta definir nada**: si `NEXOVITAL_JWT_SECRET` no existe, la
+aplicación genera un secreto aleatorio en memoria para esa ejecución y lo avisa en el log. Los
+tokens dejan de valer al reiniciar.
+
+Con el perfil `prod` el secreto es **obligatorio** y el arranque falla si falta. No existe un
+valor fijo en el repositorio a propósito: un secreto comiteado permitiría forjar tokens a
+cualquiera con acceso al código. Si se define, debe medir **al menos 32 bytes** (HS256); uno
+más corto aborta el arranque en cualquier perfil.
+
+> **Temporal.** La generación automática del secreto es una comodidad de desarrollo y se debe
+> retirar antes de salir a producción, para que el secreto vuelva a ser obligatorio en todos los
+> perfiles. El detalle de lo pendiente está en el `README.md` de la raíz.
+
+Para fijarlo a mano (obligatorio en `prod`, opcional en local):
 
 ```powershell
 # PowerShell
