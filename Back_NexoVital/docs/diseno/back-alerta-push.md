@@ -74,3 +74,46 @@ limpiando sola al cubrir el faltante.
 - En vivo: `stomp-alert-verify.mjs` captura el frame real en `/topic/alerts`
   (~20 ms después del 409) y `scripts/prueba-funcional-alerta-escasez.ps1`
   recorre el ciclo completo (409 → alerta → donación → se limpia sola).
+
+---
+
+## Delta 2026-10-05 — una sola alerta por item bajo concurrencia (M-05)
+
+**Problema.** `RegistrarAlertaEscasezUseCaseImpl` buscaba la alerta y, si no la
+encontraba, la creaba. Son dos pasos: con varios rechazos simultáneos del mismo
+item (el escenario de 5 solicitantes, o los 97 rechazos de `DespachoConcurrenciaTest`)
+todos podían buscar antes de que alguno creara, y cada uno dejaba su fila. El
+contador de alertas del centro quedaba inflado. Además, subir la demanda era
+leer-comparar-escribir en Java, así que una demanda menor podía pisar a una mayor.
+
+**Solución.**
+
+| Pieza | Cambio |
+|---|---|
+| `alertas_escasez` | Restricción única `uk_alerta_escasez_centro_item` sobre `(centro_acopio_id, item_id)`. |
+| Crear | `saveAndFlush`: si otro rechazo ya insertó la alerta, falla ahí mismo con error de integridad. |
+| Subir la demanda (FA-4) | Un solo `UPDATE … WHERE cantidad_solicitada < :nueva`. Nunca baja. |
+| Reabrir una alerta cubierta | Un solo `UPDATE … WHERE cantidad_solicitada = :leida` (comparar y escribir). |
+| Reintento | Quien pierde una carrera reintenta en una transacción NUEVA (hasta 5 veces) y encuentra la fila del ganador. |
+
+**Por qué `TransactionTemplate` y no `@Transactional`.** El reintento necesita una
+transacción nueva por intento: la que chocó con la restricción única ya quedó
+marcada para revertirse. La plantilla usa `REQUIRES_NEW`, así que FA-6 no cambia:
+la alerta sigue sobreviviendo al rollback del despacho.
+
+**Push.** Sin cambios de contrato. El evento se publica dentro del intento que
+escribe, así que sale una vez por cambio real y nunca por un intento fallido.
+
+**Si se agotan los intentos** se registra un aviso en el log y el despacho sigue
+respondiendo `409`: un fallo al guardar la alerta no debe convertir el rechazo
+en un `500`.
+
+**Base de datos.** Con H2 y `create-drop` la restricción se crea sola al arrancar.
+El día que exista PostgreSQL con `ddl-auto=validate` hay que agregarla en la
+migración y, si ya hubiera filas duplicadas, dejar por item la de mayor demanda.
+
+**Pruebas** (`DespachoConcurrenciaTest`):
+
+- C1 ahora también afirma que los 97 rechazos dejan **una** alerta.
+- Caso nuevo: 40 rechazos concurrentes con demandas de 4 a 43 sobre stock 3 dejan
+  una sola alerta, con demanda 43.

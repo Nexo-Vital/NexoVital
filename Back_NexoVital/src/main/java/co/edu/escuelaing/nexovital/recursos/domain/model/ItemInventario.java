@@ -9,17 +9,17 @@ import java.util.UUID;
  * framework dependency, like
  * {@link co.edu.escuelaing.nexovital.usuarios.domain.model.Organizacion}.
  *
- * <p>The traffic-light rule (30 % / 80 %) is the mock's authoritative rule:
+ * <p>The traffic-light rule (35 % / 70 % / 100 %), EP-02.F2.US1:
  * <ul>
- *   <li>{@link Semaforo#ROJO} when {@code disponible < 0.30 * requerido};</li>
+ *   <li>{@link Semaforo#COMPLETO} when {@code disponible >= requerido}
+ *       (including {@code requerido == 0}: no declared requirement);</li>
+ *   <li>{@link Semaforo#ROJO} when {@code disponible < 0.35 * requerido};</li>
  *   <li>{@link Semaforo#AMARILLO} when
- *       {@code 0.30 * requerido <= disponible < 0.80 * requerido};</li>
- *   <li>{@link Semaforo#VERDE} when {@code disponible >= 0.80 * requerido}
- *       (80 % IS stable, hence the inclusive lower bound).</li>
+ *       {@code 0.35 * requerido <= disponible < 0.70 * requerido};</li>
+ *   <li>{@link Semaforo#VERDE} otherwise (70 % IS green, hence the inclusive
+ *       lower bound; exactly 35 % is yellow).</li>
  * </ul>
- * The ratios use integer arithmetic to avoid floating point. A
- * {@code requerido <= 0} cannot be divided, so it resolves to
- * {@link Semaforo#VERDE}: there is no declared requirement to fall short of.
+ * The ratios use integer arithmetic to avoid floating point.
  *
  * <p>The aggregate never mutates itself on a donation: the increment is atomic
  * in the database (one {@code @Modifying} JPQL update), never a
@@ -60,19 +60,19 @@ public final class ItemInventario {
     }
 
     /**
-     * Traffic-light level of this item. See the class Javadoc for the 30 / 80
+     * Traffic-light level of this item. See the class Javadoc for the 35 / 70
      * rule and the {@code requerido == 0} decision.
      *
      * @return the level derived from {@code disponible / requerido}
      */
     public Semaforo semaforo() {
-        if (requerido <= 0) {
-            return Semaforo.VERDE;
+        if (requerido <= 0 || disponible >= requerido) {
+            return Semaforo.COMPLETO;
         }
-        if ((long) disponible * 10 < (long) requerido * 3) {
+        if ((long) disponible * 100 < (long) requerido * 35) {
             return Semaforo.ROJO;
         }
-        if ((long) disponible * 10 < (long) requerido * 8) {
+        if ((long) disponible * 100 < (long) requerido * 70) {
             return Semaforo.AMARILLO;
         }
         return Semaforo.VERDE;

@@ -4,6 +4,7 @@ import co.edu.escuelaing.nexovital.recursos.domain.model.AlertaEscasez;
 import co.edu.escuelaing.nexovital.recursos.domain.port.out.AlertaEscasezRepository;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -31,8 +32,20 @@ public class AlertaEscasezRepositoryAdapter implements AlertaEscasezRepository {
     }
 
     @Override
-    public AlertaEscasez guardar(AlertaEscasez alerta) {
-        return toDomain(jpaRepository.save(toEntity(alerta)));
+    public AlertaEscasez crear(AlertaEscasez alerta) {
+        // Flushed on purpose: the unique-constraint error must surface here,
+        // inside the caller's attempt, and not later at commit.
+        return toDomain(jpaRepository.saveAndFlush(toEntity(alerta)));
+    }
+
+    @Override
+    public boolean subirDemandaSiEsMayor(UUID id, int nuevaDemanda) {
+        return jpaRepository.subirDemandaSiEsMayor(id, nuevaDemanda) == 1;
+    }
+
+    @Override
+    public boolean reactivarSiNoCambio(UUID id, int demandaLeida, int nuevaDemanda, Instant ahora) {
+        return jpaRepository.reactivarSiNoCambio(id, demandaLeida, nuevaDemanda, ahora) == 1;
     }
 
     @Override

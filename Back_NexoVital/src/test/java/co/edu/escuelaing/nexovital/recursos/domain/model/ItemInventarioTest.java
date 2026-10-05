@@ -8,14 +8,13 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
- * Reglas puras de {@link ItemInventario}: el semáforo 30 % / 80 % con
- * aritmética entera. Sin Spring ni base de datos: es la regla la que se fija
- * aquí, para que los bordes exactos no dependan de datos sembrados.
+ * Reglas puras de {@link ItemInventario}: el semáforo 35 % / 70 % / 100 % con
+ * aritmética entera (EP-02.F2.US1). Sin Spring ni base de datos: es la regla la
+ * que se fija aquí, para que los bordes exactos no dependan de datos sembrados.
  *
- * <p>La regla del dominio (Javadoc de {@code ItemInventario}) es:
- * {@code < 30 %} ROJO, {@code >= 30 % y < 80 %} AMARILLO, {@code >= 80 %} VERDE.
- * Exactamente 80 % es VERDE (el front usa {@code > 0.8}; ese borde se reporta,
- * no se cambia acá).
+ * <p>{@code < 35 %} ROJO, {@code >= 35 % y < 70 %} AMARILLO,
+ * {@code >= 70 % y < 100 %} VERDE, {@code >= 100 %} (o sin requerimiento)
+ * COMPLETO.
  */
 class ItemInventarioTest {
 
@@ -27,35 +26,41 @@ class ItemInventarioTest {
     }
 
     @Test
-    @DisplayName("Boundary < 30%: 29/100 is ROJO, exactly 30/100 is already AMARILLO")
-    void t1_bordeInferiorDelTreinta() {
-        assertEquals(Semaforo.ROJO, item(29, 100).semaforo(),
-                "29/100 = 29% is below the 30% floor");
-        assertEquals(Semaforo.AMARILLO, item(30, 100).semaforo(),
-                "30/100 = 30% is exactly the floor: AMARILLO");
+    @DisplayName("Boundary 35%: 34/100 is ROJO, exactly 35/100 is already AMARILLO")
+    void t1_bordeInferiorDelTreintaYCinco() {
+        assertEquals(Semaforo.ROJO, item(34, 100).semaforo());
+        assertEquals(Semaforo.AMARILLO, item(35, 100).semaforo());
     }
 
     @Test
-    @DisplayName("Boundary >= 80%: 79/100 is AMARILLO, exactly 80/100 is VERDE")
-    void t2_bordeSuperiorDelOchenta() {
-        assertEquals(Semaforo.AMARILLO, item(79, 100).semaforo(),
-                "79/100 = 79% is still below the 80% ceiling");
-        assertEquals(Semaforo.VERDE, item(80, 100).semaforo(),
-                "80/100 = 80% IS stable per the domain: VERDE");
+    @DisplayName("Boundary 70%: 69/100 is AMARILLO, exactly 70/100 is VERDE")
+    void t2_bordeDelSetenta() {
+        assertEquals(Semaforo.AMARILLO, item(69, 100).semaforo());
+        assertEquals(Semaforo.VERDE, item(70, 100).semaforo());
     }
 
     @Test
-    @DisplayName("requerido == 0 has no declared requirement: VERDE")
-    void t3_sinRequerimientoEsVerde() {
-        assertEquals(Semaforo.VERDE, item(0, 0).semaforo(),
-                "a center that declared no requirement has no shortage to signal");
+    @DisplayName("Boundary 100%: 99/100 is VERDE, 100/100 and surplus are COMPLETO")
+    void t3_bordeDelCien() {
+        assertEquals(Semaforo.VERDE, item(99, 100).semaforo());
+        assertEquals(Semaforo.COMPLETO, item(100, 100).semaforo());
+        assertEquals(Semaforo.COMPLETO, item(150, 100).semaforo());
+    }
+
+    @Test
+    @DisplayName("requerido == 0 has no declared requirement: COMPLETO")
+    void t4_sinRequerimientoEsCompleto() {
+        assertEquals(Semaforo.COMPLETO, item(0, 0).semaforo());
+        assertEquals(Semaforo.COMPLETO, item(44, 0).semaforo());
     }
 
     @Test
     @DisplayName("A center inherits the WORST level of its items")
-    void t4_elPeorNivelGana() {
+    void t5_elPeorNivelGana() {
         assertEquals(Semaforo.ROJO, Semaforo.VERDE.masGrave(Semaforo.ROJO));
         assertEquals(Semaforo.ROJO, Semaforo.ROJO.masGrave(Semaforo.VERDE));
         assertEquals(Semaforo.AMARILLO, Semaforo.VERDE.masGrave(Semaforo.AMARILLO));
+        assertEquals(Semaforo.VERDE, Semaforo.COMPLETO.masGrave(Semaforo.VERDE));
+        assertEquals(Semaforo.VERDE, Semaforo.VERDE.masGrave(Semaforo.COMPLETO));
     }
 }

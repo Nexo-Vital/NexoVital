@@ -2,6 +2,8 @@ package co.edu.escuelaing.nexovital.recursos;
 
 import co.edu.escuelaing.nexovital.recursos.domain.exception.StockInsuficienteException;
 import co.edu.escuelaing.nexovital.recursos.domain.port.in.DespacharStockUseCase;
+import co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.out.AlertaEscasezJpaEntity;
+import co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.out.AlertaEscasezJpaRepository;
 import co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.out.ItemInventarioJpaEntity;
 import co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.out.ItemInventarioJpaRepository;
 import co.edu.escuelaing.nexovital.support.LoginTestBase;
@@ -75,6 +77,9 @@ class DespachoConcurrenciaTest extends LoginTestBase {
     @Autowired
     private ItemInventarioJpaRepository itemInventarioJpaRepository;
 
+    @Autowired
+    private AlertaEscasezJpaRepository alertaEscasezJpaRepository;
+
     private UUID centroId;
     private UUID itemId;
 
@@ -102,6 +107,11 @@ class DespachoConcurrenciaTest extends LoginTestBase {
                 .filter(entidad -> entidad.getNombre().startsWith(PREFIJO_PRUEBA))
                 .toList();
         itemInventarioJpaRepository.deleteAll(aBorrar);
+        // Los rechazos dejan su alerta de escasez: se borra con el item para que
+        // no quede huérfana en la H2 compartida.
+        alertaEscasezJpaRepository.deleteAll(alertaEscasezJpaRepository.findAll().stream()
+                .filter(alerta -> alerta.getNombre().startsWith(PREFIJO_PRUEBA))
+                .toList());
     }
 
     @Test
@@ -121,6 +131,75 @@ class DespachoConcurrenciaTest extends LoginTestBase {
 
         int stockFinal = itemInventarioJpaRepository.findById(itemId).orElseThrow().getDisponible();
         assertEquals(0, stockFinal, "el stock termina agotado, nunca negativo");
+
+        // EP-03.F1.US5 (M-05): los 97 rechazos compiten por registrar la alerta
+        // del MISMO item. Buscar y crear no es atómico, así que sin la
+        // restricción única cada hilo podía dejar su propia fila.
+        List<AlertaEscasezJpaEntity> alertas = alertasDelItem();
+        assertEquals(1, alertas.size(),
+                "97 rechazos simultáneos del mismo item dejan UNA sola alerta de escasez");
+        assertEquals(1, alertas.get(0).getCantidadSolicitada(),
+                "todos pidieron 1 unidad: la demanda registrada es 1");
+    }
+
+    @Test
+    @DisplayName("M-05: rechazos concurrentes con demandas distintas dejan una alerta con la mayor demanda")
+    void rechazosConcurrentesDejanUnaAlertaConLaMayorDemanda() throws Exception {
+        // Stock 3 y cada hilo pide entre 4 y 43 unidades: TODOS son rechazados, y
+        // todos compiten por crear o subir la alerta del mismo item.
+        int rechazosEsperados = 40;
+        int demandaMinima = DISPONIBLE_INICIAL + 1;
+        int demandaMaxima = DISPONIBLE_INICIAL + rechazosEsperados;
+
+        ExecutorService pool = Executors.newFixedThreadPool(HILOS);
+        List<Throwable> resultados = new ArrayList<>();
+        try {
+            CountDownLatch largada = new CountDownLatch(1);
+            List<Future<Throwable>> futuros = new ArrayList<>();
+            for (int cantidad = demandaMinima; cantidad <= demandaMaxima; cantidad++) {
+                int demanda = cantidad;
+                Callable<Throwable> despacho = () -> {
+                    largada.await(ESPERA_MAXIMA_SEGUNDOS, TimeUnit.SECONDS);
+                    try {
+                        despacharStockUseCase.despachar(centroId, itemId, demanda);
+                        return null;
+                    } catch (RuntimeException e) {
+                        return e;
+                    }
+                };
+                futuros.add(pool.submit(despacho));
+            }
+            largada.countDown();
+            for (Future<Throwable> futuro : futuros) {
+                try {
+                    resultados.add(futuro.get(ESPERA_MAXIMA_SEGUNDOS, TimeUnit.SECONDS));
+                } catch (ExecutionException e) {
+                    resultados.add(e.getCause());
+                }
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertEquals(rechazosEsperados, resultados.size());
+        assertTrue(resultados.stream().allMatch(StockInsuficienteException.class::isInstance),
+                "todos piden más que el stock: todos deben ser rechazados con 409, nunca con otro error: "
+                        + describir(resultados));
+        assertEquals(DISPONIBLE_INICIAL, itemInventarioJpaRepository.findById(itemId).orElseThrow().getDisponible(),
+                "un rechazo no mueve el stock");
+
+        List<AlertaEscasezJpaEntity> alertas = alertasDelItem();
+        assertEquals(1, alertas.size(), "una sola alerta por item, aunque 40 rechazos compitan por crearla");
+        // FA-4 bajo carrera: una demanda menor que llega después no puede pisar
+        // a una mayor que se escribió entre su lectura y su escritura.
+        assertEquals(demandaMaxima, alertas.get(0).getCantidadSolicitada(),
+                "la alerta conserva la MAYOR demanda rechazada");
+    }
+
+    private List<AlertaEscasezJpaEntity> alertasDelItem() {
+        return alertaEscasezJpaRepository.findAll().stream()
+                .filter(alerta -> alerta.getItemId().equals(itemId))
+                .toList();
     }
 
     /**

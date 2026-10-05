@@ -4,6 +4,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -18,10 +19,23 @@ import java.util.UUID;
  * cross-module foreign key, ADR-0003). It stores the DEMAND
  * ({@code cantidad_solicitada}), never a frozen deficit: the missing quantity
  * is computed at read time against the current stock (FA-2).
+ *
+ * <p><b>One row per item of a center.</b> The unique constraint on
+ * {@code (centro_acopio_id, item_id)} is what makes "search, and create when
+ * missing" safe under concurrency: of N rejections that all find no alert and
+ * all try to insert, the database lets exactly one through and the rest fail
+ * and retry (see {@code RegistrarAlertaEscasezUseCaseImpl}). Without it each
+ * one would leave its own row and the center would count N alerts.
  */
 @Entity
-@Table(name = "alertas_escasez")
+@Table(name = "alertas_escasez",
+        uniqueConstraints = @UniqueConstraint(
+                name = AlertaEscasezJpaEntity.UNICA_POR_CENTRO_E_ITEM,
+                columnNames = {"centro_acopio_id", "item_id"}))
 public class AlertaEscasezJpaEntity {
+
+    /** Name of the unique constraint that keeps one alert per item of a center. */
+    public static final String UNICA_POR_CENTRO_E_ITEM = "uk_alerta_escasez_centro_item";
 
     @Id
     private UUID id;

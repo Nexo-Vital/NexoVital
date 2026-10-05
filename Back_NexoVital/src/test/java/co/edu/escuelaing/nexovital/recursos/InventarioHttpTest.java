@@ -99,7 +99,7 @@ class InventarioHttpTest extends LoginTestBase {
         items.forEach(nodo -> porNombre.put(nodo.get("nombre").asText(), nodo));
 
         // Quantities are literal from the front fixtures; the level comes from
-        // the domain rule (30/80).
+        // the domain rule (35/70/100).
         assertItem(porNombre, "Agua potable", 12, 60, "ROJO");
         assertItem(porNombre, "Kits de higiene", 18, 40, "AMARILLO");
         assertItem(porNombre, "Medicamentos básicos", 32, 35, "VERDE");
@@ -153,7 +153,7 @@ class InventarioHttpTest extends LoginTestBase {
         assertEquals(Semaforo.AMARILLO, semaforos.get(centroIdPorNombre("Acopio La Gaitana")),
                 "La Gaitana is only as healthy as Alimentos (45%)");
         assertEquals(Semaforo.VERDE, semaforos.get(centroIdPorNombre("Acopio Tibabuyes")),
-                "Tibabuyes has every item at or above 80%");
+                "Tibabuyes has every item at or above 70%");
     }
 
     @Test

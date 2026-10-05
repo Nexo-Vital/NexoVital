@@ -15,7 +15,7 @@ public interface ConsultarSemaforoCentrosUseCase {
     /**
      * @return center id to worst item level. A center with no inventory is
      *         ABSENT from the map, so the caller can distinguish "not declared"
-     *         from any of the three levels (never invented as {@code VERDE}).
+     *         from any of the four levels (never invented as {@code VERDE}).
      */
     Map<UUID, Semaforo> consultar();
 }

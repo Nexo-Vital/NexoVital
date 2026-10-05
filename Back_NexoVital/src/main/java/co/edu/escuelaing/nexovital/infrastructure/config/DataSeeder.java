@@ -122,9 +122,9 @@ public class DataSeeder implements CommandLineRunner {
      * Inventario de demostración de los 3 centros de acopio, LITERAL de los
      * fixtures del front ({@code Front_NexoVital/src/mocks/fixtures.ts},
      * {@code MOCK_CENTROS_AYUDA}): mismas cantidades que el mockup para que
-     * c7/c8 pinten el mismo semáforo contra el back real. El techo del 80 % es
-     * inclusivo en el dominio ({@code ItemInventario.semaforo()}), a diferencia
-     * del front, que usa {@code > 0.8}; es el borde conocido y no se cambia acá.
+     * c7/c8 pinten el mismo semáforo contra el back real. La regla
+     * 35 % / 70 % / 100 % es la misma en el dominio
+     * ({@code ItemInventario.semaforo()}) y en el front ({@code trafficLight()}).
      *
      * <p>Los ids de item son deterministas (derivados del centro y el nombre, ver
      * {@link #idDeItem}) para poder sembrar de forma idempotente sin una clave
