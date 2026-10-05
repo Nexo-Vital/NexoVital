@@ -26,9 +26,14 @@ export const CITIZEN_FALLBACK_POSITION: Ubicacion = { lat: 4.728, lng: -74.078 }
  * folded into "stable": a center that declared no requirement is not healthy,
  * it is simply unknown, so it is counted in its own neutral bucket.
  */
-export type CitizenCenterLevel = 'stable' | 'alert' | 'critical';
+export type CitizenCenterLevel = 'complete' | 'stable' | 'alert' | 'critical';
 
-export const CITIZEN_LEVEL_ORDER: CitizenCenterLevel[] = ['stable', 'alert', 'critical'];
+export const CITIZEN_LEVEL_ORDER: CitizenCenterLevel[] = [
+  'complete',
+  'stable',
+  'alert',
+  'critical',
+];
 
 /**
  * Colour source shared by the map pins and the citizen legend.
@@ -48,6 +53,7 @@ export interface CenterLevelStyle {
 }
 
 export const CENTER_LEVEL_STYLE: Record<CitizenCenterLevel, CenterLevelStyle> = {
+  complete: { bg: 'var(--nv-complete)', fg: 'var(--nv-navy)', badgeFg: 'var(--nv-navy)' },
   stable: { bg: 'var(--nv-lime)', fg: 'var(--nv-navy)', badgeFg: 'var(--nv-navy)' },
   alert: { bg: 'var(--nv-amber)', fg: 'var(--nv-navy)', badgeFg: 'var(--nv-navy)' },
   critical: { bg: 'var(--nv-red)', fg: 'var(--nv-on-accent)', badgeFg: 'var(--nv-red-600)' },
@@ -59,6 +65,7 @@ export const CENTER_LEVEL_STYLE: Record<CitizenCenterLevel, CenterLevelStyle> = 
  * chip. `null` (nothing declared) maps to the neutral `NOT_DECLARED` glyph.
  */
 export const CITIZEN_LEVEL_TRAFFIC: Record<CitizenCenterLevel, TrafficLight> = {
+  complete: 'COMPLETE',
   stable: 'GREEN',
   alert: 'AMBER',
   critical: 'RED',
@@ -83,6 +90,10 @@ export interface CitizenLevelMeta {
  * (a `bg-nv-red-600` chip once did, next to a `--nv-red` pin).
  */
 export const CITIZEN_LEVEL_META: Record<CitizenCenterLevel, CitizenLevelMeta> = {
+  complete: {
+    label: 'Completo',
+    summary: (count) => (count === 1 ? `${count} centro completo` : `${count} centros completos`),
+  },
   stable: {
     label: 'Estable',
     summary: (count) => (count === 1 ? `${count} centro estable` : `${count} centros estables`),
@@ -98,6 +109,7 @@ export const CITIZEN_LEVEL_META: Record<CitizenCenterLevel, CitizenLevelMeta> = 
 };
 
 export interface CitizenCenterCounts {
+  complete: number;
   stable: number;
   alert: number;
   critical: number;
@@ -115,6 +127,8 @@ export interface CitizenCenterCounts {
 /** Maps a domain traffic light onto the citizen level, or `null` when unknown. */
 export function citizenCenterLevel(level: TrafficLight): CitizenCenterLevel | null {
   switch (level) {
+    case 'COMPLETE':
+      return 'complete';
     case 'GREEN':
       return 'stable';
     case 'AMBER':
@@ -147,6 +161,7 @@ export function hasActiveAlert(centro: CentroAyuda): boolean {
  *   - CRITICAL when the worst item light is RED;
  *   - ALERT when there is at least one active alert OR the worst light is AMBER;
  *   - STABLE when there is known inventory (worst light GREEN) and no active alert;
+ *   - COMPLETE when every declared item is 100% covered (worst light COMPLETE) and no alert;
  *   - null (not declared) only when there is neither inventory nor alert data.
  *
  * The same value feeds the citizen rail chip and the map pin badge, so both can
@@ -163,6 +178,9 @@ export function centerLevel(centro: CentroAyuda): CitizenCenterLevel | null {
   if (worst === 'GREEN') {
     return 'stable';
   }
+  if (worst === 'COMPLETE') {
+    return 'complete';
+  }
   return null;
 }
 
@@ -176,6 +194,7 @@ export function centerLevel(centro: CentroAyuda): CitizenCenterLevel | null {
  */
 export function countCentersByLevel(centros: CentroAyuda[]): CitizenCenterCounts {
   const counts: CitizenCenterCounts = {
+    complete: 0,
     stable: 0,
     alert: 0,
     critical: 0,
@@ -199,13 +218,14 @@ export function countCentersByLevel(centros: CentroAyuda[]): CitizenCenterCounts
 
 /**
  * Item a center is shortest on: the lowest available/required ratio among the
- * declared items. `null` when the center declared no requirement at all.
+ * declared items that still have a gap. `null` when the center declared no
+ * requirement at all or every item is fully covered.
  */
 export function mostUrgentItem(centro: CentroAyuda): InventarioItem | null {
   let urgent: InventarioItem | null = null;
   let lowestRatio = Number.POSITIVE_INFINITY;
   for (const item of centro.items) {
-    if (item.requerido <= 0) {
+    if (item.requerido <= 0 || item.disponible >= item.requerido) {
       continue;
     }
     const ratio = item.disponible / item.requerido;
@@ -245,6 +265,9 @@ export function centerShortName(centro: CentroAyuda): string {
  */
 export function centerNeedLabel(centro: CentroAyuda): string {
   const level = centerLevel(centro);
+  if (level === 'complete') {
+    return 'Inventario completo';
+  }
   if (level === 'stable') {
     return 'Inventario suficiente';
   }

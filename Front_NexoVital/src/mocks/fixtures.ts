@@ -318,7 +318,7 @@ export const MOCK_CENTROS_AYUDA: CentroAyuda[] = [
     nombre: 'Acopio Tibabuyes',
     ubicacion: { lat: 4.73, lng: -74.1 },
     items: [
-      // Every declared item is above 80% -> GREEN ("Inventario suficiente").
+      // Worst item: 360/400 = 90% -> GREEN (the others are COMPLETE) ("Inventario suficiente").
       inventoryItem('INV-TB-1', 'CA-TIBABUYES', 'Agua potable', 500, 500, 'singular', 'bidones'),
       inventoryItem('INV-TB-2', 'CA-TIBABUYES', 'Alimentos', 360, 400, 'plural'),
       inventoryItem('INV-TB-3', 'CA-TIBABUYES', 'Cobijas', 200, 0, 'plural', 'unidades'),

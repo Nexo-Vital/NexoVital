@@ -118,6 +118,12 @@ export const TRAFFIC_LIGHT_META: Record<TrafficLight, ColorMeta> = {
     textClass: 'text-ok',
     borderClass: 'border-ok/40',
   },
+  COMPLETE: {
+    label: 'Complete',
+    dotClass: 'bg-nv-complete',
+    textClass: 'text-nv-complete',
+    borderClass: 'border-nv-complete/40',
+  },
   NOT_DECLARED: {
     label: 'Not declared',
     dotClass: 'bg-idle',

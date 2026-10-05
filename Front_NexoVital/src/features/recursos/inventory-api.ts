@@ -19,6 +19,7 @@ const SEMAFORO_TO_TRAFFIC_LIGHT: Record<SemaforoWire, TrafficLight> = {
   ROJO: 'RED',
   AMARILLO: 'AMBER',
   VERDE: 'GREEN',
+  COMPLETO: 'COMPLETE',
 };
 
 /**
@@ -36,7 +37,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isSemaforo(value: unknown): value is SemaforoWire {
-  return value === 'ROJO' || value === 'AMARILLO' || value === 'VERDE';
+  return value === 'ROJO' || value === 'AMARILLO' || value === 'VERDE' || value === 'COMPLETO';
 }
 
 /**

@@ -16,6 +16,7 @@ import {
 } from './citizen-view';
 
 const LEVEL_ICON: Record<CitizenCenterLevel, typeof CircleCheck> = {
+  complete: CircleCheck,
   stable: CircleCheck,
   alert: TriangleAlert,
   critical: OctagonAlert,

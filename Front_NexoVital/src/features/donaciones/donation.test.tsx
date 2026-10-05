@@ -49,7 +49,7 @@ describe('donation logic', () => {
     expect(before.items[0].disponible).toBe(12);
   });
 
-  it('recomputes the item level with the shared 30/80 thresholds', () => {
+  it('recomputes the item level with the shared 35/70/100 thresholds', () => {
     const base: CentroAyuda = {
       id: 'CA-X',
       nombre: 'Centro X',
@@ -67,22 +67,36 @@ describe('donation logic', () => {
       ],
     };
     const lightAfter = (amount: number) => applyDonation(base, 'INV-X', amount).items[0].semaforo;
-    expect(lightAfter(29)).toBe('RED');
-    expect(lightAfter(30)).toBe('AMBER');
-    expect(lightAfter(80)).toBe('AMBER');
-    expect(lightAfter(81)).toBe('GREEN');
+    expect(lightAfter(34)).toBe('RED');
+    expect(lightAfter(35)).toBe('AMBER');
+    expect(lightAfter(69)).toBe('AMBER');
+    expect(lightAfter(70)).toBe('GREEN');
+    expect(lightAfter(99)).toBe('GREEN');
+    expect(lightAfter(100)).toBe('COMPLETE');
   });
 
-  it('offers only the scarce items, most critical first, dropping undeclared and stable', () => {
+  it('offers every item with a gap, most critical first, dropping undeclared and complete', () => {
     expect(donableItems(subaNorte()).map((item) => item.id)).toEqual([
       'INV-SN-1', // 12/60 = 20% -> RED
       'INV-SN-2', // 18/40 = 45% -> AMBER
+      'INV-SN-4', // 44/50 = 88% -> GREEN, still 6 short
+      'INV-SN-3', // 32/35 = 91% -> GREEN, still 3 short
     ]);
 
     const gaitana = MOCK_CENTROS_AYUDA.find((entry) => entry.id === 'CA-LA-GAITANA');
-    // INV-LG-1 is the only declared, non-stable item: LG-2 is 300/300 (GREEN) and
+    // INV-LG-1 is the only item with a gap: LG-2 is 300/300 (COMPLETE) and
     // LG-3 declares no requirement (0), so neither is offered.
     expect(donableItems(gaitana as CentroAyuda).map((item) => item.id)).toEqual(['INV-LG-1']);
+  });
+
+  it('lets a center reach COMPLETE once every gap is donated', () => {
+    let centro = subaNorte();
+    for (const item of donableItems(centro)) {
+      centro = applyDonation(centro, item.id, item.requerido - item.disponible);
+    }
+    expect(centro.items.every((item) => item.semaforo === 'COMPLETE')).toBe(true);
+    expect(donableItems(centro)).toEqual([]);
+    expect(scarceNote(centro, 'now')).toBe('Ya tiene todo lo que necesita.');
   });
 
   it('previews the item and center level before and after', () => {
@@ -98,6 +112,20 @@ describe('donation logic', () => {
       afterPercent: 87,
     });
     expect(preview?.nextScarce?.id).toBe('INV-SN-2');
+  });
+
+  it('says "Sigue en" when the level does not change and guesses no verb', () => {
+    const gaitana = MOCK_CENTROS_AYUDA.find((entry) => entry.id === 'CA-LA-GAITANA') as CentroAyuda;
+    // Backend items carry no grammatical number: the phrase must not guess it.
+    const centro: CentroAyuda = {
+      ...gaitana,
+      items: gaitana.items.map((item) => ({ ...item, grammaticalNumber: undefined })),
+    };
+    const preview = previewDonation(centro, 'INV-LG-1', 40);
+    if (!preview) {
+      throw new Error('preview missing');
+    }
+    expect(previewMessage(preview)).toBe('Sigue en alerta: todavía necesita alimentos.');
   });
 
   it('writes the outcome line with the new scarce item and its verb', () => {
@@ -135,11 +163,11 @@ describe('donation logic', () => {
   });
 
   it('lists every center that needs a donation, worst first, without choosing one', () => {
-    // Suba Norte (critical) and La Gaitana (alert) have scarce items; Tibabuyes
-    // is entirely stable, so it is not a donation target.
+    // Tibabuyes is green (Alimentos 360/400), so it still has a gap to cover.
     expect(donableCenters(MOCK_CENTROS_AYUDA).map((centro) => centro.id)).toEqual([
       'CA-SUBA-NORTE',
       'CA-LA-GAITANA',
+      'CA-TIBABUYES',
     ]);
     expect(donableCenters([])).toEqual([]);
 
@@ -151,7 +179,7 @@ describe('donation logic', () => {
     };
     expect(donableCenters([silent])).toEqual([]);
 
-    // A center whose only declared item is stable needs no donation either.
+    // A center whose only declared item is fully covered needs no donation.
     const stable: CentroAyuda = {
       id: 'CA-STABLE',
       nombre: 'Stable',
@@ -161,9 +189,9 @@ describe('donation logic', () => {
           id: 'INV-STABLE',
           centroAcopioId: 'CA-STABLE',
           nombre: 'Agua',
-          disponible: 90,
+          disponible: 100,
           requerido: 100,
-          semaforo: 'GREEN',
+          semaforo: 'COMPLETE',
           grammaticalNumber: 'singular',
         },
       ],
@@ -221,7 +249,7 @@ describe('DonationDialog', () => {
     cleanup();
   });
 
-  it('lists only the scarce options and previews the mockup result', () => {
+  it('lists every option with a gap and previews the mockup result', () => {
     render(<DonationDialog centro={subaNorte()} onConfirm={vi.fn()} onClose={vi.fn()} />);
 
     const dialog = screen.getByRole('dialog', { name: 'Donar a Acopio Suba Norte' });
@@ -229,11 +257,7 @@ describe('DonationDialog', () => {
       within(dialog)
         .getAllByRole('radio')
         .map((radio) => (radio as HTMLInputElement).value),
-    ).toEqual(['INV-SN-1', 'INV-SN-2']);
-
-    // The stable items (Medicamentos básicos, Cobijas) are not offered.
-    expect(within(dialog).queryByText('Medicamentos básicos')).not.toBeInTheDocument();
-    expect(within(dialog).queryByText('Cobijas')).not.toBeInTheDocument();
+    ).toEqual(['INV-SN-1', 'INV-SN-2', 'INV-SN-4', 'INV-SN-3']);
 
     expect(within(dialog).getByText('12 → 52 de 60')).toBeInTheDocument();
     expect(
@@ -274,6 +298,27 @@ describe('DonationDialog', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar donación' }));
     expect(onConfirm).toHaveBeenCalledWith('INV-SN-1', 39);
+  });
+
+  it('types the amount and caps it at the gap', () => {
+    const onConfirm = vi.fn();
+    render(<DonationDialog centro={subaNorte()} onConfirm={onConfirm} onClose={vi.fn()} />);
+
+    const field = screen.getByRole('textbox', { name: 'Cantidad a donar' });
+    fireEvent.change(field, { target: { value: '33' } });
+    expect(screen.getByText('12 → 45 de 60')).toBeInTheDocument();
+
+    // Clearing the field never breaks the preview, and blur restores a number.
+    fireEvent.change(field, { target: { value: '' } });
+    expect(field).toHaveValue('');
+    fireEvent.blur(field);
+    expect(field).toHaveValue('1');
+
+    // More than the gap is capped at what the center still needs.
+    fireEvent.change(field, { target: { value: '500' } });
+    expect(field).toHaveValue('48');
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar donación' }));
+    expect(onConfirm).toHaveBeenCalledWith('INV-SN-1', 48);
   });
 
   it('clamps the amount when switching to a scarcer maximum', () => {
@@ -318,10 +363,9 @@ describe('DonationCenterPicker', () => {
     expect(rows.map((row) => row.textContent)).toEqual([
       expect.stringContaining('Acopio Suba Norte'),
       expect.stringContaining('Acopio La Gaitana'),
+      expect.stringContaining('Acopio Tibabuyes'),
       'Cancelar',
     ]);
-    // Tibabuyes is entirely stable, so it is not offered.
-    expect(within(panel).queryByText('Acopio Tibabuyes')).not.toBeInTheDocument();
 
     fireEvent.click(within(panel).getByRole('button', { name: /Acopio La Gaitana/ }));
     expect(onSelect).toHaveBeenCalledWith('CA-LA-GAITANA');
@@ -401,7 +445,7 @@ describe('CenterDetailRail', () => {
         'El color del centro es el de su insumo más escaso. Ahora lo que más necesita son kits de higiene.',
       ),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Donar kits de higiene' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Donar a este centro' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Volver al mapa' })).toBeInTheDocument();
   });
 

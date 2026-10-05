@@ -82,7 +82,17 @@ describe('centerLevel', () => {
   });
 
   it('drives one style and one badge per level, with no level left unmapped', () => {
-    expect(Object.keys(CENTER_LEVEL_STYLE).sort()).toEqual(['alert', 'critical', 'stable']);
-    expect(CITIZEN_LEVEL_TRAFFIC).toEqual({ stable: 'GREEN', alert: 'AMBER', critical: 'RED' });
+    expect(Object.keys(CENTER_LEVEL_STYLE).sort()).toEqual([
+      'alert',
+      'complete',
+      'critical',
+      'stable',
+    ]);
+    expect(CITIZEN_LEVEL_TRAFFIC).toEqual({
+      complete: 'COMPLETE',
+      stable: 'GREEN',
+      alert: 'AMBER',
+      critical: 'RED',
+    });
   });
 });

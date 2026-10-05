@@ -212,6 +212,7 @@ describe('mapaToCentros', () => {
       expect(centerLevel(centro)).toBeNull();
     }
     expect(countCentersByLevel(centros)).toEqual({
+      complete: 0,
       stable: 0,
       alert: 0,
       critical: 0,

@@ -78,6 +78,7 @@ const USER_GLYPH = strokeGlyph(ICON_PATHS.user);
 /** Centre badge glyph per traffic light: shape and colour, never colour alone. */
 const CENTER_BADGE_GLYPH: Record<TrafficLight, string> = {
   GREEN: strokeGlyph(ICON_PATHS.circleCheck),
+  COMPLETE: strokeGlyph(ICON_PATHS.circleCheck),
   AMBER: strokeGlyph(ICON_PATHS.alertTriangle),
   RED: strokeGlyph(ICON_PATHS.octagonAlert),
   NOT_DECLARED: strokeGlyph(ICON_PATHS.info),

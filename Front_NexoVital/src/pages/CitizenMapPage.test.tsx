@@ -1524,8 +1524,8 @@ describe('CitizenMapPage', () => {
     const picker = screen.getByRole('complementary', { name: 'Elegir centro de donación' });
     expect(within(picker).getByText('Acopio Suba Norte')).toBeInTheDocument();
     expect(within(picker).getByText('Acopio La Gaitana')).toBeInTheDocument();
-    // Tibabuyes is entirely stable, so it is not a donation target.
-    expect(within(picker).queryByText('Acopio Tibabuyes')).not.toBeInTheDocument();
+    // Tibabuyes is green (90%), so it still has a gap and is offered too.
+    expect(within(picker).getByText('Acopio Tibabuyes')).toBeInTheDocument();
 
     // The citizen chooses Suba Norte; only now does the c7 detail open.
     fireEvent.click(within(picker).getByRole('button', { name: /Acopio Suba Norte/ }));
@@ -1556,7 +1556,7 @@ describe('CitizenMapPage', () => {
       within(dialog)
         .getAllByRole('radio')
         .map((radio) => (radio as HTMLInputElement).value),
-    ).toEqual(['INV-SN-1', 'INV-SN-2']);
+    ).toEqual(['INV-SN-1', 'INV-SN-2', 'INV-SN-4', 'INV-SN-3']);
     expect(within(dialog).getByText('12 → 52 de 60')).toBeInTheDocument();
     expect(within(dialog).getByText('bidones de 5 L')).toBeInTheDocument();
     expect(
@@ -1583,9 +1583,7 @@ describe('CitizenMapPage', () => {
         'El color del centro es el de su insumo más escaso. Ahora lo que más necesita son kits de higiene.',
       ),
     ).toBeInTheDocument();
-    expect(
-      within(after).getByRole('button', { name: 'Donar kits de higiene' }),
-    ).toBeInTheDocument();
+    expect(within(after).getByRole('button', { name: 'Donar a este centro' })).toBeInTheDocument();
     expect(within(after).getByRole('button', { name: 'Volver al mapa' })).toBeInTheDocument();
 
     expect(screen.getByTestId('map-canvas')).toHaveAttribute(

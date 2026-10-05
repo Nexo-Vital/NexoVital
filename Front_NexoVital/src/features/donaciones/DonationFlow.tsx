@@ -18,7 +18,6 @@ import {
   CITIZEN_LEVEL_META,
   centerNeedLabel,
   citizenCenterLevel,
-  mostUrgentItem,
   NOT_DECLARED_CENTER_STYLE,
 } from '@/features/ciudadano/citizen-view';
 import { centroSemaforo, trafficLight } from '@/features/recursos/traffic-light';
@@ -130,7 +129,11 @@ export function CenterDetailRail({
   const style = levelStyle(level);
   const distance = formatDistanceTo(distanceKm(origin, centro.ubicacion));
   const secondary = centro.direccion ? `${centro.direccion} · ${distance}` : distance;
-  const urgent = mostUrgentItem(centro);
+  const canDonate = donableItems(centro).length > 0;
+  const donateBlockedReason =
+    centro.items.length === 0
+      ? 'Este centro no declara insumos todavía.'
+      : 'Este centro ya tiene todo lo que necesita.';
   const donatedItem = lastDonation
     ? (centro.items.find((item) => item.id === lastDonation.itemId) ?? null)
     : null;
@@ -227,36 +230,26 @@ export function CenterDetailRail({
         </div>
       </section>
 
-      {lastDonation ? (
-        <>
-          <button
-            type="button"
-            onClick={onDonate}
-            disabled={urgent === null}
-            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md bg-nv-lime px-5 font-semibold text-nv-navy text-sm disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <Warehouse className="size-5" aria-hidden />
-            Donar {urgent ? urgent.nombre.toLowerCase() : 'suministros'}
-          </button>
-          <button
-            type="button"
-            onClick={onBackToMap}
-            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md border-[1.5px] border-nv-line bg-white px-5 font-semibold text-nv-navy text-sm"
-          >
-            <MapIcon className="size-5" aria-hidden />
-            Volver al mapa
-          </button>
-        </>
-      ) : (
+      {/* One generic action: the dialog lists every item with a gap, so the
+          button never names a single item (it used to hide the other needs). */}
+      <button
+        type="button"
+        onClick={onDonate}
+        disabled={!canDonate}
+        title={canDonate ? undefined : donateBlockedReason}
+        className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md bg-nv-lime px-5 font-semibold text-nv-navy text-sm disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        <Warehouse className="size-5" aria-hidden />
+        Donar a este centro
+      </button>
+      {lastDonation && (
         <button
           type="button"
-          onClick={onDonate}
-          disabled={centro.items.length === 0}
-          title={centro.items.length === 0 ? 'Este centro no declara insumos todavía.' : undefined}
-          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md bg-nv-lime px-5 font-semibold text-nv-navy text-sm disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={onBackToMap}
+          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md border-[1.5px] border-nv-line bg-white px-5 font-semibold text-nv-navy text-sm"
         >
-          <Warehouse className="size-5" aria-hidden />
-          Donar a este centro
+          <MapIcon className="size-5" aria-hidden />
+          Volver al mapa
         </button>
       )}
     </aside>
@@ -361,15 +354,17 @@ export function DonationDialog({ centro, onConfirm, onClose }: DonationDialogPro
   const [itemId, setItemId] = useState(() => options[0]?.id ?? '');
   const item = options.find((entry) => entry.id === itemId) ?? options[0] ?? null;
   const maxAmount = item ? Math.max(1, item.requerido - item.disponible) : 1;
-  const [rawAmount, setRawAmount] = useState(DEFAULT_AMOUNT);
-  const amount = Math.min(Math.max(1, rawAmount), maxAmount);
+  // `null` while the field is being cleared to type a new number; the preview
+  // then falls back to 1 and the field is restored on blur.
+  const [rawAmount, setRawAmount] = useState<number | null>(DEFAULT_AMOUNT);
+  const amount = Math.min(Math.max(1, rawAmount ?? 1), maxAmount);
   const preview = item ? previewDonation(centro, item.id, amount) : null;
 
   const selectItem = (nextId: string) => {
     setItemId(nextId);
     const next = options.find((entry) => entry.id === nextId);
     const nextMax = next ? Math.max(1, next.requerido - next.disponible) : 1;
-    setRawAmount((previous) => Math.min(Math.max(1, previous), nextMax));
+    setRawAmount((previous) => Math.min(Math.max(1, previous ?? 1), nextMax));
   };
 
   return (
@@ -444,14 +439,26 @@ export function DonationDialog({ centro, onConfirm, onClose }: DonationDialogPro
             >
               <Minus className="size-5" aria-hidden />
             </button>
-            <span className="tabular flex flex-1 items-center justify-center gap-1.5 font-bold text-xl">
-              {amount}
+            <label className="tabular flex flex-1 items-center justify-center gap-1.5 font-bold text-xl">
+              <input
+                type="text"
+                inputMode="numeric"
+                aria-label="Cantidad a donar"
+                value={rawAmount === null ? '' : amount}
+                onChange={(event) => {
+                  const digits = event.target.value.replace(/\D/g, '');
+                  setRawAmount(digits === '' ? null : Number(digits));
+                }}
+                onBlur={() => setRawAmount(amount)}
+                onFocus={(event) => event.target.select()}
+                className="w-16 rounded-nv-sm border-0 bg-transparent text-center font-bold text-xl outline-none focus:bg-nv-mint"
+              />
               {(item?.unitDetail ?? item?.unidad) && (
                 <small className="font-medium text-nv-navy-400 text-sm">
                   {item.unitDetail ?? item.unidad}
                 </small>
               )}
-            </span>
+            </label>
             <button
               type="button"
               aria-label="Agregar uno"
@@ -462,6 +469,9 @@ export function DonationDialog({ centro, onConfirm, onClose }: DonationDialogPro
               <Plus className="size-5" aria-hidden />
             </button>
           </div>
+          <p className="mt-1.5 text-nv-navy-400 text-xs">
+            Escribe la cantidad o ajústala con − y +. Máximo {maxAmount}: lo que le falta al centro.
+          </p>
         </div>
 
         {preview && item && (

@@ -139,7 +139,7 @@ export type MapaPayload = MapaElementoUpsertPayload | MapaElementoDeletePayload;
  * normalizes the VALUES to English, so this is the translation edge shared by
  * the REST read (`GET .../inventario`) and the realtime push.
  */
-export type SemaforoWire = 'ROJO' | 'AMARILLO' | 'VERDE';
+export type SemaforoWire = 'ROJO' | 'AMARILLO' | 'VERDE' | 'COMPLETO';
 
 /**
  * Inventory item published on /topic/suministros. It is the SAME projection the

@@ -55,6 +55,8 @@
   --nv-sky: #cae2ff;
   --nv-lime: #b7f599;
   --nv-teal: #5dbaa8;
+  /* Fully covered / no requirement (EP-02.F2.US1): aqua, apart from the hospital teal. */
+  --nv-complete: #7fe3d6;
   --nv-navy: #255181;
   --nv-navy-600: #3d6f9e;
   --nv-navy-400: #4a6e91;
@@ -170,6 +172,7 @@
   --color-nv-sky: var(--nv-sky);
   --color-nv-lime: var(--nv-lime);
   --color-nv-teal: var(--nv-teal);
+  --color-nv-complete: var(--nv-complete);
   --color-nv-navy: var(--nv-navy);
   --color-nv-navy-600: var(--nv-navy-600);
   --color-nv-navy-400: var(--nv-navy-400);

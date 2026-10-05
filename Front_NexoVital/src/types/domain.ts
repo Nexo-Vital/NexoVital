@@ -14,8 +14,8 @@
  *                    <- DISPONIBLE | EN_MISION | EN_RUTA | MANTENIMIENTO
  *   RequestState     PENDING | ASSIGNED | CONFIRMED | TAKEN | REJECTED | TIMEOUT | CANCELLED
  *                    <- PENDIENTE | ASIGNADA | CONFIRMADA | TOMADA | RECHAZADA | TIMEOUT | CANCELADA
- *   TrafficLight     RED | AMBER | GREEN | NOT_DECLARED
- *                    <- ROJO | AMARILLO | VERDE (NOT_DECLARED is UI-only)
+ *   TrafficLight     RED | AMBER | GREEN | COMPLETE | NOT_DECLARED
+ *                    <- ROJO | AMARILLO | VERDE | COMPLETO (NOT_DECLARED is UI-only)
  */
 
 export type RolUsuario =
@@ -149,7 +149,7 @@ export interface SolicitudAmbulancia {
   llegadaEn?: string;
 }
 
-export type TrafficLight = 'RED' | 'AMBER' | 'GREEN' | 'NOT_DECLARED';
+export type TrafficLight = 'RED' | 'AMBER' | 'GREEN' | 'COMPLETE' | 'NOT_DECLARED';
 
 /** Grammatical number of an item name, used to agree the need label's verb. */
 export type GrammaticalNumber = 'singular' | 'plural';

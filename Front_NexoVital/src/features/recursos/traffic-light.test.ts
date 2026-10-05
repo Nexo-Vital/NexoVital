@@ -21,25 +21,30 @@ function centroWith(semaforos: TrafficLight[]): CentroAyuda {
 }
 
 describe('trafficLight', () => {
-  it('returns NOT_DECLARED when no requirement was declared', () => {
-    expect(trafficLight(50, 0)).toBe('NOT_DECLARED');
-    expect(trafficLight(0, 0)).toBe('NOT_DECLARED');
+  it('returns COMPLETE when no requirement was declared', () => {
+    expect(trafficLight(50, 0)).toBe('COMPLETE');
+    expect(trafficLight(0, 0)).toBe('COMPLETE');
   });
 
-  it('returns RED below 30% of the requirement', () => {
+  it('returns RED below 35% of the requirement', () => {
     expect(trafficLight(0, 100)).toBe('RED');
-    expect(trafficLight(29, 100)).toBe('RED');
+    expect(trafficLight(34, 100)).toBe('RED');
   });
 
-  it('returns AMBER between 30% and 80% inclusive', () => {
-    expect(trafficLight(30, 100)).toBe('AMBER');
+  it('returns AMBER from 35% (inclusive) to below 70%', () => {
+    expect(trafficLight(35, 100)).toBe('AMBER');
     expect(trafficLight(50, 100)).toBe('AMBER');
-    expect(trafficLight(80, 100)).toBe('AMBER');
+    expect(trafficLight(69, 100)).toBe('AMBER');
   });
 
-  it('returns GREEN above 80% of the requirement', () => {
-    expect(trafficLight(81, 100)).toBe('GREEN');
-    expect(trafficLight(200, 100)).toBe('GREEN');
+  it('returns GREEN from 70% (inclusive) to below 100%', () => {
+    expect(trafficLight(70, 100)).toBe('GREEN');
+    expect(trafficLight(99, 100)).toBe('GREEN');
+  });
+
+  it('returns COMPLETE at 100% or more', () => {
+    expect(trafficLight(100, 100)).toBe('COMPLETE');
+    expect(trafficLight(200, 100)).toBe('COMPLETE');
   });
 });
 
@@ -56,6 +61,8 @@ describe('centroSemaforo', () => {
     expect(centroSemaforo(centroWith(['GREEN', 'GREEN']))).toBe('GREEN');
     expect(centroSemaforo(centroWith(['GREEN', 'AMBER', 'GREEN']))).toBe('AMBER');
     expect(centroSemaforo(centroWith(['GREEN', 'AMBER', 'RED']))).toBe('RED');
+    expect(centroSemaforo(centroWith(['COMPLETE', 'GREEN']))).toBe('GREEN');
+    expect(centroSemaforo(centroWith(['COMPLETE', 'COMPLETE']))).toBe('COMPLETE');
   });
 
   it('ignores NOT_DECLARED items when a real level exists', () => {

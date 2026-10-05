@@ -33,6 +33,7 @@ describe('trafficLightFromWire', () => {
     expect(trafficLightFromWire('ROJO')).toBe('RED');
     expect(trafficLightFromWire('AMARILLO')).toBe('AMBER');
     expect(trafficLightFromWire('VERDE')).toBe('GREEN');
+    expect(trafficLightFromWire('COMPLETO')).toBe('COMPLETE');
   });
 });
 
