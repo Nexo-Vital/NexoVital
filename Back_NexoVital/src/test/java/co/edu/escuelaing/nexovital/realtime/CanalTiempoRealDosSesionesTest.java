@@ -206,6 +206,8 @@ class CanalTiempoRealDosSesionesTest {
         assertEquals(id, frameRangel.get("id").asText());
         assertEquals(descripcion, frameCiudadano.get("descripcion").asText(),
                 "el frame debe traer la descripción reportada, no otro evento");
+        assertEquals("DERRUMBE", frameRangel.get("tipo").asText(),
+                "el frame en vivo debe traer el tipo de emergencia reportado (EP-02.F1.US3)");
 
         // Latencia medida con nanoTime, afirmada como cota (D9: < 1 s).
         assertTrue(recepcionCiudadanoNanos - disparoNanos < LATENCIA_MAXIMA_NANOS,
@@ -425,6 +427,7 @@ class CanalTiempoRealDosSesionesTest {
         headers.setBearerAuth(token);
         Map<String, Object> cuerpo = Map.of(
                 "ubicacion", Map.of("lat", SUBA_LAT, "lng", SUBA_LNG),
+                "tipo", "DERRUMBE",
                 "nivel", "ALTO",
                 "descripcion", descripcion);
         return restTemplate.postForEntity(

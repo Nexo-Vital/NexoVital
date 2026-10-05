@@ -56,6 +56,7 @@ import {
   type LiveUnitPayload,
   type RealtimePort,
 } from '@/shared/realtime';
+import { useRealtimeReconnect } from '@/shared/realtime/use-realtime-reconnect';
 import type {
   Ambulancia,
   CentroAyuda,
@@ -174,6 +175,23 @@ export default function DriverConsolePage({
       active = false;
     };
   }, [ambulancias, demo]);
+  /*
+    The broker does not replay: a state change published while the channel was
+    down (a unit taking a mission, a unit being released) never arrives. When the
+    channel comes back the fleet snapshot is read again, so the map cannot keep
+    painting a busy unit as available. Off for injected lists and demo mode,
+    whose source is not the backend.
+  */
+  const reloadFleet = useCallback(() => {
+    fetchFlota()
+      .then((unidades) => {
+        useFleetStore.getState().hydrate(unidades);
+      })
+      .catch(() => {
+        // Same rule as the mount read: a failed read leaves the store as-is.
+      });
+  }, []);
+  useRealtimeReconnect(ambulancias === undefined && !demo ? port : null, reloadFleet);
   // Off demo the driver's OWN unit comes from the server-scoped `/mia` resource
   // (the general fleet list no longer exposes any driver id). A failed read
   // leaves the unit unresolved and the UI says so, never substituting a fixture.

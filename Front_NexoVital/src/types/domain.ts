@@ -8,6 +8,8 @@
  *                    <- BAJO | MEDIO | ALTO | CRITICO
  *   EmergencyStatus  REPORTED | IN_PROGRESS | ON_HOLD | RESOLVED | CLOSED
  *                    <- REGISTRADA | EN_ATENCION | EN_ESPERA | RESUELTA | CERRADA
+ *   EmergencyType    FLOOD | FIRE | LANDSLIDE | EARTHQUAKE | ACCIDENT | OTHER
+ *                    <- INUNDACION | INCENDIO | DERRUMBE | SISMO | ACCIDENTE | OTRO
  *   AmbulanceState   AVAILABLE | ASSIGNED | EN_ROUTE | MAINTENANCE
  *                    <- DISPONIBLE | EN_MISION | EN_RUTA | MANTENIMIENTO
  *   RequestState     PENDING | ASSIGNED | CONFIRMED | TAKEN | REJECTED | TIMEOUT | CANCELLED
@@ -37,10 +39,19 @@ export interface Ubicacion {
 
 export type EmergencyLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 export type EmergencyStatus = 'REPORTED' | 'IN_PROGRESS' | 'ON_HOLD' | 'RESOLVED' | 'CLOSED';
+/** What is happening (closed list, EP-02.F1.US3); the level says how severe it is. */
+export type EmergencyType = 'FLOOD' | 'FIRE' | 'LANDSLIDE' | 'EARTHQUAKE' | 'ACCIDENT' | 'OTHER';
 
 export interface Emergencia {
   id: string;
   ubicacion: Ubicacion;
+  /**
+   * Emergency type the citizen picked when reporting. Optional on the READ side
+   * only: demo fixtures and frames that predate the field do not carry it, and a
+   * missing type must not drop the whole emergency. The report itself always
+   * sends one (`ReportarEmergenciaInput.tipo` is required).
+   */
+  tipo?: EmergencyType;
   nivel: EmergencyLevel;
   estado: EmergencyStatus;
   descripcion?: string;

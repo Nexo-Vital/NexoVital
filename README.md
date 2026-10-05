@@ -15,8 +15,8 @@ Doble clic o `.\run.cmd` desde una terminal. El launcher:
 
 1. verifica **Node**, **Java 21** y **Maven**; si falta alguno lo instala con `winget`;
 2. instala las dependencias del front (`npm install`) la primera vez;
-3. genera un `NEXOVITAL_JWT_SECRET` de desarrollo para esta sesión (el back **no arranca sin
-   secreto** y no se versiona ninguno);
+3. genera un `NEXOVITAL_JWT_SECRET` de desarrollo para esta sesión (no se versiona ninguno; en
+   desarrollo el back también lo genera solo si falta, ver la nota de más abajo);
 4. levanta el **back** en `http://localhost:8080`;
 5. espera a que el back acepte conexiones de verdad (no es un `sleep` a ciegas);
 6. levanta el **front** en `http://localhost:5173`;
@@ -58,7 +58,6 @@ El launcher **avisa** si un puerto está ocupado, pero nunca mata procesos ajeno
 ```powershell
 # Back
 cd Back_NexoVital
-$env:NEXOVITAL_JWT_SECRET = [Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Max 256 }))
 mvn spring-boot:run
 
 # Front (en otra terminal)
@@ -75,6 +74,22 @@ npm run dev
   `conductor1@nexovital.co` / `conductor123`.
 - El secreto JWT se genera por corrida: al reiniciar el back, los tokens previos dejan de valer
   y hay que volver a iniciar sesión. Es intencional: no se commitea ningún secreto.
+
+### Secreto JWT automático en desarrollo (temporal)
+
+Para no tener que exportar `NEXOVITAL_JWT_SECRET` en cada terminal, el back genera un secreto
+aleatorio en memoria cuando la variable no está definida y el perfil **no** es `prod`
+(`JwtTokenAdapter`). Por eso en local basta con `mvn spring-boot:run`.
+
+**Es una comodidad de desarrollo que se agregó de forma temporal y se debe retirar antes de
+salir a producción.** Pendiente para ese momento:
+
+- quitar la generación automática de `JwtTokenAdapter`, de modo que el secreto vuelva a ser
+  obligatorio en todos los perfiles y el arranque falle si falta;
+- definir `NEXOVITAL_JWT_SECRET` (al menos 32 bytes) en el entorno de despliegue;
+- ajustar `JwtSecretoArranqueTest` y esta sección.
+
+Mientras tanto, con el perfil `prod` el secreto ya es obligatorio: sin él el arranque aborta.
 
 ## Documentación de la API
 

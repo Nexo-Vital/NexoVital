@@ -296,6 +296,7 @@ class EmergenciaActualizacionHttpTest extends LoginTestBase {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "ubicacion", Map.of("lat", SUBA_LAT, "lng", SUBA_LNG),
+                                "tipo", "INUNDACION",
                                 "nivel", "BAJO",
                                 "descripcion", descripcion))))
                 .andExpect(status().isCreated())
@@ -320,6 +321,8 @@ class EmergenciaActualizacionHttpTest extends LoginTestBase {
         assertEquals(original.get("id").asText(), actualizada.get("id").asText(), "el id no cambia");
         assertEquals(original.get("descripcion").asText(), actualizada.get("descripcion").asText(),
                 "la descripcion no viaja en el PATCH y no debe cambiar");
+        assertEquals(original.get("tipo").asText(), actualizada.get("tipo").asText(),
+                "el tipo se fija al reportar y el PATCH no lo cambia");
         assertEquals(original.get("createdAt").asText(), actualizada.get("createdAt").asText(),
                 "createdAt no se reestampa al actualizar");
         assertEquals(original.get("ubicacion").get("lat").asDouble(),

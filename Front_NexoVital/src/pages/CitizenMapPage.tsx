@@ -77,6 +77,7 @@ import {
   getRealtimePort,
   type RealtimePort,
 } from '@/shared/realtime';
+import { useRealtimeReconnect } from '@/shared/realtime/use-realtime-reconnect';
 import type {
   Ambulancia,
   CentroAyuda,
@@ -167,6 +168,23 @@ export default function CitizenMapPage({
       active = false;
     };
   }, [ambulancias, demo]);
+  /*
+    The broker does not replay: a state change published while the channel was
+    down (a unit taking a mission, a unit being released) never arrives. When the
+    channel comes back the fleet snapshot is read again, so the map cannot keep
+    painting a busy unit as available. Off for injected lists and demo mode,
+    whose source is not the backend.
+  */
+  const reloadFleet = useCallback(() => {
+    fetchFlota()
+      .then((unidades) => {
+        useFleetStore.getState().hydrate(unidades);
+      })
+      .catch(() => {
+        // Same rule as the mount read: a failed read leaves the store as-is.
+      });
+  }, []);
+  useRealtimeReconnect(ambulancias === undefined && !demo ? port : null, reloadFleet);
   /*
     Emergencies follow the SAME source discipline as the fleet: an injected list
     wins, demo mode hydrates the fixtures, and off demo mode `GET
@@ -342,7 +360,8 @@ export default function CitizenMapPage({
 
   // "Reportar zona afectada" (task 250): the report dialog and the point it takes
   // as the map center. The center tracks MapCanvas pans and resets to the citizen
-  // whenever the device position changes, so "usar el centro del mapa" is honest.
+  // whenever the device position changes. The dialog only uses it to BIAS the
+  // address search towards the part of the city the citizen is looking at.
   const [reportOpen, setReportOpen] = useState(false);
   const [mapCenter, setMapCenter] = useState<Ubicacion>(selfPosition);
   useEffect(() => {
@@ -431,6 +450,7 @@ export default function CitizenMapPage({
           // overwrite the first. `randomUUID()` is unique per client.
           id: crypto.randomUUID(),
           ubicacion: input.ubicacion,
+          tipo: input.tipo,
           nivel: input.nivel,
           estado: 'REPORTED',
           descripcion: input.descripcion,

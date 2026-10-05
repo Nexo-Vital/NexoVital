@@ -39,6 +39,17 @@ export class FakeRealtimePort implements RealtimePort {
     };
   }
 
+  /** Simulates a connection-state transition (drop / reconnect). */
+  setState(next: RealtimeState): void {
+    if (this.state === next) {
+      return;
+    }
+    this.state = next;
+    for (const handler of this.stateHandlers) {
+      handler(next);
+    }
+  }
+
   emit(destination: string, payload: unknown): void {
     const envelope: RealtimeEnvelope = { destination, payload };
     for (const handler of this.handlers.get(destination) ?? []) {

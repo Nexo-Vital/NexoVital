@@ -3,6 +3,8 @@ import {
   EMERGENCY_LEVEL_FROM_WIRE,
   EMERGENCY_LEVEL_TO_WIRE,
   EMERGENCY_STATUS_FROM_WIRE,
+  EMERGENCY_TYPE_FROM_WIRE,
+  EMERGENCY_TYPE_TO_WIRE,
   fromWireEmergency,
 } from './emergency-wire';
 
@@ -20,6 +22,22 @@ const WIRE = {
 describe('fromWireEmergency', () => {
   it('translates the Spanish level and status to the English UI enums', () => {
     expect(fromWireEmergency(WIRE)).toMatchObject({ nivel: 'HIGH', estado: 'REPORTED' });
+  });
+
+  it('translates the Spanish emergency type to the English UI enum', () => {
+    expect(fromWireEmergency({ ...WIRE, tipo: 'DERRUMBE' })?.tipo).toBe('LANDSLIDE');
+    expect(fromWireEmergency({ ...WIRE, tipo: 'OTRO' })?.tipo).toBe('OTHER');
+  });
+
+  it('keeps the emergency and omits the type when the wire sends none or an unknown one', () => {
+    expect(fromWireEmergency(WIRE)).not.toBeNull();
+    expect(fromWireEmergency(WIRE)).not.toHaveProperty('tipo');
+    expect(fromWireEmergency({ ...WIRE, tipo: 'TORNADO' })).not.toHaveProperty('tipo');
+    expect(fromWireEmergency({ ...WIRE, tipo: 'toString' })).not.toHaveProperty('tipo');
+  });
+
+  it('passes an already-English type through', () => {
+    expect(fromWireEmergency({ ...WIRE, tipo: 'FIRE' })?.tipo).toBe('FIRE');
   });
 
   it('maps a null zonaId to the empty-string convention', () => {
@@ -85,5 +103,19 @@ describe('fromWireEmergency', () => {
       HIGH: 'ALTO',
       CRITICAL: 'CRITICO',
     });
+  });
+
+  it('declares every emergency type in both directions', () => {
+    expect(EMERGENCY_TYPE_FROM_WIRE).toEqual({
+      INUNDACION: 'FLOOD',
+      INCENDIO: 'FIRE',
+      DERRUMBE: 'LANDSLIDE',
+      SISMO: 'EARTHQUAKE',
+      ACCIDENTE: 'ACCIDENT',
+      OTRO: 'OTHER',
+    });
+    for (const [wire, ui] of Object.entries(EMERGENCY_TYPE_FROM_WIRE)) {
+      expect(EMERGENCY_TYPE_TO_WIRE[ui]).toBe(wire);
+    }
   });
 });

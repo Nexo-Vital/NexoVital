@@ -4,6 +4,7 @@ import type {} from '@maplibre/maplibre-gl-leaflet';
 import L from 'leaflet';
 import { useEffect, useMemo, useState } from 'react';
 import { MapContainer, Marker, Polyline, useMap, useMapEvents, ZoomControl } from 'react-leaflet';
+import { emergencyTitle } from '@/features/emergencias/emergency-type';
 import { filterByLevel, useLayersStore } from '@/features/mapa/layers-store';
 import { cn } from '@/lib/utils';
 import type { Ambulancia, CentroAyuda, Emergencia, Ubicacion } from '@/types/domain';
@@ -353,6 +354,9 @@ export function MapCanvas({
           key={emergency.id}
           position={[emergency.ubicacion.lat, emergency.ubicacion.lng]}
           icon={emergencyIcon(emergency)}
+          // Native hover tooltip with the reported type and comment
+          // (EP-02.F1.US3); Leaflet omits the attribute when the title is empty.
+          title={emergencyTitle(emergency)}
           eventHandlers={{ click: () => onSelectEmergency(emergency.id) }}
         />
       ))}

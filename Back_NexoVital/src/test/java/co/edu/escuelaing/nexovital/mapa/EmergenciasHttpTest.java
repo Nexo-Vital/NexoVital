@@ -77,6 +77,8 @@ class EmergenciasHttpTest extends LoginTestBase {
         assertDoesNotThrow(() -> UUID.fromString(emergencia.get("id").asText()),
                 "the server must assign a UUID id");
         assertEquals("ALTO", emergencia.get("nivel").asText());
+        assertEquals("INCENDIO", emergencia.get("tipo").asText(),
+                "the reported type must come back (EP-02.F1.US3: tipo de emergencia)");
         assertEquals("REGISTRADA", emergencia.get("estado").asText(),
                 "a new emergency is born REGISTRADA (server-assigned)");
         assertEquals("Incendio en bodega", emergencia.get("descripcion").asText());
@@ -155,6 +157,52 @@ class EmergenciasHttpTest extends LoginTestBase {
                         .content(cuerpoSin("nivel")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.codigo").value("DATOS_INVALIDOS"));
+    }
+
+    /**
+     * EP-02.F1.US3: the citizen reports "indicando tipo de emergencia y
+     * ubicación", so a report without a type is as invalid as one without a
+     * location.
+     */
+    @Test
+    @DisplayName("POST /emergencias without tipo: 400 DATOS_INVALIDOS")
+    void t5b_sinTipo_devuelve400() throws Exception {
+        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+
+        mockMvc.perform(post("/api/v1/emergencias")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpoSin("tipo")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("DATOS_INVALIDOS"));
+    }
+
+    @Test
+    @DisplayName("POST /emergencias with a tipo outside the closed list: 400 DATOS_INVALIDOS")
+    void t5c_tipoDesconocido_devuelve400() throws Exception {
+        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+
+        mockMvc.perform(post("/api/v1/emergencias")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpoConTipo("TORNADO")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("DATOS_INVALIDOS"));
+    }
+
+    @Test
+    @DisplayName("POST /emergencias with every tipo of the closed list: 201 and the same tipo back")
+    void t5d_cadaTipoDelCatalogo_devuelve201() throws Exception {
+        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+
+        for (String tipo : new String[] {"INUNDACION", "INCENDIO", "DERRUMBE", "SISMO", "ACCIDENTE", "OTRO"}) {
+            mockMvc.perform(post("/api/v1/emergencias")
+                            .header("Authorization", "Bearer " + token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(cuerpoConTipo(tipo)))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.tipo").value(tipo));
+        }
     }
 
     @Test
@@ -340,8 +388,18 @@ class EmergenciasHttpTest extends LoginTestBase {
     private String cuerpo(double lat, double lng, String nivel, String descripcion) throws Exception {
         return objectMapper.writeValueAsString(Map.of(
                 "ubicacion", Map.of("lat", lat, "lng", lng),
+                "tipo", "INCENDIO",
                 "nivel", nivel,
                 "descripcion", descripcion));
+    }
+
+    /** A well-formed body whose only variable is the emergency type. */
+    private String cuerpoConTipo(String tipo) throws Exception {
+        return objectMapper.writeValueAsString(Map.of(
+                "ubicacion", Map.of("lat", SUBA_LAT, "lng", SUBA_LNG),
+                "tipo", tipo,
+                "nivel", "ALTO",
+                "descripcion", "Reporte con tipo " + tipo));
     }
 
     /**
@@ -351,6 +409,7 @@ class EmergenciasHttpTest extends LoginTestBase {
     private String cuerpoSin(String campoOmitido) throws Exception {
         Map<String, Object> cuerpo = new HashMap<>();
         cuerpo.put("ubicacion", Map.of("lat", SUBA_LAT, "lng", SUBA_LNG));
+        cuerpo.put("tipo", "INCENDIO");
         cuerpo.put("nivel", "ALTO");
         cuerpo.put("descripcion", "Reporte con un campo omitido");
         cuerpo.remove(campoOmitido);

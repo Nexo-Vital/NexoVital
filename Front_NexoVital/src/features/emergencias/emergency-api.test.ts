@@ -6,6 +6,7 @@ import { reportarEmergencia } from './emergency-api';
 const WIRE_RESPONSE = {
   id: 'b3f1c0de-0000-4000-8000-000000000001',
   ubicacion: { lat: 4.73, lng: -74.08 },
+  tipo: 'DERRUMBE',
   nivel: 'ALTO',
   estado: 'REGISTRADA',
   descripcion: 'Derrumbe en Suba',
@@ -15,6 +16,7 @@ const WIRE_RESPONSE = {
 
 const INPUT = {
   ubicacion: { lat: 4.73, lng: -74.08 },
+  tipo: 'LANDSLIDE' as const,
   nivel: 'HIGH' as const,
   descripcion: 'Derrumbe en Suba',
 };
@@ -57,6 +59,7 @@ describe('reportarEmergencia', () => {
     const body = JSON.parse(options.body as string);
     expect(body).toEqual({
       ubicacion: { lat: 4.73, lng: -74.08 },
+      tipo: 'DERRUMBE',
       nivel: 'ALTO',
       descripcion: 'Derrumbe en Suba',
     });
@@ -71,6 +74,7 @@ describe('reportarEmergencia', () => {
     await expect(reportarEmergencia(INPUT)).resolves.toEqual({
       id: WIRE_RESPONSE.id,
       ubicacion: { lat: 4.73, lng: -74.08 },
+      tipo: 'LANDSLIDE',
       nivel: 'HIGH',
       estado: 'REPORTED',
       descripcion: 'Derrumbe en Suba',

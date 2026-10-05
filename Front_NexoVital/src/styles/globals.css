@@ -63,6 +63,12 @@
   --nv-red: #d9534f;
   --nv-red-600: #b3403c;
   --nv-red-soft: #fbeaea;
+  /* Emergency level ramp (map pins): light blue -> blue -> dark blue -> black. */
+  --nv-level-low: #7dd3fc;
+  --nv-level-low-ink: #0b3550;
+  --nv-level-medium: #2563eb;
+  --nv-level-high: #1e3a8a;
+  --nv-level-critical: #0a0a0a;
   --nv-r-sm: 8px;
   --nv-r-md: 12px;
   --nv-r-lg: 16px;
@@ -492,23 +498,50 @@
   }
 
   /*
-    Emergency pins keep their semantic level colours: the v2 redesign does not
-    cover events, so these tokens stay theme-aware on purpose.
+    ---- emergency pin: 34px circle, fill = level, glyph + label = type ----
+
+    The level reads as a single blue ramp that darkens with severity and ends in
+    black: light blue (low), blue (medium), dark blue (high), black (critical).
+    The colours are fixed, not theme-flipping tokens, so the same emergency looks
+    the same in either theme and beside the other fixed-colour markers. The low
+    level flips its glyph to dark ink because white on light blue is unreadable.
   */
+  .nv-marker--event {
+    width: 34px;
+    height: 34px;
+    --nv-marker-color: var(--nv-on-accent);
+  }
+
+  .nv-marker--event .nv-marker__shape {
+    width: 34px;
+    height: 34px;
+    border: 2.5px solid var(--nv-on-accent);
+    border-radius: 50%;
+    background: var(--nv-marker-bg);
+    box-shadow: 0 2px 6px rgb(0 0 0 / 0.35);
+    filter: none;
+  }
+
+  .nv-marker--event .nv-marker__glyph {
+    width: 19px;
+    height: 19px;
+  }
+
   .nv-marker--low {
-    --nv-marker-color: var(--nv-ok);
+    --nv-marker-bg: var(--nv-level-low);
+    --nv-marker-color: var(--nv-level-low-ink);
   }
 
   .nv-marker--medium {
-    --nv-marker-color: var(--nv-warning);
+    --nv-marker-bg: var(--nv-level-medium);
   }
 
   .nv-marker--high {
-    --nv-marker-color: var(--nv-assign);
+    --nv-marker-bg: var(--nv-level-high);
   }
 
   .nv-marker--critical {
-    --nv-marker-color: var(--nv-critical);
+    --nv-marker-bg: var(--nv-level-critical);
   }
 
   /* Selection outlines the glyph of whichever shape the marker uses. */

@@ -367,6 +367,7 @@ class EmergenciaConvergenciaTest {
     private String reportarEmergencia(String token, String descripcion) throws Exception {
         String cuerpo = objectMapper.writeValueAsString(Map.of(
                 "ubicacion", Map.of("lat", SUBA_LAT, "lng", SUBA_LNG),
+                "tipo", "INUNDACION",
                 "nivel", "BAJO",
                 "descripcion", descripcion));
         HttpRequest peticion = base("/api/v1/emergencias")

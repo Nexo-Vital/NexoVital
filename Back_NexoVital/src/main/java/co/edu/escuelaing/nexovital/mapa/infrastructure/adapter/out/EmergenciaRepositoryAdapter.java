@@ -28,6 +28,7 @@ public class EmergenciaRepositoryAdapter implements EmergenciaRepository {
                 emergencia.getId(),
                 emergencia.getUbicacion().lat(),
                 emergencia.getUbicacion().lng(),
+                emergencia.getTipo(),
                 emergencia.getNivel(),
                 emergencia.getEstado(),
                 emergencia.getDescripcion(),
@@ -52,6 +53,7 @@ public class EmergenciaRepositoryAdapter implements EmergenciaRepository {
         return new Emergencia(
                 entity.getId(),
                 new Ubicacion(entity.getUbicacionLat(), entity.getUbicacionLng()),
+                entity.getTipo(),
                 entity.getNivel(),
                 entity.getEstado(),
                 entity.getDescripcion(),

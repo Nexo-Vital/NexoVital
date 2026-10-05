@@ -6,8 +6,15 @@ import {
   centerShortName,
   NOT_DECLARED_CENTER_STYLE,
 } from '@/features/ciudadano/citizen-view';
+import { EMERGENCY_TYPE_LABELS } from '@/features/emergencias/emergency-type';
 import { unitPlateLabel } from '@/lib/unit-label';
-import type { Ambulancia, CentroAyuda, Emergencia, TrafficLight } from '@/types/domain';
+import type {
+  Ambulancia,
+  CentroAyuda,
+  Emergencia,
+  EmergencyType,
+  TrafficLight,
+} from '@/types/domain';
 
 /**
  * Leaflet's default marker images break under Vite, so every marker is a
@@ -77,18 +84,24 @@ const CENTER_BADGE_GLYPH: Record<TrafficLight, string> = {
 };
 
 /**
- * Emergency marker: a location pin carrying an alert sign.
- *
- * An emergency is an EVENT with a place, not a physical object, so the glyph
- * reads as "attention here" instead of looking like equipment. It is outside
- * the v2 marker redesign and keeps its semantic level colours.
+ * Emergency glyph per reported type. An emergency is an EVENT with a place, not
+ * a physical object, so each glyph draws WHAT happened (water, flame, slope,
+ * seismic trace, warning sign) instead of a piece of equipment. The path bodies
+ * are the ones approved in the marker sketch.
  */
-const EVENT_GLYPH =
-  '<svg class="nv-marker__glyph" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
-  '<path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="currentColor"></path>' +
-  '<rect x="11" y="5.5" width="2" height="6" rx="1" fill="var(--nv-bg)"></rect>' +
-  '<circle cx="12" cy="14.3" r="1.15" fill="var(--nv-bg)"></circle>' +
-  '</svg>';
+const EMERGENCY_TYPE_PATHS: Record<EmergencyType, string> = {
+  FLOOD:
+    '<path d="M2 8c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/><path d="M2 14c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/><path d="M2 20c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/>',
+  FIRE: '<path d="M12 3c1 4 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 1-9z"/>',
+  LANDSLIDE: '<path d="M3 19l6-10 4 6 2-3 6 7z"/><path d="M17 5v.01"/><path d="M20 8v.01"/>',
+  EARTHQUAKE: '<path d="M2 12h4l2-6 4 12 3-9 2 3h5"/>',
+  ACCIDENT: '<path d="M12 3l10 18H2z"/><path d="M12 10v5"/><path d="M12 18v.01"/>',
+  OTHER:
+    '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 .9-1 1.7"/><path d="M12 17v.01"/>',
+};
+
+/** Label and glyph of an emergency that carries no type (old frames, fixtures). */
+const UNTYPED_EMERGENCY_LABEL = 'Emergencia';
 
 function buildMarkerIcon(html: string, size: number): L.DivIcon {
   return L.divIcon({
@@ -192,14 +205,26 @@ export function selfIcon(simulated: boolean, label?: string): L.DivIcon {
   return buildMarkerIcon(html, 24);
 }
 
-/** Emergency marker: level colour from the modifier, alert-pin glyph. */
+/**
+ * Emergency marker: a 34px circle whose FILL is the level and whose glyph and
+ * label are the reported type.
+ *
+ * Two channels, two meanings: colour answers "how severe" (light blue, blue,
+ * dark blue, black, from the `nv-marker--{level}` modifier) and the glyph plus
+ * the label answer "what happened". The label is the type name, never the
+ * emergency id: the id is a UUID nobody can read on a map. The id stays on the
+ * node as `data-nv-emergency` for tests and debugging. An emergency without a
+ * type draws the generic warning glyph and the label "Emergencia".
+ */
 export function emergencyIcon(emergency: Emergencia): L.DivIcon {
+  const glyph = strokeGlyph(EMERGENCY_TYPE_PATHS[emergency.tipo ?? 'ACCIDENT']);
+  const label = emergency.tipo ? EMERGENCY_TYPE_LABELS[emergency.tipo] : UNTYPED_EMERGENCY_LABEL;
   const html =
-    `<div class="nv-marker nv-marker--${emergency.nivel.toLowerCase()}">` +
-    `<span class="nv-marker__shape">${EVENT_GLYPH}</span>` +
-    `<span class="nv-marker__label">${escapeHtml(emergency.id)}</span>` +
+    `<div class="nv-marker nv-marker--event nv-marker--${emergency.nivel.toLowerCase()}" data-nv-emergency="${escapeHtml(emergency.id)}">` +
+    `<span class="nv-marker__shape">${glyph}</span>` +
+    `<span class="nv-marker__label">${escapeHtml(label)}</span>` +
     `</div>`;
-  return buildMarkerIcon(html, 30);
+  return buildMarkerIcon(html, 34);
 }
 
 /**

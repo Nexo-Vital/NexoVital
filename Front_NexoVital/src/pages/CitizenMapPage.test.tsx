@@ -119,6 +119,29 @@ vi.mock('@/features/mapa/routing-api', () => ({
 
 mockFetchRuta.mockReturnValue(new Promise(() => {}));
 
+// Same rule for the geocoder (Photon): third party, never reached from a page
+// test. The search answers with one fixed place, which is how these cases give
+// the report dialog a location now that it no longer takes raw coordinates.
+const REPORT_ADDRESS = {
+  etiqueta: 'Calle 145 # 91-19, Suba, Bogotá',
+  ubicacion: { lat: 4.7412, lng: -74.0836 },
+};
+
+vi.mock('@/features/geocodificacion/geocoding-api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/geocodificacion/geocoding-api')>()),
+  searchAddress: vi.fn(async () => [REPORT_ADDRESS]),
+  reverseGeocode: vi.fn(async () => REPORT_ADDRESS.etiqueta),
+}));
+
+/** Gives the report dialog its location: types an address and picks the suggestion. */
+async function pickReportAddress(dialog: HTMLElement): Promise<void> {
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Escribir dirección' }));
+  fireEvent.change(within(dialog).getByLabelText('Dirección'), {
+    target: { value: 'Calle 145 Suba' },
+  });
+  fireEvent.click(await within(dialog).findByRole('button', { name: REPORT_ADDRESS.etiqueta }));
+}
+
 /**
  * Grants a real device fix through the browser API: the page's own
  * `useDeviceLocation` watcher resolves to the Suba point, which is the pickup
@@ -1592,14 +1615,18 @@ describe('CitizenMapPage', () => {
 
       fireEvent.click(screen.getByRole('button', { name: 'Reportar zona afectada' }));
       const dialog = screen.getByRole('dialog', { name: 'Reportar zona afectada' });
-      fireEvent.change(within(dialog).getByLabelText('Descripción'), {
+      fireEvent.change(within(dialog).getByLabelText('Tipo de emergencia'), {
+        target: { value: 'LANDSLIDE' },
+      });
+      fireEvent.change(within(dialog).getByLabelText('Comentario'), {
         target: { value: 'Derrumbe en Suba' },
       });
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Usar el centro del mapa' }));
+      await pickReportAddress(dialog);
       fireEvent.click(within(dialog).getByRole('button', { name: 'Reportar' }));
 
       await waitFor(() => expect(useEmergencyStore.getState().items).toHaveLength(1));
       expect(useEmergencyStore.getState().items[0]).toMatchObject({
+        tipo: 'LANDSLIDE',
         nivel: 'MEDIUM',
         estado: 'REPORTED',
         descripcion: 'Derrumbe en Suba',
@@ -1624,10 +1651,13 @@ describe('CitizenMapPage', () => {
 
       fireEvent.click(screen.getByRole('button', { name: 'Reportar zona afectada' }));
       const dialog = screen.getByRole('dialog', { name: 'Reportar zona afectada' });
-      fireEvent.change(within(dialog).getByLabelText('Descripción'), {
+      fireEvent.change(within(dialog).getByLabelText('Tipo de emergencia'), {
+        target: { value: 'LANDSLIDE' },
+      });
+      fireEvent.change(within(dialog).getByLabelText('Comentario'), {
         target: { value: 'Derrumbe en Suba' },
       });
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Usar el centro del mapa' }));
+      await pickReportAddress(dialog);
       fireEvent.click(within(dialog).getByRole('button', { name: 'Reportar' }));
 
       await waitFor(() => expect(useEmergencyStore.getState().items).toHaveLength(1));
@@ -1659,10 +1689,13 @@ describe('CitizenMapPage', () => {
 
       fireEvent.click(screen.getByRole('button', { name: 'Reportar zona afectada' }));
       const dialog = screen.getByRole('dialog', { name: 'Reportar zona afectada' });
-      fireEvent.change(within(dialog).getByLabelText('Descripción'), {
+      fireEvent.change(within(dialog).getByLabelText('Tipo de emergencia'), {
+        target: { value: 'LANDSLIDE' },
+      });
+      fireEvent.change(within(dialog).getByLabelText('Comentario'), {
         target: { value: 'Derrumbe en Suba' },
       });
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Usar el centro del mapa' }));
+      await pickReportAddress(dialog);
       fireEvent.click(within(dialog).getByRole('button', { name: 'Reportar' }));
 
       await within(dialog).findByText('No se pudo registrar la emergencia.');
@@ -1682,10 +1715,13 @@ describe('CitizenMapPage', () => {
       const submitReport = async () => {
         fireEvent.click(screen.getByRole('button', { name: 'Reportar zona afectada' }));
         const dialog = screen.getByRole('dialog', { name: 'Reportar zona afectada' });
-        fireEvent.change(within(dialog).getByLabelText('Descripción'), {
+        fireEvent.change(within(dialog).getByLabelText('Tipo de emergencia'), {
+          target: { value: 'LANDSLIDE' },
+        });
+        fireEvent.change(within(dialog).getByLabelText('Comentario'), {
           target: { value: 'Derrumbe en Suba' },
         });
-        fireEvent.click(within(dialog).getByRole('button', { name: 'Usar el centro del mapa' }));
+        await pickReportAddress(dialog);
         fireEvent.click(within(dialog).getByRole('button', { name: 'Reportar' }));
         await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
       };
@@ -1717,10 +1753,13 @@ describe('CitizenMapPage', () => {
 
       fireEvent.click(screen.getByRole('button', { name: 'Reportar zona afectada' }));
       const dialog = screen.getByRole('dialog', { name: 'Reportar zona afectada' });
-      fireEvent.change(within(dialog).getByLabelText('Descripción'), {
+      fireEvent.change(within(dialog).getByLabelText('Tipo de emergencia'), {
+        target: { value: 'LANDSLIDE' },
+      });
+      fireEvent.change(within(dialog).getByLabelText('Comentario'), {
         target: { value: 'Derrumbe en Suba' },
       });
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Usar el centro del mapa' }));
+      await pickReportAddress(dialog);
       fireEvent.click(within(dialog).getByRole('button', { name: 'Reportar' }));
 
       expect(
@@ -1794,10 +1833,13 @@ describe('CitizenMapPage', () => {
 
       fireEvent.click(screen.getByRole('button', { name: 'Reportar zona afectada' }));
       const dialog = screen.getByRole('dialog', { name: 'Reportar zona afectada' });
-      fireEvent.change(within(dialog).getByLabelText('Descripción'), {
+      fireEvent.change(within(dialog).getByLabelText('Tipo de emergencia'), {
+        target: { value: 'LANDSLIDE' },
+      });
+      fireEvent.change(within(dialog).getByLabelText('Comentario'), {
         target: { value: 'Derrumbe en Suba' },
       });
-      fireEvent.click(within(dialog).getByRole('button', { name: 'Usar el centro del mapa' }));
+      await pickReportAddress(dialog);
       fireEvent.click(within(dialog).getByRole('button', { name: 'Reportar' }));
 
       // The local upsert lands before publishing, so the report is painted at once.

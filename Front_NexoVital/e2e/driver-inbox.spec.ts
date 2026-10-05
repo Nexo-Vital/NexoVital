@@ -148,10 +148,15 @@ async function reportAffectedZone(page: Page): Promise<string> {
   await page.getByRole('button', { name: 'Reportar zona afectada' }).click();
   const dialog = page.getByRole('dialog', { name: 'Reportar zona afectada' });
   await expect(dialog).toBeVisible();
+  // EP-02.F1.US3: the type is required; the select is keyed by the UI enum.
+  await dialog.getByLabel('Tipo de emergencia').selectOption('ACCIDENT');
   await dialog
-    .getByLabel('Descripción')
+    .getByLabel('Comentario')
     .fill('EP-04.F2.US3 E2E: zona afectada para habilitar la solicitud de ambulancia.');
-  await dialog.getByRole('button', { name: 'Usar el centro del mapa' }).click();
+  // The context grants geolocation, so the report takes the device point. The
+  // address shown is cosmetic: the report does not wait for the geocoder.
+  await dialog.getByRole('button', { name: 'Mi ubicación actual' }).click();
+  await expect(dialog.getByTestId('citizen-report-chosen-location')).toBeVisible();
   const [emergencyResponse] = await Promise.all([
     page.waitForResponse(
       (response) =>

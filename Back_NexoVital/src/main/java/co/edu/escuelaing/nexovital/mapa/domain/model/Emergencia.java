@@ -8,7 +8,7 @@ import java.util.UUID;
 
 /**
  * Agregado de una emergencia reportada sobre el mapa: el punto afectado, su
- * severidad y su descripción. Inmutable y sin dependencias de framework, igual
+ * tipo, su severidad y su descripción. Inmutable y sin dependencias de framework, igual
  * que {@link Zona} y
  * {@link co.edu.escuelaing.nexovital.usuarios.domain.model.Organizacion}.
  *
@@ -23,12 +23,16 @@ import java.util.UUID;
  *
  * <p>Los campos que asigna el servidor son {@code id}, {@code estado} y
  * {@code createdAt}; los que viajan en la petición son {@code ubicacion},
- * {@code nivel} y {@code descripcion} (contrato {@code POST /emergencias}).
+ * {@code tipo}, {@code nivel} y {@code descripcion} ({@code POST /emergencias}).
+ *
+ * <p>{@code tipo} se fija al reportar y NO cambia después: el PATCH solo
+ * corrige estado y nivel, igual que no mueve la ubicación.
  */
 public final class Emergencia {
 
     private final UUID id;
     private final Ubicacion ubicacion;
+    private final TipoEmergencia tipo;
     private final NivelEmergencia nivel;
     private final EstadoEmergencia estado;
     private final String descripcion;
@@ -37,6 +41,7 @@ public final class Emergencia {
 
     public Emergencia(UUID id,
                       Ubicacion ubicacion,
+                      TipoEmergencia tipo,
                       NivelEmergencia nivel,
                       EstadoEmergencia estado,
                       String descripcion,
@@ -44,6 +49,7 @@ public final class Emergencia {
                       Instant createdAt) {
         this.id = Objects.requireNonNull(id, "id es obligatorio");
         this.ubicacion = Objects.requireNonNull(ubicacion, "ubicacion es obligatoria");
+        this.tipo = Objects.requireNonNull(tipo, "tipo es obligatorio");
         this.nivel = Objects.requireNonNull(nivel, "nivel es obligatorio");
         this.estado = Objects.requireNonNull(estado, "estado es obligatorio");
         this.descripcion = Objects.requireNonNull(descripcion, "descripcion es obligatoria");
@@ -59,6 +65,11 @@ public final class Emergencia {
     /** Punto afectado reportado; la zona (área) se deriva de él. */
     public Ubicacion getUbicacion() {
         return ubicacion;
+    }
+
+    /** Qué está pasando (lista cerrada); se fija al reportar. */
+    public TipoEmergencia getTipo() {
+        return tipo;
     }
 
     public NivelEmergencia getNivel() {
@@ -113,7 +124,7 @@ public final class Emergencia {
      * Devuelve una instancia NUEVA con estado y nivel cambiados <b>a la vez</b>.
      * Es la forma que el caso de uso usa cuando el PATCH trae los dos campos:
      * se construye UNA sola instancia, no una intermedia por campo (el resto de
-     * los campos — {@code id}, {@code ubicacion}, {@code descripcion},
+     * los campos — {@code id}, {@code ubicacion}, {@code tipo}, {@code descripcion},
      * {@code zonaId}, {@code createdAt} — se conserva tal cual, porque mover una
      * emergencia cambiaría su zona y está fuera de alcance).
      *
@@ -125,6 +136,7 @@ public final class Emergencia {
         return new Emergencia(
                 id,
                 ubicacion,
+                tipo,
                 nuevoNivel,
                 nuevoEstado,
                 descripcion,

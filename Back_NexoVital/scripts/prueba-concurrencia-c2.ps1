@@ -206,7 +206,7 @@ if ($disponiblesIniciales -lt $estadoInicial.Count) {
 
 # --- 4. anclas: emergencia real y centro de ayuda real ----------------------
 $emergencia = Invoke-Api -Metodo POST -Ruta '/emergencias' -Headers $headersCiudadano `
-    -Cuerpo @{ ubicacion = @{ lat = 4.736; lng = -74.082 }; nivel = 'ALTO'; descripcion = 'Evidencia C2: aceptacion simultanea' }
+    -Cuerpo @{ ubicacion = @{ lat = 4.736; lng = -74.082 }; tipo = 'ACCIDENTE'; nivel = 'ALTO'; descripcion = 'Evidencia C2: aceptacion simultanea' }
 Paso 'PASO 4  emergencia real de anclaje' ($null -ne $emergencia.id) "emergenciaId=$($emergencia.id)"
 
 $mapa = Invoke-Api -Metodo GET -Ruta '/mapa' -Headers $headersCiudadano

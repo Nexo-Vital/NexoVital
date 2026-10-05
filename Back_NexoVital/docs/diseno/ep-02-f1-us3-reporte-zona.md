@@ -365,3 +365,99 @@ El endpoint **ya existe**; el delta es mínimo y se declara para que nadie lo d�
 4. Las decisiones explícitas que **no** son código: rol del reporte **`CIUDADANO`** (D7/R1, resuelto), idempotencia (D9/R5) y el delta aditivo del contrato (§6).
 
 **No incluye:** código de producción, el formulario (250), la prueba (251), el canal realtime (US2/244), el outbox transaccional, ni la idempotencia de red completa.
+
+---
+
+## Delta 2026-10-04 — se agrega el campo `tipo` (reemplaza a D2)
+
+La decisión D2 dejó el "tipo de emergencia" fuera del alcance porque el contrato
+no lo traía, y lo marcó como pendiente "si el equipo lo pide". El equipo lo pidió:
+el escenario de EP-02.F1.US3 dice *"reporto la zona indicando **tipo de emergencia**
+y ubicación"*, así que el reporte ahora lleva un tipo estructurado.
+
+- **Campo nuevo:** `tipo`, lista cerrada `TipoEmergencia`:
+  `INUNDACION | INCENDIO | DERRUMBE | SISMO | ACCIDENTE | OTRO`.
+- **`POST /api/v1/emergencias`:** el cuerpo pasa a `{ubicacion, tipo, nivel, descripcion}`.
+  `tipo` es **obligatorio**; ausente o fuera de la lista responde `400 DATOS_INVALIDOS`.
+- **Respuesta, `GET /emergencias` y `/topic/emergencias`:** el schema `Emergencia`
+  gana `tipo` (cambio aditivo para quien lee).
+- **`PATCH /emergencias/{id}`:** sin cambios. El tipo se fija al reportar y no se edita.
+- **`nivel` y `descripcion` no cambian de significado:** el nivel sigue siendo la
+  severidad y la descripción pasa a ser el comentario libre del ciudadano.
+- **Front:** `CitizenReportDialog` muestra el tipo como casilla de selección (sin
+  valor por defecto) y, debajo, el comentario. Los literales en español solo viven
+  en `emergency-wire.ts`; la UI usa `FLOOD | FIRE | LANDSLIDE | EARTHQUAKE | ACCIDENT | OTHER`.
+- **Pendiente fuera del repo:** reflejar `tipo` en `contract/openapi.yaml`.
+
+---
+
+## Delta 2026-10-05 — ubicación por dirección y marcadores por tipo y nivel
+
+Cierre de EP-02.F1.US3 en el frontend. **No cambia el contrato ni el backend:** el
+reporte sigue enviando `{ubicacion, tipo, nivel, descripcion}` con coordenadas.
+
+### Ubicación: dirección en lugar de latitud y longitud
+
+El ciudadano no conoce sus coordenadas, así que `CitizenReportDialog` ya no las pide.
+Se eliminan los campos de latitud y longitud y el botón "Usar el centro del mapa".
+La ubicación tiene dos caminos:
+
+| Opción | Qué hace |
+|---|---|
+| **Mi ubicación actual** | Toma el GPS del dispositivo y debajo muestra su dirección aproximada ("Cerca de …"). |
+| **Escribir dirección** | Campo con sugerencias mientras se escribe; al elegir una, se toma su punto. |
+
+- **Servicio:** Photon (komoot), geocodificador de OpenStreetMap, con CORS y sin clave.
+  Cliente en `src/features/geocodificacion/geocoding-api.ts`, base configurable con
+  `VITE_GEOCODING_BASE`. Es un tercero: se usa `fetch` simple, nunca `apiFetch`, así que
+  no recibe el token ni dispara el cierre de sesión ante un 401.
+- **Búsqueda:** limitada a Colombia (`bbox`), sesgada hacia el punto que el ciudadano
+  tiene en pantalla, con espera de 350 ms tras la última tecla y cancelación de la
+  petición anterior. Menos de 3 caracteres no consulta.
+- **Inversa:** coordenadas a dirección, con caché por coordenadas redondeadas a 4
+  decimales (~11 m) y tiempo límite de 6 s.
+- **Precisión:** aproximada, a nivel de calle o barrio. OpenStreetMap casi no tiene
+  números de casa en Bogotá. Es aceptado por el equipo ("que sea cercano").
+- **La coordenada manda, la dirección es cosmética.** Lo que se envía es el punto exacto
+  del GPS o el de la sugerencia elegida, nunca la dirección de vuelta del geocodificador.
+  Si Photon falla: con el GPS se muestran las coordenadas y el reporte se envía igual;
+  con la dirección escrita se avisa y no hay punto que enviar, y se ofrece el GPS.
+  Sin GPS (permiso negado o contexto no seguro) el diálogo pasa solo al campo de dirección.
+- **Editar el texto invalida el punto elegido**, para no enviar una ubicación que ya no
+  corresponde a lo escrito.
+- **La dirección no se guarda en el backend** (decisión: solo se muestra en el diálogo).
+  Si se quiere verla en el detalle de la emergencia hay que agregar `direccion` a
+  `Emergencia`; queda como decisión abierta.
+
+### Marcador de emergencia: color por nivel, símbolo y texto por tipo
+
+El marcador dejó de rotular el UUID. Ahora es un círculo de 34 px:
+
+| Nivel | Color del círculo |
+|---|---|
+| `BAJO` (`LOW`) | celeste `#7DD3FC` (símbolo en azul oscuro, por contraste) |
+| `MEDIO` (`MEDIUM`) | azul `#2563EB` |
+| `ALTO` (`HIGH`) | azul oscuro `#1E3A8A` |
+| `CRITICO` (`CRITICAL`) | negro `#0A0A0A` |
+
+El símbolo y la etiqueta dependen del tipo: inundación (olas), incendio (llama),
+derrumbe (ladera), sismo (traza sísmica), accidente (triángulo de alerta) y otro
+(interrogación). Una emergencia sin tipo (fixtures, frames anteriores al campo) usa el
+triángulo y la etiqueta "Emergencia". El id sigue en el nodo como `data-nv-emergency`.
+Los colores son fijos (variables `--nv-level-*`), no cambian con el tema. Aprobado
+con el boceto HTML previo. Los niveles en el resto de la interfaz conservan sus colores.
+
+### "Cercanos"
+
+El escenario dice que la zona queda visible "para los centros de ayuda cercanos". Hoy la
+emergencia se publica en `/topic/emergencias` a todos los suscritos, sin filtro de
+distancia, de modo que los cercanos la ven (y también los lejanos). No hay filtro por radio.
+
+### Pruebas
+
+- Front: `geocoding-api.test.ts` (formato, orden `[lng, lat]`, caché, fallos),
+  `CitizenReportDialog.test.tsx` (flujo por dirección y por GPS, sin coordenadas,
+  fallos del geocodificador), `markers.test.ts` (etiqueta = tipo, un símbolo por tipo,
+  una clase por nivel). Los specs e2e usan "Mi ubicación actual".
+- Pendiente de ejecutar por el equipo: `mvn test` (cambio de `tipo`), `npm run test:e2e`
+  y la prueba manual con dos sesiones de EP-02.F1.US3 T4.

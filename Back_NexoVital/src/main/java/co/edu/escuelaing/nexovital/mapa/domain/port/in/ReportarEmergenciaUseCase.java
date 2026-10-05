@@ -2,6 +2,7 @@ package co.edu.escuelaing.nexovital.mapa.domain.port.in;
 
 import co.edu.escuelaing.nexovital.mapa.domain.model.Emergencia;
 import co.edu.escuelaing.nexovital.mapa.domain.model.NivelEmergencia;
+import co.edu.escuelaing.nexovital.mapa.domain.model.TipoEmergencia;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.Ubicacion;
 
 /**
@@ -16,11 +17,12 @@ public interface ReportarEmergenciaUseCase {
      * co.edu.escuelaing.nexovital.mapa.domain.model.Zona}.
      *
      * @param ubicacion   punto afectado
+     * @param tipo        qué está pasando (lista cerrada)
      * @param nivel       severidad del contrato
-     * @param descripcion texto libre del reporte
+     * @param descripcion comentario libre del reporte
      * @return la emergencia persistida, con su zona resuelta (o {@code null} si
      *         el punto cae fuera de todo el catálogo)
      * @throws IllegalArgumentException si falta algún campo obligatorio
      */
-    Emergencia reportar(Ubicacion ubicacion, NivelEmergencia nivel, String descripcion);
+    Emergencia reportar(Ubicacion ubicacion, TipoEmergencia tipo, NivelEmergencia nivel, String descripcion);
 }

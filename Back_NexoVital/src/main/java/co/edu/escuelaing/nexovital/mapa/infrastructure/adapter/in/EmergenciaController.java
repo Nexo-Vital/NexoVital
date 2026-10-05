@@ -4,6 +4,7 @@ import co.edu.escuelaing.nexovital.mapa.domain.exception.EmergenciaNoEncontradaE
 import co.edu.escuelaing.nexovital.mapa.domain.model.Emergencia;
 import co.edu.escuelaing.nexovital.mapa.domain.model.EstadoEmergencia;
 import co.edu.escuelaing.nexovital.mapa.domain.model.NivelEmergencia;
+import co.edu.escuelaing.nexovital.mapa.domain.model.TipoEmergencia;
 import co.edu.escuelaing.nexovital.mapa.domain.port.in.ActualizarEmergenciaUseCase;
 import co.edu.escuelaing.nexovital.mapa.domain.port.in.ListarEmergenciasUseCase;
 import co.edu.escuelaing.nexovital.mapa.domain.port.in.ReportarEmergenciaUseCase;
@@ -46,7 +47,7 @@ import java.util.UUID;
 public class EmergenciaController {
 
     private static final String MENSAJE_DATOS_INVALIDOS =
-            "El reporte no es válido: revise la ubicación, el nivel y la descripción.";
+            "El reporte no es válido: revise la ubicación, el tipo, el nivel y la descripción.";
     private static final String MENSAJE_ERROR_REGISTRO = "No fue posible registrar la emergencia.";
     private static final String MENSAJE_ERROR_CONSULTA = "No fue posible consultar las emergencias.";
     private static final String MENSAJE_DATOS_INVALIDOS_ACTUALIZACION =
@@ -79,9 +80,11 @@ public class EmergenciaController {
     @Operation(summary = "Reportar una emergencia")
     public ResponseEntity<Object> reportar(@RequestBody EmergenciaRequest request) {
         try {
+            TipoEmergencia tipo = parsearTipo(request.tipo());
             NivelEmergencia nivel = parsearNivel(request.nivel());
             Ubicacion ubicacion = construirUbicacion(request.ubicacion());
-            Emergencia emergencia = reportarEmergenciaUseCase.reportar(ubicacion, nivel, request.descripcion());
+            Emergencia emergencia = reportarEmergenciaUseCase.reportar(
+                    ubicacion, tipo, nivel, request.descripcion());
             return ResponseEntity.status(HttpStatus.CREATED).body(EmergenciaDto.fromDomain(emergencia));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(ErrorResponse.of("DATOS_INVALIDOS", MENSAJE_DATOS_INVALIDOS));
@@ -175,6 +178,19 @@ public class EmergenciaController {
             return null;
         }
         return NivelEmergencia.valueOf(nivel.trim().toUpperCase(Locale.ROOT));
+    }
+
+    /**
+     * @return el tipo de emergencia de la lista cerrada
+     * @throws IllegalArgumentException si falta o no corresponde a ningún tipo
+     *                                  ({@code valueOf} lanza esa misma excepción
+     *                                  ante un valor desconocido)
+     */
+    private static TipoEmergencia parsearTipo(String tipo) {
+        if (tipo == null || tipo.isBlank()) {
+            throw new IllegalArgumentException("El tipo de emergencia es obligatorio.");
+        }
+        return TipoEmergencia.valueOf(tipo.trim().toUpperCase(Locale.ROOT));
     }
 
     /**

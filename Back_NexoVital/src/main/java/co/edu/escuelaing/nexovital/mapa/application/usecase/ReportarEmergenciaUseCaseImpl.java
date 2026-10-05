@@ -3,6 +3,7 @@ package co.edu.escuelaing.nexovital.mapa.application.usecase;
 import co.edu.escuelaing.nexovital.mapa.domain.model.Emergencia;
 import co.edu.escuelaing.nexovital.mapa.domain.model.EstadoEmergencia;
 import co.edu.escuelaing.nexovital.mapa.domain.model.NivelEmergencia;
+import co.edu.escuelaing.nexovital.mapa.domain.model.TipoEmergencia;
 import co.edu.escuelaing.nexovital.mapa.domain.model.Zona;
 import co.edu.escuelaing.nexovital.mapa.domain.port.in.ReportarEmergenciaUseCase;
 import co.edu.escuelaing.nexovital.mapa.domain.port.out.EmergenciaRepository;
@@ -46,9 +47,13 @@ public class ReportarEmergenciaUseCaseImpl implements ReportarEmergenciaUseCase 
 
     @Override
     @Transactional
-    public Emergencia reportar(Ubicacion ubicacion, NivelEmergencia nivel, String descripcion) {
+    public Emergencia reportar(Ubicacion ubicacion, TipoEmergencia tipo, NivelEmergencia nivel,
+                               String descripcion) {
         if (ubicacion == null) {
             throw new IllegalArgumentException("La ubicación es obligatoria.");
+        }
+        if (tipo == null) {
+            throw new IllegalArgumentException("El tipo de emergencia es obligatorio.");
         }
         if (nivel == null) {
             throw new IllegalArgumentException("El nivel de emergencia es obligatorio.");
@@ -60,6 +65,7 @@ public class ReportarEmergenciaUseCaseImpl implements ReportarEmergenciaUseCase 
         Emergencia emergencia = new Emergencia(
                 UUID.randomUUID(),
                 ubicacion,
+                tipo,
                 nivel,
                 EstadoEmergencia.REGISTRADA,
                 descripcion,

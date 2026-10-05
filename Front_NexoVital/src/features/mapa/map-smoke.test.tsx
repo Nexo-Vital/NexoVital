@@ -72,6 +72,16 @@ function renderMapWithRequest() {
   );
 }
 
+/**
+ * Ids of the emergencies drawn on the map. Emergency markers are labelled with
+ * their TYPE, not their id, so the id is read from `data-nv-emergency`.
+ */
+function emergencyIds(container: HTMLElement): string[] {
+  return Array.from(container.querySelectorAll<HTMLElement>('[data-nv-emergency]')).map(
+    (element) => element.dataset.nvEmergency ?? '',
+  );
+}
+
 /** The `.nv-marker` wrapper whose label matches, or a thrown error. */
 function markerByLabel(container: HTMLElement, label: string): HTMLElement {
   const marker = Array.from(container.querySelectorAll<HTMLElement>('.nv-marker')).find(
@@ -112,30 +122,33 @@ describe('MapCanvas smoke', () => {
   it('only draws emergency markers for the visible levels', () => {
     useLayersStore.setState({ visibleLevels: ['CRITICAL'] });
 
-    const labels = markerLabels(renderMap().container);
+    const ids = emergencyIds(renderMap().container);
 
-    expect(labels).toContain('EMG-001');
-    expect(labels).toContain('EMG-004');
-    expect(labels).not.toContain('EMG-002');
-    expect(labels).not.toContain('EMG-003');
-    expect(labels).not.toContain('EMG-005');
+    expect(ids).toContain('EMG-001');
+    expect(ids).toContain('EMG-004');
+    expect(ids).not.toContain('EMG-002');
+    expect(ids).not.toContain('EMG-003');
+    expect(ids).not.toContain('EMG-005');
   });
 
   it('hides ambulances when the overlay is toggled off', () => {
     useLayersStore.setState({ overlays: { ...DEFAULT_OVERLAYS, ambulancias: false } });
 
-    const labels = markerLabels(renderMap().container);
+    const container = renderMap().container;
 
-    expect(labels).not.toContain('WNR-418');
-    expect(labels).toContain('EMG-001');
+    expect(markerLabels(container)).not.toContain('WNR-418');
+    expect(emergencyIds(container)).toContain('EMG-001');
   });
 
   it('draws an inline glyph for units, emergencies and aid centers', () => {
     const { container } = renderMapWithCenters(() => undefined);
 
-    for (const label of ['WNR-418', 'EMG-001', 'Suba Norte']) {
+    for (const label of ['WNR-418', 'Suba Norte']) {
       expect(markerByLabel(container, label).querySelector('.nv-marker__glyph')).not.toBeNull();
     }
+    expect(
+      container.querySelector('[data-nv-emergency="EMG-001"] .nv-marker__glyph'),
+    ).not.toBeNull();
     // The anonymous dot is gone: every marker now has a shaped glyph.
     expect(container.querySelector('.nv-marker__dot')).toBeNull();
   });

@@ -2,6 +2,7 @@ package co.edu.escuelaing.nexovital.mapa.infrastructure.adapter.out;
 
 import co.edu.escuelaing.nexovital.mapa.domain.model.EstadoEmergencia;
 import co.edu.escuelaing.nexovital.mapa.domain.model.NivelEmergencia;
+import co.edu.escuelaing.nexovital.mapa.domain.model.TipoEmergencia;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -36,6 +37,10 @@ public class EmergenciaJpaEntity {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
+    private TipoEmergencia tipo;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
     private NivelEmergencia nivel;
 
     @Enumerated(EnumType.STRING)
@@ -58,6 +63,7 @@ public class EmergenciaJpaEntity {
     public EmergenciaJpaEntity(UUID id,
                                double ubicacionLat,
                                double ubicacionLng,
+                               TipoEmergencia tipo,
                                NivelEmergencia nivel,
                                EstadoEmergencia estado,
                                String descripcion,
@@ -66,6 +72,7 @@ public class EmergenciaJpaEntity {
         this.id = id;
         this.ubicacionLat = ubicacionLat;
         this.ubicacionLng = ubicacionLng;
+        this.tipo = tipo;
         this.nivel = nivel;
         this.estado = estado;
         this.descripcion = descripcion;
@@ -83,6 +90,10 @@ public class EmergenciaJpaEntity {
 
     public double getUbicacionLng() {
         return ubicacionLng;
+    }
+
+    public TipoEmergencia getTipo() {
+        return tipo;
     }
 
     public NivelEmergencia getNivel() {

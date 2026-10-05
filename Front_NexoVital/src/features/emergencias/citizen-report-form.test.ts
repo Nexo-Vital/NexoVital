@@ -6,6 +6,7 @@ import {
 } from './citizen-report-form';
 
 const VALID = {
+  tipo: 'LANDSLIDE' as const,
   nivel: 'HIGH' as const,
   descripcion: 'Derrumbe en Suba',
   lat: '4.73',
@@ -20,6 +21,12 @@ describe('validateCitizenReport', () => {
       descripcion: expect.any(String),
       lat: expect.any(String),
       lng: expect.any(String),
+    });
+  });
+
+  it('requires the emergency type', () => {
+    expect(validateCitizenReport({ ...VALID, tipo: '' })).toEqual({
+      tipo: expect.any(String),
     });
   });
 
@@ -49,6 +56,7 @@ describe('buildCitizenReportInput', () => {
   it('builds the input with parsed coordinates and a trimmed description', () => {
     expect(buildCitizenReportInput({ ...VALID, descripcion: '  Derrumbe  ' })).toEqual({
       ubicacion: { lat: 4.73, lng: -74.08 },
+      tipo: 'LANDSLIDE',
       nivel: 'HIGH',
       descripcion: 'Derrumbe',
     });
@@ -61,6 +69,10 @@ describe('buildCitizenReportInput', () => {
     expect(input).not.toHaveProperty('id');
     expect(input).not.toHaveProperty('estado');
     expect(input).not.toHaveProperty('zonaId');
+  });
+
+  it('returns null when no type was picked', () => {
+    expect(buildCitizenReportInput({ ...VALID, tipo: '' })).toBeNull();
   });
 
   it('returns null for invalid coordinates', () => {

@@ -5,9 +5,8 @@ package co.edu.escuelaing.nexovital.mapa.domain.model;
  * {@code NivelEmergencia}). Los valores son literalmente los del contrato: no
  * se inventa ninguno.
  *
- * <p>Es el "tipo" estructurado del reporte: el contrato no tiene un campo
- * {@code tipo}, solo {@code nivel} (severidad) y {@code descripcion} (texto
- * libre que nombra el tipo en lenguaje natural).
+ * <p>El nivel dice qué tan grave es la emergencia; QUÉ es la emergencia lo dice
+ * {@link TipoEmergencia}, y {@code descripcion} es el comentario libre.
  */
 public enum NivelEmergencia {
     BAJO,

@@ -1,4 +1,4 @@
-import type { Emergencia, EmergencyLevel, EmergencyStatus } from '@/types/domain';
+import type { Emergencia, EmergencyLevel, EmergencyStatus, EmergencyType } from '@/types/domain';
 
 /**
  * Wire literals as the backend speaks them (Spanish), the single module that
@@ -14,6 +14,15 @@ export type EmergencyStatusWire =
   | 'EN_ESPERA'
   | 'RESUELTA'
   | 'CERRADA';
+
+/** Backend enum `TipoEmergencia`, as it travels on the wire. */
+export type EmergencyTypeWire =
+  | 'INUNDACION'
+  | 'INCENDIO'
+  | 'DERRUMBE'
+  | 'SISMO'
+  | 'ACCIDENTE'
+  | 'OTRO';
 
 /** Contract level (Spanish) -> UI level (English). */
 export const EMERGENCY_LEVEL_FROM_WIRE: Record<EmergencyLevelWire, EmergencyLevel> = {
@@ -40,7 +49,35 @@ export const EMERGENCY_LEVEL_TO_WIRE: Record<EmergencyLevel, EmergencyLevelWire>
   CRITICAL: 'CRITICO',
 };
 
+/** Contract type (Spanish) -> UI type (English). */
+export const EMERGENCY_TYPE_FROM_WIRE: Record<EmergencyTypeWire, EmergencyType> = {
+  INUNDACION: 'FLOOD',
+  INCENDIO: 'FIRE',
+  DERRUMBE: 'LANDSLIDE',
+  SISMO: 'EARTHQUAKE',
+  ACCIDENTE: 'ACCIDENT',
+  OTRO: 'OTHER',
+};
+
+/** UI type (English) -> contract type (Spanish), for the POST body. */
+export const EMERGENCY_TYPE_TO_WIRE: Record<EmergencyType, EmergencyTypeWire> = {
+  FLOOD: 'INUNDACION',
+  FIRE: 'INCENDIO',
+  LANDSLIDE: 'DERRUMBE',
+  EARTHQUAKE: 'SISMO',
+  ACCIDENT: 'ACCIDENTE',
+  OTHER: 'OTRO',
+};
+
 const LEVELS: readonly EmergencyLevel[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
+const TYPES: readonly EmergencyType[] = [
+  'FLOOD',
+  'FIRE',
+  'LANDSLIDE',
+  'EARTHQUAKE',
+  'ACCIDENT',
+  'OTHER',
+];
 const STATUSES: readonly EmergencyStatus[] = [
   'REPORTED',
   'IN_PROGRESS',
@@ -71,6 +108,21 @@ function toLevel(value: unknown): EmergencyLevel | null {
     return EMERGENCY_LEVEL_FROM_WIRE[value as EmergencyLevelWire];
   }
   return LEVELS.includes(value as EmergencyLevel) ? (value as EmergencyLevel) : null;
+}
+
+/**
+ * Translates a type; idempotent exactly like `toLevel`. Unlike the level, an
+ * unknown or absent type is NOT a reason to drop the emergency: the caller just
+ * omits the field.
+ */
+function toType(value: unknown): EmergencyType | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  if (owns(EMERGENCY_TYPE_FROM_WIRE, value)) {
+    return EMERGENCY_TYPE_FROM_WIRE[value as EmergencyTypeWire];
+  }
+  return TYPES.includes(value as EmergencyType) ? (value as EmergencyType) : null;
 }
 
 /** Translates a status; idempotent exactly like `toLevel`. */
@@ -116,6 +168,8 @@ export function fromWireEmergency(value: unknown): Emergencia | null {
 
   const zonaId = typeof value.zonaId === 'string' ? value.zonaId : '';
   const descripcion = typeof value.descripcion === 'string' ? value.descripcion : undefined;
+  // Optional on the read side: a frame without a (known) type still renders.
+  const tipo = toType(value.tipo);
   // Optional like `descripcion`: carried only when the wire actually sent a
   // usable number, never invented and never defaulted. A non-number is dropped
   // (absent version), which makes the reader degrade to today's behaviour.
@@ -125,6 +179,7 @@ export function fromWireEmergency(value: unknown): Emergencia | null {
   return {
     id: value.id,
     ubicacion: { lat: ubicacion.lat, lng: ubicacion.lng },
+    ...(tipo === null ? {} : { tipo }),
     nivel,
     estado,
     ...(descripcion === undefined ? {} : { descripcion }),
