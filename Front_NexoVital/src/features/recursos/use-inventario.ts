@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isDemoMode } from '@/services/apiClient';
 import type { RealtimePort } from '@/shared/realtime';
+import { useRealtimeReconnect } from '@/shared/realtime/use-realtime-reconnect';
 import type { CentroAyuda } from '@/types/domain';
 import { fetchInventario } from './inventory-api';
 import { useInventarioStore } from './inventory-store';
@@ -41,6 +42,17 @@ export function useInventario(
   // volver a leerla, en vivo, sin esperar a un movimiento de inventario.
   useAlertasEscasezSync(demo ? null : port, onReadModelChange);
 
+  // `/topic/suministros` no reenvía lo publicado mientras el canal estuvo caído.
+  // Al volver la conexión se olvidan los centros ya leídos y se vuelve a pedir el
+  // inventario de todos, para que el semáforo no se quede con un stock viejo.
+  const [reconexiones, setReconexiones] = useState(0);
+  const recargar = useCallback(() => {
+    loaded.current.clear();
+    setReconexiones((actual) => actual + 1);
+  }, []);
+  useRealtimeReconnect(demo ? null : port, recargar);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `reconexiones` es el disparador de la relectura tras reconectar.
   useEffect(() => {
     if (demo || centroIds === '') {
       return;
@@ -57,5 +69,5 @@ export function useInventario(
           loaded.current.delete(centroId);
         });
     }
-  }, [demo, centroIds, hydrate]);
+  }, [demo, centroIds, hydrate, reconexiones]);
 }

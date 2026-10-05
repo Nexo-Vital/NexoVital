@@ -103,6 +103,24 @@ describe('useMapData', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('re-reads the snapshot when the channel comes back after a drop', async () => {
+    fetchMock.mockResolvedValue(mockResponse(200, RESPONSE));
+    const port = new FakeRealtimePort();
+    const { result } = renderHook(() => useMapData([], port));
+    await waitFor(() => expect(result.current.centros).toHaveLength(2));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // While the channel was down a center was removed: the broker never replays
+    // that delete, so only a new read can show it.
+    fetchMock.mockResolvedValue(mockResponse(200, { ...RESPONSE, centros: [RESPONSE.centros[0]] }));
+    act(() => port.setState('STALE'));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    act(() => port.setState('CONNECTED'));
+
+    await waitFor(() => expect(result.current.centros).toHaveLength(1));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('requests /api/v1/mapa without the flag and maps zones and centers', async () => {
     fetchMock.mockResolvedValue(mockResponse(200, RESPONSE));
     const port = new FakeRealtimePort();

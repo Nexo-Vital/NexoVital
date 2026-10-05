@@ -52,6 +52,35 @@ describe('useInventario', () => {
     useInventarioStore.getState().reset();
   });
 
+  it('reads every center again when the channel comes back after a drop', async () => {
+    setToken('jwt.test');
+    let disponible = 12;
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const centroId = String(input).includes('/c-1/') ? 'c-1' : 'c-2';
+      return Promise.resolve(
+        mockResponse(200, [dto(centroId, `i-${centroId}`, 'ROJO', disponible)]),
+      );
+    });
+    const port = new FakeRealtimePort();
+    renderHook(() => useInventario(CENTROS, port));
+    await waitFor(() =>
+      expect(useInventarioStore.getState().itemsByCentro['c-2']?.[0]?.disponible).toBe(12),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    // The stock moved while the channel was down; `/topic/suministros` never
+    // replays it, so the reconnect has to read it.
+    disponible = 70;
+    act(() => port.setState('STALE'));
+    act(() => port.setState('CONNECTED'));
+
+    await waitFor(() =>
+      expect(useInventarioStore.getState().itemsByCentro['c-1']?.[0]?.disponible).toBe(70),
+    );
+    expect(useInventarioStore.getState().itemsByCentro['c-2']?.[0]?.disponible).toBe(70);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
   it('loads every center inventory and merges it into the store', async () => {
     setToken('jwt.test');
     fetchMock.mockImplementation((input: RequestInfo | URL) => {

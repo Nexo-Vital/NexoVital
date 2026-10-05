@@ -7,6 +7,7 @@ import {
   type MapaElementoPayload,
   type RealtimePort,
 } from '@/shared/realtime';
+import { useRealtimeReconnect } from '@/shared/realtime/use-realtime-reconnect';
 import type { CentroAyuda, Ubicacion, Zona } from '@/types/domain';
 import { fetchMapa, type MapaCentroDto, mapaToCentros } from './map-api';
 
@@ -221,6 +222,12 @@ export function useMapData(fallbackCentros: CentroAyuda[], port?: RealtimePort):
       setRemote((current) => applyMapaPayload(current, payload));
     });
   }, [demo, port]);
+
+  // Reconnect half: the broker does not replay, so an element created, edited or
+  // removed while the channel was down never arrives. When the channel comes
+  // back the snapshot is read again (EP-02.F1.US2). Off in demo mode, where the
+  // transport is not even constructed.
+  useRealtimeReconnect(demo ? null : (port ?? getRealtimePort()), load);
 
   if (demo) {
     return { centros: fallbackCentros, zonas: [], loading: false, error: null, refresh: load };

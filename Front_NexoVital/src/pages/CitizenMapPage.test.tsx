@@ -1772,6 +1772,54 @@ describe('CitizenMapPage', () => {
     }
   });
 
+  it('EP-02.F1.US2: reads the emergencies again when the channel comes back after a drop', async () => {
+    vi.stubEnv('VITE_DEMO_MODE', '0');
+    const reportedWhileOffline = {
+      id: '3f0c1f1e-5c0a-4d39-9d0b-0d3b7a1c2e11',
+      ubicacion: { lat: 4.74, lng: -74.08 },
+      tipo: 'INCENDIO',
+      nivel: 'ALTO',
+      estado: 'REGISTRADA',
+      descripcion: 'Incendio reportado durante el corte',
+      zonaId: null,
+      createdAt: '2026-10-05T10:00:00Z',
+    };
+    let emergencias: unknown[] = [];
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const body = String(input).endsWith('/emergencias') ? emergencias : [];
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => body,
+      } as unknown as Response);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const port = new FakeRealtimePort();
+      renderPage({ port, emergencias: undefined });
+      const reads = () =>
+        fetchMock.mock.calls.filter(([input]) => String(input).endsWith('/emergencias')).length;
+      await waitFor(() => expect(reads()).toBe(1));
+      expect(useEmergencyStore.getState().items).toHaveLength(0);
+
+      // The broker does not replay what was published while the channel was down.
+      emergencias = [reportedWhileOffline];
+      act(() => port.setState('STALE'));
+      act(() => port.setState('CONNECTED'));
+
+      await waitFor(() => expect(useEmergencyStore.getState().items).toHaveLength(1));
+      expect(useEmergencyStore.getState().items[0]).toMatchObject({
+        id: reportedWhileOffline.id,
+        tipo: 'FIRE',
+        nivel: 'HIGH',
+      });
+      expect(reads()).toBe(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('opens a single GPS watcher although the report dialog is always mounted', () => {
     const watchPosition = vi.fn().mockReturnValue(1);
     const clearWatch = vi.fn();

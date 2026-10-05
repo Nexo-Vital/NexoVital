@@ -7,6 +7,9 @@ import { useSessionStore } from '@/features/usuarios/session';
 import { useClock } from '@/hooks/use-clock';
 import { formatCountdown } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { isDemoMode } from '@/services/apiClient';
+import { getRealtimePort } from '@/shared/realtime';
+import { ConnectionBanner } from '@/shared/realtime/ConnectionBanner';
 import { useRealtimeConnection } from '@/shared/realtime/use-realtime-connection';
 
 /** One entry of the sidebar navigation. The shell renders it, the role config owns it. */
@@ -497,6 +500,9 @@ export function AppFrame({
             />
           )}
         </header>
+
+        {/* Off in demo mode: there is no backend channel to lose there. */}
+        <ConnectionBanner port={isDemoMode() ? null : getRealtimePort()} />
 
         <main className="min-h-0 flex-1 overflow-auto bg-nv-mint p-7 px-8">
           <Outlet />

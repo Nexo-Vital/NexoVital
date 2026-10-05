@@ -185,6 +185,19 @@ export default function CitizenMapPage({
       });
   }, []);
   useRealtimeReconnect(ambulancias === undefined && !demo ? port : null, reloadFleet);
+  // Same rule for emergencies: a zone reported (or closed) while the channel was
+  // down is only recovered by reading `GET /emergencias` again. The map and the
+  // inventory re-read themselves inside `useMapData` and `useInventario`.
+  const reloadEmergencies = useCallback(() => {
+    fetchEmergencias()
+      .then((items) => {
+        useEmergencyStore.getState().hydrate(items);
+      })
+      .catch(() => {
+        // A failed read leaves the store as-is, like the mount read.
+      });
+  }, []);
+  useRealtimeReconnect(emergencias === undefined && !demo ? port : null, reloadEmergencies);
   /*
     Emergencies follow the SAME source discipline as the fleet: an injected list
     wins, demo mode hydrates the fixtures, and off demo mode `GET

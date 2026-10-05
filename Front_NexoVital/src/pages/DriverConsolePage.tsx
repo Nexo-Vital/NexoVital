@@ -192,6 +192,19 @@ export default function DriverConsolePage({
       });
   }, []);
   useRealtimeReconnect(ambulancias === undefined && !demo ? port : null, reloadFleet);
+  // Same rule for emergencies: a zone reported (or closed) while the channel was
+  // down is only recovered by reading `GET /emergencias` again. The map and the
+  // inventory re-read themselves inside `useMapData` and `useInventario`.
+  const reloadEmergencies = useCallback(() => {
+    fetchEmergencias()
+      .then((items) => {
+        useEmergencyStore.getState().hydrate(items);
+      })
+      .catch(() => {
+        // A failed read leaves the store as-is, like the mount read.
+      });
+  }, []);
+  useRealtimeReconnect(emergencias === undefined && !demo ? port : null, reloadEmergencies);
   // Off demo the driver's OWN unit comes from the server-scoped `/mia` resource
   // (the general fleet list no longer exposes any driver id). A failed read
   // leaves the unit unresolved and the UI says so, never substituting a fixture.
