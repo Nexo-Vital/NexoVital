@@ -49,8 +49,12 @@ describe('trafficLight', () => {
 });
 
 describe('centroSemaforo', () => {
-  it('is neutral for an empty inventory', () => {
+  it('is neutral for an inventory that was never read', () => {
     expect(centroSemaforo(centroWith([]))).toBe('NOT_DECLARED');
+  });
+
+  it('is COMPLETE for an inventory that was read and is empty (needs nothing)', () => {
+    expect(centroSemaforo({ ...centroWith([]), inventarioCargado: true })).toBe('COMPLETE');
   });
 
   it('stays neutral when every item is NOT_DECLARED', () => {

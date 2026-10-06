@@ -155,7 +155,10 @@ export function MyCenterRail({ centro, onAddSupply, onWithdraw, onBackToMap }: M
           Insumos del centro
         </h4>
         {centro.items.length === 0 ? (
-          <p className="text-nv-navy-400 text-sm">Tu centro no declara insumos todavía.</p>
+          <p className="text-nv-navy-400 text-sm">
+            Tu centro no tiene ni necesita nada por ahora, por eso aparece como completo. Agrega un
+            insumo cuando quieras declararlo.
+          </p>
         ) : (
           <ul className="flex list-none flex-col gap-3.5 p-0">
             {centro.items.map((item) => (

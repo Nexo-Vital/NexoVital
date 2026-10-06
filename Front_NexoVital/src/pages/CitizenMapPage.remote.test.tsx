@@ -151,10 +151,13 @@ describe('CitizenMapPage against /api/v1/mapa', () => {
     fetchMock.mockReset();
     vi.stubGlobal('fetch', fetchMock);
     // The map snapshot answers `/mapa`; each center's inventory read (EP-03)
-    // answers an empty list, so this case keeps asserting the map source only.
+    // fails to read, so no inventory is known and this case keeps asserting the
+    // map source only (an inventory read AND empty would mean "complete").
     fetchMock.mockImplementation((input: RequestInfo | URL) =>
       Promise.resolve(
-        String(input).includes('/inventario') ? mockResponse(200, []) : mockResponse(200, RESPONSE),
+        String(input).includes('/inventario')
+          ? mockResponse(500, { mensaje: 'Sin inventario' })
+          : mockResponse(200, RESPONSE),
       ),
     );
     setToken('jwt.test');

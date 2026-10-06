@@ -8,12 +8,11 @@ import type { RolUsuario } from '@/types/domain';
  * error rather than a silent fall-through to a screen that is not its own. A
  * `null` value means "this role has no screen in this version": it is blocked at
  * login and on hydration (see LoginPage, guards and session.ts). The platform
- * and supply-center administrators are `null` on purpose: this build ships the
- * citizen, driver and help-center administrator surfaces, so those two roles
- * cannot enter.
+ * administrator is `null` on purpose: this build ships the citizen, driver and
+ * center-administrator surfaces, so that role cannot enter.
  *
  * `CENTER_ADMIN_MAP` is the citizen map with ONE different action: instead of
- * donating supplies, the help-center administrator creates and manages their
+ * donating supplies, the help-center or supply-center administrator creates and manages their
  * own center (EP-03.F1.US1).
  */
 export type RoleHomeKind = 'DRIVER_CONSOLE' | 'CITIZEN_MAP' | 'CENTER_ADMIN_MAP';
@@ -21,7 +20,7 @@ export type RoleHomeKind = 'DRIVER_CONSOLE' | 'CITIZEN_MAP' | 'CENTER_ADMIN_MAP'
 export const ROLE_HOME: Record<RolUsuario, RoleHomeKind | null> = {
   ADMIN_PLATAFORMA: null,
   ADMIN_CENTRO_AYUDA: 'CENTER_ADMIN_MAP',
-  ADMIN_ACOPIO: null,
+  ADMIN_ACOPIO: 'CENTER_ADMIN_MAP',
   CONDUCTOR: 'DRIVER_CONSOLE',
   CIUDADANO: 'CITIZEN_MAP',
 };

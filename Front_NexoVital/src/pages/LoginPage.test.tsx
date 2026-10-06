@@ -12,8 +12,8 @@ import LoginPage from './LoginPage';
 const ADMIN = {
   id: 'usr-1',
   nombre: 'Paula Méndez',
-  email: 'acopio@nexovital.co',
-  rol: 'ADMIN_ACOPIO',
+  email: 'admin@nexovital.co',
+  rol: 'ADMIN_PLATAFORMA',
 };
 
 /** Citizen account, whose role now lands on the citizen map. */
@@ -194,7 +194,7 @@ describe('LoginPage', () => {
     await user.click(screen.getByRole('button', { name: 'Iniciar sesión' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'El perfil Administrador de centro de acopio todavía no tiene una pantalla en esta versión.',
+      'El perfil Administrador de plataforma todavía no tiene una pantalla en esta versión.',
     );
     expect(screen.queryByTestId('home')).not.toBeInTheDocument();
     expect(useSessionStore.getState().token).toBeNull();
@@ -296,7 +296,9 @@ describe('LoginPage', () => {
     // The other seeded administrators are not offered: this panel is what the demo shows.
     expect(screen.queryByText('Administra la plataforma y los usuarios')).not.toBeInTheDocument();
     expect(
-      screen.queryByText('Gestiona el inventario y las donaciones del centro de acopio'),
+      screen.queryByText(
+        'Crea y gestiona su centro, igual que el administrador de centro de ayuda',
+      ),
     ).not.toBeInTheDocument();
   });
 

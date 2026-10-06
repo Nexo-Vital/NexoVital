@@ -54,7 +54,7 @@ export const DEMO_USERS: DemoUser[] = [
   {
     rol: 'ADMIN_ACOPIO',
     label: 'Administrador de centro de acopio',
-    descripcion: 'Gestiona el inventario y las donaciones del centro de acopio',
+    descripcion: 'Crea y gestiona su centro, igual que el administrador de centro de ayuda',
     email: 'acopio@nexovital.co',
     password: 'acopio123',
   },

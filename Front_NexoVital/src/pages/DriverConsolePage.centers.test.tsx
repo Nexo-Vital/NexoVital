@@ -168,13 +168,28 @@ describe('DriverConsolePage aid-center levels from the real inventory', () => {
   });
 
   it('shows "Sin declarar" when the map carries no inventory (the defect this fixes)', async () => {
-    // No inventory answers: `/mapa` alone has no items, so the level is unknown.
-    fetchMock.mockImplementation(() => Promise.resolve(mockResponse(200, [])));
+    // The inventory cannot be read: `/mapa` alone has no items, so the level is unknown.
+    fetchMock.mockImplementation((input: RequestInfo | URL) =>
+      Promise.resolve(
+        String(input).includes('/inventario')
+          ? mockResponse(500, { mensaje: 'Falló' })
+          : mockResponse(200, []),
+      ),
+    );
 
     render(<DriverConsolePage port={new FakeRealtimePort()} />);
 
     await waitFor(() => expect(railLevel('Acopio Suba Norte')).toBe('Sin declarar'));
     expect(railLevel('Acopio Tibabuyes')).toBe('Sin declarar');
+  });
+
+  it('shows "Completo" when the inventory was read and the center declares nothing', async () => {
+    // A center with no supplies needs nothing: it is complete, not undeclared.
+    fetchMock.mockImplementation(() => Promise.resolve(mockResponse(200, [])));
+
+    render(<DriverConsolePage port={new FakeRealtimePort()} />);
+
+    await waitFor(() => expect(railLevel('Acopio Suba Norte')).toBe('Completo'));
   });
 
   it('starts collapsed and expands only the clicked center inline in its own row', async () => {
@@ -266,8 +281,14 @@ describe('DriverConsolePage aid-center levels from the real inventory', () => {
 
   it('shows an honest empty state when the center declares no inventory', async () => {
     const user = userEvent.setup();
-    // No inventory answers: the center keeps the `items: []` `/mapa` sent.
-    fetchMock.mockImplementation(() => Promise.resolve(mockResponse(200, [])));
+    // The inventory read fails: the center keeps the `items: []` `/mapa` sent.
+    fetchMock.mockImplementation((input: RequestInfo | URL) =>
+      Promise.resolve(
+        String(input).includes('/inventario')
+          ? mockResponse(500, { mensaje: 'Falló' })
+          : mockResponse(200, []),
+      ),
+    );
 
     render(<DriverConsolePage port={new FakeRealtimePort()} />);
     await waitFor(() => expect(railLevel('Acopio Suba Norte')).toBe('Sin declarar'));

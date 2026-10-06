@@ -46,9 +46,9 @@ interface CreateCenterDialogProps {
  * center has today and the maximum it needs.
  *
  * The location uses the same two sources as the affected-zone report ("Mi
- * ubicación actual" or "Escribir dirección"). The supply list starts with one
- * empty row because a center is created to ask for something; more can be added
- * here or later from "Administrar mi centro".
+ * ubicación actual" or "Escribir dirección"). The supply list starts EMPTY and is
+ * optional: a center with no inventory has nothing and needs nothing, and shows
+ * as complete. Supplies can be added here or later from "Administrar mi centro".
  */
 export function CreateCenterDialog({
   open,
@@ -59,7 +59,7 @@ export function CreateCenterDialog({
 }: CreateCenterDialogProps) {
   const [nombre, setNombre] = useState('');
   const [ubicacion, setUbicacion] = useState<Ubicacion | null>(null);
-  const [insumos, setInsumos] = useState<InsumoRow[]>(() => [emptyInsumoRow()]);
+  const [insumos, setInsumos] = useState<InsumoRow[]>([]);
   const [errors, setErrors] = useState<CenterFormErrors>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -72,7 +72,7 @@ export function CreateCenterDialog({
     }
     setNombre('');
     setUbicacion(null);
-    setInsumos([emptyInsumoRow()]);
+    setInsumos([]);
     setErrors({});
     setSubmitting(false);
     setSubmitError(null);
@@ -154,8 +154,8 @@ export function CreateCenterDialog({
         <DialogHeader>
           <DialogTitle>Crear centro</DialogTitle>
           <DialogDescription id="create-center-desc">
-            Registra tu centro y los insumos que necesita. Aparecerá en el mapa con su semáforo para
-            que las personas puedan donarle.
+            Registra tu centro. Los insumos son opcionales: sin insumos el centro aparece como
+            completo, y puedes agregarlos cuando los necesites.
           </DialogDescription>
         </DialogHeader>
 
@@ -194,10 +194,12 @@ export function CreateCenterDialog({
 
           <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
             <legend className="nv-label text-muted-foreground">
-              Insumos que necesita el centro
+              Insumos del centro (opcional)
             </legend>
             <p className="text-muted-foreground text-[11px]">
-              Por cada insumo indica cuántas unidades tienes hoy y el máximo que necesita el centro.
+              {insumos.length === 0
+                ? 'Tu centro no tiene ni necesita nada por ahora. Agrega un insumo solo si quieres declararlo.'
+                : 'Por cada insumo indica cuántas unidades tienes hoy y el máximo que necesita el centro.'}
             </p>
 
             <ul className="flex list-none flex-col gap-2 p-0">
@@ -279,7 +281,6 @@ export function CreateCenterDialog({
                         size="icon"
                         aria-label={`Quitar el insumo ${position}`}
                         onClick={() => removeRow(row.key)}
-                        disabled={insumos.length === 1}
                         className="col-span-2 justify-self-end sm:col-span-1"
                       >
                         <Trash2 aria-hidden />
@@ -312,7 +313,7 @@ export function CreateCenterDialog({
               className="self-start"
             >
               <Plus aria-hidden />
-              Agregar otro insumo
+              {insumos.length === 0 ? 'Agregar un insumo' : 'Agregar otro insumo'}
             </Button>
           </fieldset>
 

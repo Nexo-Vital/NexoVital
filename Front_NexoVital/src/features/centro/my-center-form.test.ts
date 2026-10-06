@@ -89,12 +89,18 @@ describe('validateCenterForm', () => {
     expect(hasErrors(validateCenterForm(values()))).toBe(false);
   });
 
-  it('requires the name, the location and at least one supply', () => {
-    const errors = validateCenterForm(values({ nombre: ' ', ubicacion: null, insumos: [] }));
+  it('requires the name and the location', () => {
+    const errors = validateCenterForm(values({ nombre: ' ', ubicacion: null }));
 
     expect(errors.nombre).toBe('Escribe el nombre del centro.');
     expect(errors.ubicacion).toContain('Indica dónde queda el centro');
-    expect(errors.insumos).toBe('Agrega al menos un insumo.');
+  });
+
+  it('accepts a center with no supplies: it needs nothing, so it is complete', () => {
+    const errors = validateCenterForm(values({ insumos: [] }));
+
+    expect(errors.insumos).toBeUndefined();
+    expect(hasErrors(errors)).toBe(false);
   });
 
   it('flags the SECOND row when two supplies share a name', () => {

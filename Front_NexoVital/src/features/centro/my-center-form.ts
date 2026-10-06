@@ -37,7 +37,7 @@ export interface CenterFormValues {
 export interface CenterFormErrors {
   nombre?: string;
   ubicacion?: string;
-  /** Error de la lista completa (vacía o demasiado larga). */
+  /** Error de la lista completa (demasiado larga; vacía es válido). */
   insumos?: string;
   /** Errores por fila, indexados por `InsumoRow.key`. */
   filas?: Record<string, InsumoRowErrors>;
@@ -123,9 +123,9 @@ export function validateCenterForm(values: CenterFormValues): CenterFormErrors {
       'Indica dónde queda el centro: usa tu ubicación actual o elige una dirección.';
   }
 
-  if (values.insumos.length === 0) {
-    errors.insumos = 'Agrega al menos un insumo.';
-  } else if (values.insumos.length > MAX_INSUMOS_INICIALES) {
+  // Sin insumos es válido: un centro puede crearse sin inventario (no tiene ni
+  // necesita nada) y se muestra como completo (EP-03.F2.US1).
+  if (values.insumos.length > MAX_INSUMOS_INICIALES) {
     errors.insumos = `Crea el centro con máximo ${MAX_INSUMOS_INICIALES} insumos; agrega los demás después.`;
   }
 

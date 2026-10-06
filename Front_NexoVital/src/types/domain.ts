@@ -232,6 +232,13 @@ export interface CentroAyuda {
   ubicacion: Ubicacion;
   items: InventarioItem[];
   /**
+   * `true` once the center's inventory was READ (even when it came back empty).
+   * A center whose inventory was read and is empty has nothing and needs
+   * nothing, so it shows as COMPLETE; before the read it stays NOT_DECLARED.
+   * Optional so every existing center literal keeps compiling.
+   */
+  inventarioCargado?: boolean;
+  /**
    * Worst active shortage alert of the center, if any (contract `alerta`,
    * EP-03.F1.US5). OPTIONAL by design (backend FA-7): most centers have none
    * and the backend omits the field from the JSON when it does, so an absent

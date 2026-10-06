@@ -200,7 +200,9 @@ describe('CitizenMapPage as the help-center administrator', () => {
     const dialog = screen.getByRole('dialog', { name: 'Crear centro' });
     expect(within(dialog).getByLabelText('Nombre del centro')).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Escribir dirección' })).toBeInTheDocument();
-    expect(within(dialog).getByLabelText('Cantidad máxima del insumo 1')).toBeInTheDocument();
+    // Supplies are optional: the list starts empty and grows on demand.
+    expect(within(dialog).queryByLabelText('Insumo 1')).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Agregar un insumo' })).toBeInTheDocument();
   });
 
   it('never offers "Crear centro" when the center could not be read', async () => {

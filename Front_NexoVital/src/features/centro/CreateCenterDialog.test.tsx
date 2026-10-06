@@ -55,6 +55,10 @@ function type(label: string, value: string) {
   fireEvent.change(within(dialog()).getByLabelText(label), { target: { value } });
 }
 
+function addSupply() {
+  fireEvent.click(within(dialog()).getByRole('button', { name: /^Agregar (un|otro) insumo$/ }));
+}
+
 function submit() {
   fireEvent.click(within(dialog()).getByRole('button', { name: 'Crear centro' }));
 }
@@ -70,11 +74,27 @@ describe('CreateCenterDialog', () => {
     cleanup();
   });
 
-  it('starts with one empty supply row that cannot be removed', () => {
+  it('starts with no supply rows: supplies are optional', () => {
     renderDialog();
 
-    expect(within(dialog()).getByLabelText('Insumo 1')).toHaveValue('');
-    expect(within(dialog()).getByRole('button', { name: 'Quitar el insumo 1' })).toBeDisabled();
+    expect(within(dialog()).queryByLabelText('Insumo 1')).not.toBeInTheDocument();
+    expect(within(dialog()).getByRole('button', { name: 'Agregar un insumo' })).toBeInTheDocument();
+  });
+
+  it('creates a center with no supplies when only the name and location are given', async () => {
+    const { onSubmit } = renderDialog();
+    type('Nombre del centro', 'Centro Vacío');
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Mi ubicación actual' }));
+
+    submit();
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith({
+        nombre: 'Centro Vacío',
+        ubicacion: DEVICE,
+        items: [],
+      }),
+    );
   });
 
   it('shows every missing field and sends nothing', () => {
@@ -84,7 +104,6 @@ describe('CreateCenterDialog', () => {
 
     expect(within(dialog()).getByText('Escribe el nombre del centro.')).toBeInTheDocument();
     expect(within(dialog()).getByText(/Indica dónde queda el centro/)).toBeInTheDocument();
-    expect(within(dialog()).getByText(/Escribe el nombre del insumo\./)).toBeInTheDocument();
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
@@ -106,10 +125,11 @@ describe('CreateCenterDialog', () => {
     fireEvent.click(within(dialog()).getByRole('button', { name: 'Mi ubicación actual' }));
     expect(await within(dialog()).findByText('Cerca de Calle 145, Suba')).toBeInTheDocument();
 
+    addSupply();
     type('Insumo 1', 'Agua potable');
     type('Cantidad actual del insumo 1', '20');
     type('Cantidad máxima del insumo 1', '60');
-    fireEvent.click(within(dialog()).getByRole('button', { name: 'Agregar otro insumo' }));
+    addSupply();
     type('Insumo 2', 'Cobijas');
     type('Cantidad actual del insumo 2', '0');
     type('Cantidad máxima del insumo 2', '30');
@@ -131,6 +151,7 @@ describe('CreateCenterDialog', () => {
 
   it('keeps only digits in the amount fields', () => {
     renderDialog();
+    addSupply();
 
     type('Cantidad actual del insumo 1', '-12.5');
 
@@ -139,8 +160,9 @@ describe('CreateCenterDialog', () => {
 
   it('removes a supply row and renumbers the rest', () => {
     renderDialog();
+    addSupply();
     type('Insumo 1', 'Agua potable');
-    fireEvent.click(within(dialog()).getByRole('button', { name: 'Agregar otro insumo' }));
+    addSupply();
     type('Insumo 2', 'Cobijas');
 
     fireEvent.click(within(dialog()).getByRole('button', { name: 'Quitar el insumo 1' }));
@@ -153,10 +175,11 @@ describe('CreateCenterDialog', () => {
     const { onSubmit } = renderDialog();
     type('Nombre del centro', 'Centro Rincón');
     fireEvent.click(within(dialog()).getByRole('button', { name: 'Mi ubicación actual' }));
+    addSupply();
     type('Insumo 1', 'Agua');
     type('Cantidad actual del insumo 1', '1');
     type('Cantidad máxima del insumo 1', '5');
-    fireEvent.click(within(dialog()).getByRole('button', { name: 'Agregar otro insumo' }));
+    addSupply();
     type('Insumo 2', 'agua');
     type('Cantidad actual del insumo 2', '1');
     type('Cantidad máxima del insumo 2', '5');
@@ -174,6 +197,7 @@ describe('CreateCenterDialog', () => {
     const { onOpenChange } = renderDialog(onSubmit);
     type('Nombre del centro', 'Acopio Suba Norte');
     fireEvent.click(within(dialog()).getByRole('button', { name: 'Mi ubicación actual' }));
+    addSupply();
     type('Insumo 1', 'Agua');
     type('Cantidad actual del insumo 1', '1');
     type('Cantidad máxima del insumo 1', '5');

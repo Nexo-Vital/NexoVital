@@ -22,8 +22,8 @@ describe('role destinations', () => {
     expect(Object.keys(ROLE_LABEL).sort()).toEqual([...ROLES].sort());
   });
 
-  it('declares no screen for the platform and supply-center administrators', () => {
-    const admins: RolUsuario[] = ['ADMIN_ACOPIO', 'ADMIN_PLATAFORMA'];
+  it('declares no screen for the platform administrator', () => {
+    const admins: RolUsuario[] = ['ADMIN_PLATAFORMA'];
     for (const role of admins) {
       expect(ROLE_HOME[role]).toBeNull();
       expect(resolveRoleHome(role)).toBeNull();

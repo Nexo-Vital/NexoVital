@@ -24,8 +24,8 @@ const CITIZEN = {
 const ADMIN = {
   id: 'usr-admin',
   nombre: 'Paula Méndez',
-  email: 'acopio@nexovital.co',
-  rol: 'ADMIN_ACOPIO',
+  email: 'admin@nexovital.co',
+  rol: 'ADMIN_PLATAFORMA',
 };
 
 /**

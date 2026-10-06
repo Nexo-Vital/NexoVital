@@ -376,7 +376,7 @@ export default function CitizenMapPage({
     const onMap = centros.find((centro) => centro.id === propio.id);
     const items = inventario[propio.id] ?? propio.items;
     if (onMap) {
-      return { ...onMap, items };
+      return { ...onMap, items, inventarioCargado: true };
     }
     return {
       id: propio.id,
@@ -384,6 +384,7 @@ export default function CitizenMapPage({
       ubicacion: propio.ubicacion,
       tipo: 'CENTRO_ACOPIO',
       items,
+      inventarioCargado: true,
     };
   }, [myCenter.centro, centros, inventario]);
   const withdrawItem: InventarioItem | null = useMemo(

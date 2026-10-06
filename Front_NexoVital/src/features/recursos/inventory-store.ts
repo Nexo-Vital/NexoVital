@@ -45,6 +45,6 @@ export function withInventario(
 ): CentroAyuda[] {
   return centros.map((centro) => {
     const items = itemsByCentro[centro.id];
-    return items === undefined ? centro : { ...centro, items };
+    return items === undefined ? centro : { ...centro, items, inventarioCargado: true };
   });
 }

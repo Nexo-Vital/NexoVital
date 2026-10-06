@@ -64,7 +64,7 @@ describe('RoleHome', () => {
     useSessionStore.setState({ user: null, role: null, token: null });
   });
 
-  it.each(['ADMIN_PLATAFORMA', 'ADMIN_ACOPIO'] as const)(
+  it.each(['ADMIN_PLATAFORMA'] as const)(
     'sends %s to the login screen because it has no home',
     (role) => {
       signInAs(role);
@@ -138,7 +138,7 @@ describe('AppRouter shell selection', () => {
   });
 
   it('sends a role without home to the login screen instead of rendering a chrome', () => {
-    signInAs('ADMIN_ACOPIO');
+    signInAs('ADMIN_PLATAFORMA');
     renderApp();
 
     expect(screen.getByTestId('login-screen')).toBeInTheDocument();
