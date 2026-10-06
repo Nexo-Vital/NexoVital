@@ -1,0 +1,28 @@
+# PostgreSQL local para el perfil `docker` del backend NexoVital.
+#
+#   Levantar:  docker compose up -d
+#   Apagar:    docker compose down        (conserva los datos)
+#   Borrar:    docker compose down -v     (borra el volumen de datos)
+#
+# Luego correr el back con el perfil:
+#   SPRING_PROFILES_ACTIVE=docker mvn spring-boot:run
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nexovital-pg
+    environment:
+      POSTGRES_DB: nexovital
+      POSTGRES_USER: nexovital
+      POSTGRES_PASSWORD: nexovital
+    ports:
+      - "5432:5432"
+    volumes:
+      - nexovital-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexovital -d nexovital"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  nexovital-pgdata:
