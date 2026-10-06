@@ -10,6 +10,7 @@ import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudExpiradaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudFinalizadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudLlegadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudRechazadaEvent;
+import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudReintentadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoAmbulancia;
 import co.edu.escuelaing.nexovital.flota.domain.enums.FuentePosicion;
 import co.edu.escuelaing.nexovital.flota.domain.model.Ambulancia;
@@ -75,14 +76,38 @@ public class FlotaPushListener {
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void alCrearSolicitud(SolicitudCreadaEvent evento) {
+        fanOutPendiente(evento.solicitudId(), evento.lat(), evento.lng(), evento.emergenciaId(),
+                evento.zonaId(), evento.ambulanciasNotificadas(), evento.solicitanteId());
+    }
+
+    /**
+     * The accept window closed with no winner but the request still had retries:
+     * the sweep re-emitted it (EP-04.F2.US4). The SAME {@code PENDIENTE} payload
+     * as creation is fanned out — to every unit available at retry time and to the
+     * requester — so a driver who connected after the first emission sees the
+     * request again and the citizen's screen keeps tracking it. The retry is a
+     * re-emission, not a new lifecycle state: the request is still PENDIENTE.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void alReintentarSolicitud(SolicitudReintentadaEvent evento) {
+        fanOutPendiente(evento.solicitudId(), evento.lat(), evento.lng(), evento.emergenciaId(),
+                evento.zonaId(), evento.ambulanciasNotificadas(), evento.solicitanteId());
+    }
+
+    /**
+     * Shared PENDIENTE fan-out used by creation and retry: one user destination
+     * per notified unit (AC1, D-F1) plus the requester's own queue. The payload
+     * carries the pickup {@code ubicacion} so every driver knows where to go.
+     */
+    private void fanOutPendiente(UUID solicitudId, double lat, double lng, UUID emergenciaId,
+                                 String zonaId, List<UUID> ambulanciasNotificadas, UUID solicitanteId) {
         SolicitudPushPayload payload = new SolicitudPushPayload(
-                evento.solicitudId(), new Ubicacion(evento.lat(), evento.lng()),
-                evento.emergenciaId(), evento.zonaId(),
-                "PENDIENTE", evento.ambulanciasNotificadas(), null, false);
-        for (UUID ambulanciaId : evento.ambulanciasNotificadas()) {
+                solicitudId, new Ubicacion(lat, lng), emergenciaId, zonaId,
+                "PENDIENTE", ambulanciasNotificadas, null, false);
+        for (UUID ambulanciaId : ambulanciasNotificadas) {
             publicarAlConductor(ambulanciaId, payload);
         }
-        publicarAlSolicitante(evento.solicitanteId(), payload);
+        publicarAlSolicitante(solicitanteId, payload);
     }
 
     /** The winning unit's driver is told its bid was accepted; so is the requester. */

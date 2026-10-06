@@ -38,6 +38,7 @@ import { useMapData } from '@/features/mapa/use-map-data';
 import { useInventarioStore, withInventario } from '@/features/recursos/inventory-store';
 import { useInventario } from '@/features/recursos/use-inventario';
 import { unitPlateLabel } from '@/features/seguimiento/tracking';
+import { fetchSolicitudDetalle } from '@/features/solicitudes/solicitud-api';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
 import { useSolicitudRegistrySync } from '@/features/solicitudes/use-solicitud-registry-sync';
 import { useSessionStore } from '@/features/usuarios/session';
@@ -389,13 +390,30 @@ export default function DriverConsolePage({
     [resolveSolicitudScene],
   );
 
-  // The row click selects the solicitud AND centres the map on it (MAP-3).
+  /*
+    The row click selects the solicitud AND centres the map on it (MAP-3).
+    Against the backend (never in demo mode) it also asks for that request's
+    authoritative detail (US3): the local row paints immediately, then the
+    server's row replaces it only if the read succeeded AND the same row is
+    still selected, so a late answer can never overwrite a later selection. A
+    failed read keeps the local row and invents nothing.
+  */
   const handleSelectSolicitud = useCallback(
     (solicitud: SolicitudAmbulancia) => {
       setSelectedSolicitud(solicitud);
       centerSolicitudScene(solicitud);
+      if (demo) {
+        return;
+      }
+      void fetchSolicitudDetalle(solicitud.id)
+        .then((detalle) => {
+          setSelectedSolicitud((current) => (current?.id === solicitud.id ? detalle : current));
+        })
+        .catch(() => {
+          // The backend did not answer: keep the locally selected row.
+        });
     },
-    [centerSolicitudScene],
+    [centerSolicitudScene, demo],
   );
 
   /*

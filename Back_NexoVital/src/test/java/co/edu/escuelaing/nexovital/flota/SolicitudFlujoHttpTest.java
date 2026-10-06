@@ -159,6 +159,8 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
                 .andExpect(jsonPath("$.estado").value("PENDIENTE"))
                 .andExpect(jsonPath("$.ubicacion.lat").value(4.73d))
                 .andExpect(jsonPath("$.ubicacion.lng").value(-74.08d))
+                // EP-04.F2.US4: a freshly created request carries the counter at 0.
+                .andExpect(jsonPath("$.reintentos").value(0))
                 .andReturn();
 
         JsonNode creada = objectMapper.readTree(result.getResponse().getContentAsString());

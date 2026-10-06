@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setToken } from '@/services/apiClient';
-import { fromWireSolicitudAmbulancia, solicitarAmbulancia } from './solicitud-api';
+import { fromWireSolicitudAmbulancia, fetchSolicitudDetalle, solicitarAmbulancia } from './solicitud-api';
 
 /** A live-shaped 201 body: server-assigned id/estado/timestamps. */
 const WIRE_RESPONSE = {
@@ -49,7 +49,22 @@ describe('fromWireSolicitudAmbulancia', () => {
       ambulanciasNotificadas: ['A-07', 'A-12', 'A-03'],
       notifiedCount: 3,
       ambulanciaAsignadaId: null,
+      // EP-04.F2.US4: the counter is always present on the mapped request; an
+      // older payload that omits it degrades to 0.
+      reintentos: 0,
     });
+  });
+
+  it('parses the retry counter and defaults it to 0 when the payload omits it', () => {
+    // Present: copied as a finite, non-negative number.
+    expect(fromWireSolicitudAmbulancia({ ...WIRE_RESPONSE, reintentos: 2 })?.reintentos).toBe(2);
+    // Absent (older backend) and malformed values degrade to 0, never reject.
+    expect(fromWireSolicitudAmbulancia(WIRE_RESPONSE)?.reintentos).toBe(0);
+    expect(fromWireSolicitudAmbulancia({ ...WIRE_RESPONSE, reintentos: -1 })?.reintentos).toBe(0);
+    expect(fromWireSolicitudAmbulancia({ ...WIRE_RESPONSE, reintentos: 'x' })?.reintentos).toBe(0);
+    expect(
+      fromWireSolicitudAmbulancia({ ...WIRE_RESPONSE, reintentos: Number.NaN })?.reintentos,
+    ).toBe(0);
   });
 
   it('accepts a standalone request whose emergency, center and zone are null', () => {
@@ -172,5 +187,45 @@ describe('solicitarAmbulancia', () => {
       codigo: 'AMBULANCIA_NO_DISPONIBLE',
       message: 'No hay ambulancias disponibles para atender la solicitud.',
     });
+  });
+});
+
+describe('fetchSolicitudDetalle', () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    localStorage.clear();
+    fetchMock.mockReset();
+    vi.stubGlobal('fetch', fetchMock);
+    setToken('jwt.test');
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('GETs /solicitudes/{id} and maps the server request', async () => {
+    fetchMock.mockResolvedValue(mockResponse(200, WIRE_RESPONSE));
+
+    const solicitud = await fetchSolicitudDetalle(WIRE_RESPONSE.id);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [path, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe(`/api/v1/solicitudes/${WIRE_RESPONSE.id}`);
+    // No explicit method: fetch defaults to GET for this read.
+    expect(options.method ?? 'GET').toBe('GET');
+    expect(solicitud).toMatchObject({
+      id: WIRE_RESPONSE.id,
+      estado: 'PENDING',
+      solicitadaEn: WIRE_RESPONSE.solicitadaEn,
+      ambulanciasNotificadas: ['A-07', 'A-12', 'A-03'],
+    });
+  });
+
+  it('rejects an unexpected response shape instead of returning a half request', async () => {
+    fetchMock.mockResolvedValue(mockResponse(200, { ok: true }));
+
+    await expect(fetchSolicitudDetalle(WIRE_RESPONSE.id)).rejects.toThrow();
   });
 });

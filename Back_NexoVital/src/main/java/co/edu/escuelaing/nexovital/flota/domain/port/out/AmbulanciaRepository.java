@@ -18,6 +18,15 @@ public interface AmbulanciaRepository {
 
     Optional<Ambulancia> buscarPorId(UUID id);
 
+    /**
+     * The unit driven by {@code conductorId}, or empty when the driver has none.
+     * It is the server-scoped way to resolve a driver's own unit (D-F6: one unit
+     * per driver) for authorization reads such as the request detail
+     * (EP-04.F2.US3): the caller's unit is looked up by identity and never
+     * trusted from the client.
+     */
+    Optional<Ambulancia> buscarPorConductor(UUID conductorId);
+
     Ambulancia guardar(Ambulancia ambulancia);
 
     /**

@@ -97,6 +97,7 @@ export function fromWireSolicitudAmbulancia(value: unknown): SolicitudAmbulancia
     ambulanciasNotificadas,
     ambulanciaAsignadaId,
     llegadaEn,
+    reintentos,
   } = value;
 
   if (typeof id !== 'string' || id.length === 0) {
@@ -141,6 +142,13 @@ export function fromWireSolicitudAmbulancia(value: unknown): SolicitudAmbulancia
   if (llegadaEn !== null && llegadaEn !== undefined && !isTimestamp(llegadaEn)) {
     return null;
   }
+  // Retry counter (EP-04.F2.US4): additive and optional. An absent or malformed
+  // value degrades to 0 instead of dropping the whole request, so a payload that
+  // predates the field keeps working unchanged.
+  const reintentosCount =
+    typeof reintentos === 'number' && Number.isFinite(reintentos) && reintentos >= 0
+      ? reintentos
+      : 0;
 
   return {
     id,
@@ -156,7 +164,30 @@ export function fromWireSolicitudAmbulancia(value: unknown): SolicitudAmbulancia
     notifiedCount: ambulanciasNotificadas.length,
     ambulanciaAsignadaId: typeof ambulanciaAsignadaId === 'string' ? ambulanciaAsignadaId : null,
     ...(typeof llegadaEn === 'string' ? { llegadaEn } : {}),
+    reintentos: reintentosCount,
   };
+}
+
+/**
+ * Reads ONE ambulance request through the contract endpoint
+ * `GET /api/v1/solicitudes/{id}` (EP-04.F2.US3).
+ *
+ * `apiFetch` attaches the `Bearer` token and defaults to GET; the body is
+ * normalized through the shared `fromWireSolicitudAmbulancia`, so the caller
+ * adopts the server's authoritative request (its `estado`, `solicitadaEn` and
+ * notified units) instead of a blind cast or the registry row fed by push.
+ *
+ * `ApiError` is intentionally NOT caught here: it bubbles up so the caller can
+ * decide what to do with a failed read (404 unknown request, 403 wrong role).
+ */
+export async function fetchSolicitudDetalle(id: string): Promise<SolicitudAmbulancia> {
+  const response = await apiFetch<unknown>(`/solicitudes/${id}`);
+
+  const solicitud = fromWireSolicitudAmbulancia(response);
+  if (!solicitud) {
+    throw new Error('El servidor devolvió una solicitud con una forma inesperada.');
+  }
+  return solicitud;
 }
 
 /**

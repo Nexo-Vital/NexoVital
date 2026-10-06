@@ -12,13 +12,15 @@ import java.util.UUID;
  *
  * <p>{@code ubicacion} is the pickup point and is always present. {@code
  * emergenciaId}, {@code centroAyudaId} and {@code zonaId} are nullable: a
- * standalone citizen request carries none of them.
+ * standalone citizen request carries none of them. {@code reintentos} is the
+ * retry counter (EP-04.F2.US4) and is additive: it is 0 for a freshly created
+ * request and grows only while the accept window is re-emitted.
  */
 public record SolicitudAmbulanciaDto(UUID id, UbicacionDto ubicacion, UUID emergenciaId,
                                      EstadoSolicitud estado, UUID centroAyudaId, String zonaId,
                                      Instant solicitadaEn, Instant timeoutEn,
                                      List<UUID> ambulanciasNotificadas, UUID ambulanciaAsignadaId,
-                                     Instant llegadaEn) {
+                                     Instant llegadaEn, int reintentos) {
 
     public static SolicitudAmbulanciaDto fromDomain(SolicitudAmbulancia solicitud) {
         return new SolicitudAmbulanciaDto(
@@ -32,6 +34,7 @@ public record SolicitudAmbulanciaDto(UUID id, UbicacionDto ubicacion, UUID emerg
                 solicitud.getTimeoutEn(),
                 solicitud.getAmbulanciasNotificadas(),
                 solicitud.getAmbulanciaAsignadaId(),
-                solicitud.getLlegadaEn());
+                solicitud.getLlegadaEn(),
+                solicitud.getReintentos());
     }
 }

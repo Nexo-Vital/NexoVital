@@ -9,6 +9,7 @@ import co.edu.escuelaing.nexovital.flota.domain.model.SolicitudAmbulancia;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.AceptarSolicitudUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.CancelarSolicitudUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.ConfirmarSolicitudUseCase;
+import co.edu.escuelaing.nexovital.flota.domain.port.in.ConsultarDetalleSolicitudUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.DeclararLlegadaUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.FinalizarSolicitudUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.RechazarSolicitudUseCase;
@@ -26,6 +27,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -63,6 +65,8 @@ public class SolicitudController {
             "La solicitud ya no admite esa transición.";
     private static final String MENSAJE_SOLICITUD_AJENA =
             "Solo el solicitante puede cancelar su propia solicitud.";
+    private static final String MENSAJE_SOLICITUD_AJENA_DETALLE =
+            "Solo el solicitante o un conductor implicado puede consultar esta solicitud.";
     private static final String MENSAJE_CAS_PERDIDO = "Solicitud ya asignada a otra ambulancia.";
     private static final String MENSAJE_AMBULANCIA_NO_DISPONIBLE =
             "No hay ambulancias disponibles para atender la solicitud.";
@@ -73,6 +77,7 @@ public class SolicitudController {
     private static final String MENSAJE_ERROR_FINALIZACION = "No fue posible finalizar el servicio.";
     private static final String MENSAJE_ERROR_CONFIRMACION = "No fue posible confirmar la solicitud.";
     private static final String MENSAJE_ERROR_CANCELACION = "No fue posible cancelar la solicitud.";
+    private static final String MENSAJE_ERROR_CONSULTA_SOLICITUD = "No fue posible consultar la solicitud.";
 
     private final SolicitarAmbulanciaUseCase solicitarAmbulanciaUseCase;
     private final AceptarSolicitudUseCase aceptarSolicitudUseCase;
@@ -81,6 +86,7 @@ public class SolicitudController {
     private final FinalizarSolicitudUseCase finalizarSolicitudUseCase;
     private final ConfirmarSolicitudUseCase confirmarSolicitudUseCase;
     private final CancelarSolicitudUseCase cancelarSolicitudUseCase;
+    private final ConsultarDetalleSolicitudUseCase consultarDetalleSolicitudUseCase;
 
     public SolicitudController(SolicitarAmbulanciaUseCase solicitarAmbulanciaUseCase,
                                AceptarSolicitudUseCase aceptarSolicitudUseCase,
@@ -88,7 +94,8 @@ public class SolicitudController {
                                DeclararLlegadaUseCase declararLlegadaUseCase,
                                FinalizarSolicitudUseCase finalizarSolicitudUseCase,
                                ConfirmarSolicitudUseCase confirmarSolicitudUseCase,
-                               CancelarSolicitudUseCase cancelarSolicitudUseCase) {
+                               CancelarSolicitudUseCase cancelarSolicitudUseCase,
+                               ConsultarDetalleSolicitudUseCase consultarDetalleSolicitudUseCase) {
         this.solicitarAmbulanciaUseCase = solicitarAmbulanciaUseCase;
         this.aceptarSolicitudUseCase = aceptarSolicitudUseCase;
         this.rechazarSolicitudUseCase = rechazarSolicitudUseCase;
@@ -96,6 +103,7 @@ public class SolicitudController {
         this.finalizarSolicitudUseCase = finalizarSolicitudUseCase;
         this.confirmarSolicitudUseCase = confirmarSolicitudUseCase;
         this.cancelarSolicitudUseCase = cancelarSolicitudUseCase;
+        this.consultarDetalleSolicitudUseCase = consultarDetalleSolicitudUseCase;
     }
 
     /**
@@ -367,6 +375,38 @@ public class SolicitudController {
         } catch (RuntimeException e) {
             return ResponseEntity.internalServerError()
                     .body(ErrorResponse.of("ERROR_CANCELACION_SOLICITUD", MENSAJE_ERROR_CANCELACION));
+        }
+    }
+
+    /**
+     * The authoritative detail of a request (EP-04.F2.US3). It is a private
+     * resource: the use case allows only the requester, the driver of the
+     * assigned unit or the driver of a notified unit, and refuses anyone else
+     * with 403. The adapter stays thin: it only resolves the authenticated
+     * principal and shapes the same {@code SolicitudAmbulanciaDto} the POST
+     * endpoints return.
+     *
+     * @return 200 with the request's {@code SolicitudAmbulanciaDto}; 404
+     *         {@code SOLICITUD_NO_ENCONTRADA} when it does not exist; 403
+     *         {@code SOLICITUD_AJENA} when the caller has no right to read it;
+     *         500 {@code ERROR_CONSULTA_SOLICITUD} on an unexpected failure
+     */
+    @GetMapping("/{id}")
+    @Operation(summary = "Consultar el detalle de una solicitud (solo el solicitante o un conductor implicado)")
+    public ResponseEntity<Object> detalle(@PathVariable UUID id) {
+        try {
+            SolicitudAmbulancia solicitud =
+                    consultarDetalleSolicitudUseCase.consultar(id, usuarioAutenticadoId());
+            return ResponseEntity.ok(SolicitudAmbulanciaDto.fromDomain(solicitud));
+        } catch (SolicitudNoEncontradaException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(ErrorResponse.of("SOLICITUD_NO_ENCONTRADA", MENSAJE_SOLICITUD_NO_ENCONTRADA));
+        } catch (SolicitudAjenaException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(ErrorResponse.of("SOLICITUD_AJENA", MENSAJE_SOLICITUD_AJENA_DETALLE));
+        } catch (RuntimeException e) {
+            return ResponseEntity.internalServerError()
+                    .body(ErrorResponse.of("ERROR_CONSULTA_SOLICITUD", MENSAJE_ERROR_CONSULTA_SOLICITUD));
         }
     }
 

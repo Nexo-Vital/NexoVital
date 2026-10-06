@@ -1049,6 +1049,44 @@ describe('DriverConsolePage', () => {
     }
   });
 
+  it('US4: the detail shows "Reintentos" when the notice was retried', async () => {
+    const user = userEvent.setup();
+    const reintentada: SolicitudAmbulancia = { ...MOCK_SOLICITUDES[0], reintentos: 2 };
+    render(
+      <DriverConsolePage
+        port={new FakeRealtimePort()}
+        ambulanceId="A-07"
+        solicitudes={[reintentada]}
+      />,
+    );
+    connectDriver();
+
+    await user.click(solicitudRowButton(reintentada.id));
+
+    const detail = within(driverRail()).getByTestId('solicitud-detail');
+    expect(within(detail).getByText('Reintentos')).toBeInTheDocument();
+    expect(dataRowValue(detail, 'Reintentos')).toBe('2');
+  });
+
+  it('US4: the detail hides "Reintentos" for a request that was never retried', async () => {
+    const user = userEvent.setup();
+    // An explicit 0 — a normal request — must not show the row.
+    const sinReintentos: SolicitudAmbulancia = { ...MOCK_SOLICITUDES[0], reintentos: 0 };
+    render(
+      <DriverConsolePage
+        port={new FakeRealtimePort()}
+        ambulanceId="A-07"
+        solicitudes={[sinReintentos]}
+      />,
+    );
+    connectDriver();
+
+    await user.click(solicitudRowButton(sinReintentos.id));
+
+    const detail = within(driverRail()).getByTestId('solicitud-detail');
+    expect(within(detail).queryByText('Reintentos')).not.toBeInTheDocument();
+  });
+
   it('U6: "Aceptar" in the inline detail bids for the selected row over the relay in demo', async () => {
     const user = userEvent.setup();
     const port = new FakeRealtimePort();
@@ -1223,6 +1261,23 @@ describe('DriverConsolePage', () => {
     expect(useEmergencyStore.getState().items.map((item) => item.id)).toContain('EMG-002');
     expect(useSolicitudesStore.getState().items.map((item) => item.id)).toContain('REQ-1001');
     // And no source fell through to the backend.
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('US3: demo mode never reads the request detail from the backend', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<DriverConsolePage port={new FakeRealtimePort()} ambulanceId="A-07" />);
+    connectDriver();
+
+    await user.click(solicitudRowButton(MOCK_SOLICITUDES[0].id));
+
+    // The fixture row is painted and its real request time is shown...
+    const detail = within(driverRail()).getByTestId('solicitud-detail');
+    expect(within(detail).getByText('Solicitada')).toBeInTheDocument();
+    // ...and no network call was made: the fixtures stay the only source.
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

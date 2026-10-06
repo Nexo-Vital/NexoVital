@@ -37,7 +37,8 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
                 solicitud.getSolicitanteId(),
                 solicitud.getAmbulanciasNotificadas(),
                 solicitud.getAmbulanciaAsignadaId(),
-                solicitud.getLlegadaEn());
+                solicitud.getLlegadaEn(),
+                solicitud.getReintentos());
         return toDomain(jpaRepository.save(entity));
     }
 
@@ -97,6 +98,33 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
         return jpaRepository.transicionAtomicaExpirar(idSolicitud, estadoEsperado, nuevoEstado, ahora);
     }
 
+    /**
+     * CAS de reintento + reemplazo de notificadas en la misma transacción.
+     *
+     * <p>El UPDATE condicional reclama la fila (solo uno de dos barridos gana).
+     * Solo el ganador reemplaza la colección, así que no hay una segunda
+     * escritura compitiendo por ella: no es un read-modify-write race. Se evita
+     * escribir la colección dentro del bulk update porque JPQL no lo permite para
+     * un {@code @ElementCollection}.
+     */
+    @Override
+    @Transactional
+    public int reintentarAtomico(UUID idSolicitud, EstadoSolicitud estadoEsperado, Instant nuevoTimeoutEn,
+                                 List<UUID> nuevasNotificadas, int maxReintentos, Instant ahora) {
+        int filas = jpaRepository.transicionAtomicaReintentar(
+                idSolicitud, estadoEsperado, nuevoTimeoutEn, ahora, maxReintentos);
+        if (filas == 0) {
+            return 0;
+        }
+        // clearAutomatically already dropped the persistence context, so this read
+        // sees the row with the incremented counter and the new timeout.
+        jpaRepository.findById(idSolicitud).ifPresent(entity -> {
+            entity.reemplazarNotificadas(nuevasNotificadas);
+            jpaRepository.save(entity);
+        });
+        return filas;
+    }
+
     private static SolicitudAmbulancia toDomain(SolicitudJpaEntity entity) {
         return SolicitudAmbulancia.restaurar(
                 entity.getId(),
@@ -112,6 +140,7 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
                 entity.getAmbulanciasNotificadas(),
                 entity.getAmbulanciaAsignadaId(),
                 entity.getLlegadaEn(),
-                entity.getVersion());
+                entity.getVersion(),
+                entity.getReintentos());
     }
 }

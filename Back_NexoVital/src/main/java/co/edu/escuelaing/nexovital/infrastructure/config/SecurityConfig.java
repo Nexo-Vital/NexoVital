@@ -261,7 +261,17 @@ public class SecurityConfig {
                         // (403 otherwise). Declared explicitly because the chain
                         // is fail-closed; without it, /cancelar would be denied.
                         .requestMatchers(HttpMethod.POST, "/api/v1/solicitudes/*/cancelar")
-                                .hasAnyAuthority(ROLES_SOLICITANTES);
+                                .hasAnyAuthority(ROLES_SOLICITANTES)
+                        // Authoritative detail of a request (EP-04.F2.US3): the
+                        // resource is PRIVATE, so the use case decides who may
+                        // read it (the requester or a driver of the assigned or a
+                        // notified unit, else 403 SOLICITUD_AJENA). Any
+                        // authenticated role reaches the handler, which never
+                        // returns data to a non-owner. Declared explicitly
+                        // because the chain is fail-closed; without it, GET
+                        // /solicitudes/{id} would be denied.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/solicitudes/*")
+                                .authenticated();
 
                     // Swagger UI and the OpenAPI JSON. These routes must be
                     // declared explicitly: the chain is fail-closed, so without

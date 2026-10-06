@@ -177,4 +177,30 @@ class SolicitudAmbulanciaTest {
         assertTrue(solicitud.fueNotificada(ambulanciaB));
         assertFalse(solicitud.fueNotificada(UUID.randomUUID()));
     }
+
+    @Test
+    void solicitarNaceSinReintentos() {
+        assertEquals(0, pendiente().getReintentos());
+    }
+
+    @Test
+    void reintentarReposicionaLaVentanaYLasNotificadasSinCambiarElEstado() {
+        Instant nuevaVentana = Instant.now().plus(60, ChronoUnit.SECONDS);
+        SolicitudAmbulancia reintentada = pendiente().reintentar(nuevaVentana, List.of(ambulanciaA));
+
+        // US4: the retry is a re-emission, not a new lifecycle state.
+        assertEquals(EstadoSolicitud.PENDIENTE, reintentada.getEstado());
+        assertEquals(1, reintentada.getReintentos());
+        assertEquals(nuevaVentana, reintentada.getTimeoutEn());
+        assertEquals(List.of(ambulanciaA), reintentada.getAmbulanciasNotificadas());
+        assertEquals(solicitanteId, reintentada.getSolicitanteId(),
+                "the requester must survive the retry");
+    }
+
+    @Test
+    void reintentarSoloDesdePendiente() {
+        SolicitudAmbulancia asignada = pendiente().aceptar(ambulanciaA);
+        assertThrows(IllegalStateException.class,
+                () -> asignada.reintentar(Instant.now().plus(60, ChronoUnit.SECONDS), List.of(ambulanciaA)));
+    }
 }

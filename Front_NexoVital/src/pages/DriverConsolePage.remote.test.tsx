@@ -6,6 +6,7 @@ import { useEmergencyStore } from '@/features/emergencias/emergency-store';
 import { useFleetStore } from '@/features/flota/fleet-store';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
 import { useSessionStore } from '@/features/usuarios/session';
+import { formatDateTime } from '@/lib/format';
 import { setToken } from '@/services/apiClient';
 import { DESTINATIONS, type SolicitudBroadcastPayload } from '@/shared/realtime';
 import { FakeRealtimePort } from '@/test/fake-realtime-port';
@@ -285,6 +286,165 @@ describe('DriverConsolePage against the real backend', () => {
     );
     expect(screen.queryByText('Misión actual')).not.toBeInTheDocument();
     expect(screen.queryByText('Te la asignaron')).not.toBeInTheDocument();
+  });
+
+  it('US3: selecting a row fetches the authoritative detail and shows its server solicitadaEn', async () => {
+    const user = userEvent.setup();
+    const REQUEST_ID = '8b6f2f0e-0000-4000-8000-0000000000d1';
+    const SERVER_SOLICITADA_EN = '2026-03-05T14:30:00.000Z';
+    const LOCAL_SOLICITADA_EN = '2026-03-05T08:00:00.000Z';
+    const localRow = { ...notifiedRegistryRow(REQUEST_ID), solicitadaEn: LOCAL_SOLICITADA_EN };
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/ambulancias/mia')) {
+        return Promise.resolve(mockResponse(200, MIA_UNIT));
+      }
+      if (url.includes('/flota/ambulancias')) {
+        return Promise.resolve(mockResponse(200, FLEET));
+      }
+      if (url.includes('/emergencias')) {
+        return Promise.resolve(mockResponse(200, []));
+      }
+      if (url.endsWith(`/solicitudes/${REQUEST_ID}`)) {
+        return Promise.resolve(
+          mockResponse(200, {
+            id: REQUEST_ID,
+            ubicacion: localRow.ubicacion,
+            emergenciaId: null,
+            estado: 'PENDIENTE',
+            centroAyudaId: null,
+            zonaId: 'Kennedy',
+            solicitadaEn: SERVER_SOLICITADA_EN,
+            timeoutEn: localRow.timeoutEn,
+            ambulanciasNotificadas: [REAL_UNIT],
+            ambulanciaAsignadaId: null,
+          }),
+        );
+      }
+      return Promise.resolve(mockResponse(200, []));
+    });
+
+    render(<DriverConsolePage port={port} solicitudes={[localRow]} />);
+    await screen.findByText('ABC202');
+    connectDriver();
+
+    const rail = screen.getByRole('complementary', { name: 'Panel del conductor' });
+    const list = within(rail).getByRole('list', { name: 'Lista de solicitudes' });
+    await user.click(within(list).getByRole('button', { name: /#8b6f2f/ }));
+
+    // The page read the request detail by id (apiFetch defaults to GET).
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/v1/solicitudes/${REQUEST_ID}`,
+      expect.anything(),
+    );
+
+    const detail = within(rail).getByTestId('solicitud-detail');
+    // The detail shows the SERVER's request time, not the locally selected one.
+    await waitFor(() =>
+      expect(within(detail).getByText(formatDateTime(SERVER_SOLICITADA_EN))).toBeInTheDocument(),
+    );
+    expect(
+      within(detail).queryByText(formatDateTime(LOCAL_SOLICITADA_EN)),
+    ).not.toBeInTheDocument();
+  });
+
+  it('US3: a failed detail read keeps the locally selected row and nothing breaks', async () => {
+    const user = userEvent.setup();
+    const REQUEST_ID = '8b6f2f0e-0000-4000-8000-0000000000d2';
+    const LOCAL_SOLICITADA_EN = '2026-03-05T08:00:00.000Z';
+    const localRow = { ...notifiedRegistryRow(REQUEST_ID), solicitadaEn: LOCAL_SOLICITADA_EN };
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/ambulancias/mia')) {
+        return Promise.resolve(mockResponse(200, MIA_UNIT));
+      }
+      if (url.includes('/flota/ambulancias')) {
+        return Promise.resolve(mockResponse(200, FLEET));
+      }
+      if (url.includes('/emergencias')) {
+        return Promise.resolve(mockResponse(200, []));
+      }
+      if (url.endsWith(`/solicitudes/${REQUEST_ID}`)) {
+        return Promise.reject(new Error('network down'));
+      }
+      return Promise.resolve(mockResponse(200, []));
+    });
+
+    render(<DriverConsolePage port={port} solicitudes={[localRow]} />);
+    await screen.findByText('ABC202');
+    connectDriver();
+
+    const rail = screen.getByRole('complementary', { name: 'Panel del conductor' });
+    const list = within(rail).getByRole('list', { name: 'Lista de solicitudes' });
+    await user.click(within(list).getByRole('button', { name: /#8b6f2f/ }));
+
+    const detail = within(rail).getByTestId('solicitud-detail');
+    // The local row survives the rejected read: its own time and actions stay.
+    expect(within(detail).getByText(formatDateTime(LOCAL_SOLICITADA_EN))).toBeInTheDocument();
+    expect(within(detail).getByRole('button', { name: 'Aceptar' })).toBeInTheDocument();
+  });
+
+  it('US3: a late detail answer never overwrites a later selection (stale guard)', async () => {
+    const user = userEvent.setup();
+    const ID_A = 'aaaaaaaa-0000-4000-8000-000000000000';
+    const ID_B = 'bbbbbbbb-0000-4000-8000-000000000000';
+    const rowA = notifiedRegistryRow(ID_A);
+    const rowB = notifiedRegistryRow(ID_B);
+    const detailPayload = (id: string) => ({
+      id,
+      ubicacion: { lat: 4.6, lng: -74.1 },
+      emergenciaId: null,
+      estado: 'PENDIENTE',
+      centroAyudaId: null,
+      zonaId: 'Kennedy',
+      solicitadaEn: '2026-03-05T14:30:00.000Z',
+      timeoutEn: new Date(Date.now() + 45_000).toISOString(),
+      ambulanciasNotificadas: [REAL_UNIT],
+      ambulanciaAsignadaId: null,
+    });
+    let resolveA: (response: Response) => void = () => undefined;
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/ambulancias/mia')) {
+        return Promise.resolve(mockResponse(200, MIA_UNIT));
+      }
+      if (url.includes('/flota/ambulancias')) {
+        return Promise.resolve(mockResponse(200, FLEET));
+      }
+      if (url.includes('/emergencias')) {
+        return Promise.resolve(mockResponse(200, []));
+      }
+      if (url.endsWith(`/solicitudes/${ID_A}`)) {
+        return new Promise<Response>((resolve) => {
+          resolveA = resolve;
+        });
+      }
+      if (url.endsWith(`/solicitudes/${ID_B}`)) {
+        return Promise.resolve(mockResponse(200, detailPayload(ID_B)));
+      }
+      return Promise.resolve(mockResponse(200, []));
+    });
+
+    render(<DriverConsolePage port={port} solicitudes={[rowA, rowB]} />);
+    await screen.findByText('ABC202');
+    connectDriver();
+
+    const rail = screen.getByRole('complementary', { name: 'Panel del conductor' });
+    const list = within(rail).getByRole('list', { name: 'Lista de solicitudes' });
+    // Select A (its read stays in flight), then B (its read answers at once).
+    await user.click(within(list).getByRole('button', { name: /#aaaaaa/ }));
+    await user.click(within(list).getByRole('button', { name: /#bbbbbb/ }));
+
+    const detail = within(rail).getByTestId('solicitud-detail');
+    await waitFor(() => expect(within(detail).getByText(/#bbbbbb/)).toBeInTheDocument());
+
+    // A's stale answer lands after B is selected: it must be discarded.
+    await act(async () => {
+      resolveA(mockResponse(200, detailPayload(ID_A)));
+    });
+
+    expect(within(detail).getByText(/#bbbbbb/)).toBeInTheDocument();
+    expect(within(detail).queryByText(/#aaaaaa/)).not.toBeInTheDocument();
   });
 
   it('FIX B: accept is disabled and explained while the own unit is unresolved', async () => {

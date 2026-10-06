@@ -69,4 +69,18 @@ public interface SolicitudRepository {
      */
     int transicionAtomicaExpirar(UUID idSolicitud, EstadoSolicitud estadoEsperado,
                                  EstadoSolicitud nuevoEstado, Instant ahora);
+
+    /**
+     * CAS de reintento (EP-04.F2.US4): UNA sola UPDATE que reposiciona la ventana
+     * solo si la solicitud sigue PENDIENTE, ya venció y aún le quedan reintentos
+     * ({@code reintentos < maxReintentos}). Incrementa el contador y mueve
+     * {@code timeoutEn}; devuelve filas afectadas: 1 = este llamador ganó el
+     * reintento (y debe emitir el evento), 0 = perdió la carrera o no aplica.
+     *
+     * <p>Tras ganar el CAS, el adaptador reemplaza el conjunto de notificadas por
+     * {@code nuevasNotificadas} en la MISMA transacción: como solo el ganador
+     * llega aquí, no hay una segunda escritura compitiendo por la colección.
+     */
+    int reintentarAtomico(UUID idSolicitud, EstadoSolicitud estadoEsperado, Instant nuevoTimeoutEn,
+                          List<UUID> nuevasNotificadas, int maxReintentos, Instant ahora);
 }

@@ -39,7 +39,7 @@ import {
   REQUEST_STATE_LABEL_ES,
 } from '@/features/solicitudes/request-status';
 import { useClock } from '@/hooks/use-clock';
-import { formatCountdown, formatElapsed } from '@/lib/format';
+import { formatCountdown, formatDateTime, formatElapsed } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { SolicitudBroadcastPayload } from '@/shared/realtime';
 import type {
@@ -663,6 +663,16 @@ function SolicitudDetail({
   onClose: () => void;
 }) {
   const notified = solicitud.ambulanciasNotificadas;
+  // Retry counter (EP-04.F2.US4): a normal request has none, so the row is only
+  // painted once the accept window was re-emitted at least once.
+  const reintentos = solicitud.reintentos ?? 0;
+  // The request time as a local es-CO instant, reusing the app's existing
+  // `formatDateTime`. Rendered only when the timestamp is present and parseable,
+  // so a row without one shows no invented time.
+  const solicitadaLabel =
+    solicitud.solicitadaEn && Number.isFinite(Date.parse(solicitud.solicitadaEn))
+      ? formatDateTime(solicitud.solicitadaEn)
+      : null;
   return (
     <div
       data-testid="solicitud-detail"
@@ -694,6 +704,9 @@ function SolicitudDetail({
         {/* A citizen request declares no zone; its own reported coordinates are
             the honest location, never an invented zone. */}
         <RequestDataRow label="Ubicación" value={solicitudSceneLabel(solicitud)} icon={MapPin} />
+        {solicitadaLabel && (
+          <RequestDataRow label="Solicitada" value={solicitadaLabel} icon={Clock} />
+        )}
         <RequestDataRow
           label="Distancia"
           value={distanceKm !== null ? formatDistance(distanceKm) : 'Sin ubicación'}
@@ -710,6 +723,11 @@ function SolicitudDetail({
           value={notified.length > 0 ? unitListLabel(notified, units) : 'Sin unidades avisadas'}
           icon={Radio}
         />
+        {/* Only a request whose notice was retried shows the counter; a normal
+            request keeps the detail clean. */}
+        {reintentos > 0 && (
+          <RequestDataRow label="Reintentos" value={String(reintentos)} icon={Clock} />
+        )}
       </div>
 
       {!canRespond && blockReason && (

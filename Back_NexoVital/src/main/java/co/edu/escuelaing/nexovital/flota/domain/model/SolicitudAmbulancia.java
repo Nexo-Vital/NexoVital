@@ -72,11 +72,18 @@ public final class SolicitudAmbulancia {
      */
     private final Instant llegadaEn;
     private final long version;
+    /**
+     * How many retries the request has already spent (EP-04.F2.US4). It starts at
+     * 0 and grows by one each time the accept window closes with no winner while
+     * there are still available units. It is pure state, not a framework
+     * concern: the sweep reads it to decide retry vs. final {@code TIMEOUT}.
+     */
+    private final int reintentos;
 
     private SolicitudAmbulancia(UUID id, double lat, double lng, UUID emergenciaId, EstadoSolicitud estado,
                                 UUID centroAyudaId, String zonaId, Instant solicitadaEn, Instant timeoutEn,
                                 UUID solicitanteId, List<UUID> ambulanciasNotificadas,
-                                UUID ambulanciaAsignadaId, Instant llegadaEn, long version) {
+                                UUID ambulanciaAsignadaId, Instant llegadaEn, long version, int reintentos) {
         this.id = Objects.requireNonNull(id, "id is required");
         this.lat = lat;
         this.lng = lng;
@@ -96,6 +103,8 @@ public final class SolicitudAmbulancia {
         this.ambulanciaAsignadaId = ambulanciaAsignadaId;
         this.llegadaEn = llegadaEn;
         this.version = version;
+        // Defensive floor: a request can never carry a negative retry count.
+        this.reintentos = Math.max(0, reintentos);
     }
 
     /**
@@ -113,7 +122,7 @@ public final class SolicitudAmbulancia {
         }
         Objects.requireNonNull(solicitanteId, "solicitanteId is required");
         return new SolicitudAmbulancia(id, lat, lng, emergenciaId, EstadoSolicitud.PENDIENTE, centroAyudaId,
-                zonaId, solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, null, null, 0);
+                zonaId, solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, null, null, 0, 0);
     }
 
     /**
@@ -124,17 +133,19 @@ public final class SolicitudAmbulancia {
                                                 EstadoSolicitud estado, UUID centroAyudaId, String zonaId,
                                                 Instant solicitadaEn, Instant timeoutEn, UUID solicitanteId,
                                                 List<UUID> ambulanciasNotificadas,
-                                                UUID ambulanciaAsignadaId, Instant llegadaEn, long version) {
+                                                UUID ambulanciaAsignadaId, Instant llegadaEn, long version,
+                                                int reintentos) {
         return new SolicitudAmbulancia(id, lat, lng, emergenciaId, estado, centroAyudaId, zonaId,
                 solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, ambulanciaAsignadaId,
-                llegadaEn, version);
+                llegadaEn, version, reintentos);
     }
 
     private static SolicitudAmbulancia conEstado(SolicitudAmbulancia actual, EstadoSolicitud nuevo,
                                                  UUID ambulanciaAsignadaId) {
         return new SolicitudAmbulancia(actual.id, actual.lat, actual.lng, actual.emergenciaId, nuevo,
                 actual.centroAyudaId, actual.zonaId, actual.solicitadaEn, actual.timeoutEn, actual.solicitanteId,
-                actual.ambulanciasNotificadas, ambulanciaAsignadaId, actual.llegadaEn, actual.version + 1);
+                actual.ambulanciasNotificadas, ambulanciaAsignadaId, actual.llegadaEn, actual.version + 1,
+                actual.reintentos);
     }
 
     private static void requiereTransicion(SolicitudAmbulancia solicitud, EstadoSolicitud esperado, String accion) {
@@ -212,7 +223,37 @@ public final class SolicitudAmbulancia {
         requiereTransicion(this, EstadoSolicitud.ASIGNADA, "arrival");
         return new SolicitudAmbulancia(id, lat, lng, emergenciaId, estado, centroAyudaId, zonaId,
                 solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, ambulanciaAsignadaId,
-                Objects.requireNonNull(llegadaEn, "llegadaEn is required"), version + 1);
+                Objects.requireNonNull(llegadaEn, "llegadaEn is required"), version + 1, reintentos);
+    }
+
+    /**
+     * Repositions the accept window of a still-open PENDIENTE request and
+     * replaces the notified set with the units available RIGHT NOW
+     * (EP-04.F2.US4).
+     *
+     * <p><b>Why re-notify the whole available set.</b> The repo's broadcast has
+     * no zone/radio filter by design ({@code SolicitarAmbulanciaUseCaseImpl}
+     * notifies EVERY available unit), so the story's "widen the search radius" is
+     * implemented as re-emitting to the current available units — the widest
+     * radius the system already knows. A unit that connected after the original
+     * emission (the real repro: the driver reopens the console) is therefore
+     * included.
+     *
+     * <p>The estado does NOT change: the request stays PENDIENTE so a unit that
+     * accepts during the new window still wins the same CAS. Only the window and
+     * the notified set move, and the retry counter grows by one.
+     *
+     * @param nuevoTimeoutEn new accept deadline, strictly after the retry instant
+     * @param nuevasNotificadas current available units to re-notify
+     * @throws IllegalStateException if the request is not PENDIENTE
+     */
+    public SolicitudAmbulancia reintentar(Instant nuevoTimeoutEn, List<UUID> nuevasNotificadas) {
+        requiereTransicion(this, EstadoSolicitud.PENDIENTE, "retry");
+        return new SolicitudAmbulancia(id, lat, lng, emergenciaId, estado, centroAyudaId, zonaId,
+                solicitadaEn, Objects.requireNonNull(nuevoTimeoutEn, "nuevoTimeoutEn is required"),
+                solicitanteId,
+                nuevasNotificadas == null ? List.of() : nuevasNotificadas,
+                ambulanciaAsignadaId, llegadaEn, version + 1, reintentos + 1);
     }
 
     public boolean estaVencida() {
@@ -296,5 +337,10 @@ public final class SolicitudAmbulancia {
 
     public long getVersion() {
         return version;
+    }
+
+    /** Retries already spent on this request (0 for a freshly created one). */
+    public int getReintentos() {
+        return reintentos;
     }
 }

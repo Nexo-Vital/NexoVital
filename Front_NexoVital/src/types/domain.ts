@@ -147,6 +147,13 @@ export interface SolicitudAmbulancia {
    * coordinator can see the milestone without inventing a domain state.
    */
   llegadaEn?: string;
+  /**
+   * Retry counter (EP-04.F2.US4), the number of times the accept window was
+   * re-emitted while the request stayed PENDING. Optional for backward
+   * compatibility: a payload that predates the field omits it, and the UI treats
+   * that as 0 instead of dropping the request.
+   */
+  reintentos?: number;
 }
 
 export type TrafficLight = 'RED' | 'AMBER' | 'GREEN' | 'COMPLETE' | 'NOT_DECLARED';

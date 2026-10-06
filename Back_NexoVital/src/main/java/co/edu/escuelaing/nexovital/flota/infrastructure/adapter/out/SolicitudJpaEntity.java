@@ -69,6 +69,10 @@ public class SolicitudJpaEntity {
     @Column
     private Instant llegadaEn;
 
+    /** Retries already spent by the sweep (EP-04.F2.US4); 0 on creation. */
+    @Column(nullable = false)
+    private int reintentos;
+
     @Version
     private long version;
 
@@ -78,7 +82,7 @@ public class SolicitudJpaEntity {
     public SolicitudJpaEntity(UUID id, double lat, double lng, UUID emergenciaId, EstadoSolicitud estado,
                               UUID centroAyudaId, String zonaId, Instant solicitadaEn, Instant timeoutEn,
                               UUID solicitanteId, List<UUID> ambulanciasNotificadas,
-                              UUID ambulanciaAsignadaId, Instant llegadaEn) {
+                              UUID ambulanciaAsignadaId, Instant llegadaEn, int reintentos) {
         this.id = id;
         this.lat = lat;
         this.lng = lng;
@@ -94,6 +98,7 @@ public class SolicitudJpaEntity {
                 : new ArrayList<>(ambulanciasNotificadas);
         this.ambulanciaAsignadaId = ambulanciaAsignadaId;
         this.llegadaEn = llegadaEn;
+        this.reintentos = Math.max(0, reintentos);
     }
 
     public UUID getId() {
@@ -150,5 +155,21 @@ public class SolicitudJpaEntity {
 
     public long getVersion() {
         return version;
+    }
+
+    public int getReintentos() {
+        return reintentos;
+    }
+
+    /**
+     * Replaces the notified set in place. Called ONLY after this row was claimed
+     * atomically by {@code reintentarAtomico}: since a single sweeper wins the
+     * conditional update, no other writer is rewriting the collection.
+     */
+    public void reemplazarNotificadas(List<UUID> nuevasNotificadas) {
+        this.ambulanciasNotificadas.clear();
+        if (nuevasNotificadas != null) {
+            this.ambulanciasNotificadas.addAll(nuevasNotificadas);
+        }
     }
 }

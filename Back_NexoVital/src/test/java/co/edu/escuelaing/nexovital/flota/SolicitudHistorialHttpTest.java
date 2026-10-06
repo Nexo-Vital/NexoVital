@@ -207,7 +207,7 @@ class SolicitudHistorialHttpTest extends LoginTestBase {
         solicitudJpaRepository.save(new SolicitudJpaEntity(
                 id, 4.73d, -74.08d, null, estado, null, zona, solicitadaEn,
                 solicitadaEn.plusSeconds(600), UUID.randomUUID(), List.of(),
-                ambulanciaAsignadaId, llegadaEn));
+                ambulanciaAsignadaId, llegadaEn, 0));
         solicitudes.add(id);
         return id;
     }

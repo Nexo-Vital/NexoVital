@@ -23,6 +23,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.TestPropertySource;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -42,9 +43,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>The scheduled sweep is disabled by the test profile (one-hour initial
  * delay), so the use case is driven directly against the controllable clock.
+ *
+ * <p><b>US4 interaction.</b> Since US4 a window that closes with a retry left is
+ * re-emitted instead of expiring, so this class pins {@code max-reintentos=0}:
+ * it exercises the "expiry as before" path (retries exhausted/disabled) exactly
+ * as it did before the retry feature. The retry path is covered by
+ * {@code SolicitudReintentoTest}, which sets {@code max-reintentos=2}.
  */
 @SpringBootTest
 @ActiveProfiles("test")
+@TestPropertySource(properties = "nexovital.solicitud.max-reintentos=0")
 @Import({TestClockConfig.class, PushPortDePruebaConfig.class})
 class SolicitudExpiracionTest {
 

@@ -92,4 +92,27 @@ public interface SolicitudJpaRepository extends JpaRepository<SolicitudJpaEntity
                                  @Param("estadoEsperado") EstadoSolicitud estadoEsperado,
                                  @Param("nuevoEstado") EstadoSolicitud nuevoEstado,
                                  @Param("ahora") Instant ahora);
+
+    /**
+     * CAS de reintento (EP-04.F2.US4): UNA sola {@code UPDATE} que reposiciona la
+     * ventana solo si la solicitud sigue PENDIENTE, ya venció y aún le quedan
+     * reintentos. El {@code WHERE} es la garantía de idempotencia y de carrera:
+     * dos barridos concurrentes no pueden reintentar dos veces la misma fila (el
+     * ganador mueve {@code timeoutEn} al futuro y sube {@code reintentos}).
+     *
+     * <p>La colección {@code ambulanciasNotificadas} NO se escribe aquí: JPQL no
+     * permite actualizar un {@code @ElementCollection} en un bulk update. El
+     * adaptador la reemplaza en la misma transacción, y solo el ganador de este
+     * CAS llega a esa segunda escritura, así que no hay read-modify-write race.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE SolicitudJpaEntity s "
+            + "SET s.reintentos = s.reintentos + 1, s.timeoutEn = :nuevoTimeoutEn, s.version = s.version + 1 "
+            + "WHERE s.id = :id AND s.estado = :estadoEsperado "
+            + "AND s.timeoutEn < :ahora AND s.reintentos < :maxReintentos")
+    int transicionAtomicaReintentar(@Param("id") UUID id,
+                                    @Param("estadoEsperado") EstadoSolicitud estadoEsperado,
+                                    @Param("nuevoTimeoutEn") Instant nuevoTimeoutEn,
+                                    @Param("ahora") Instant ahora,
+                                    @Param("maxReintentos") int maxReintentos);
 }
