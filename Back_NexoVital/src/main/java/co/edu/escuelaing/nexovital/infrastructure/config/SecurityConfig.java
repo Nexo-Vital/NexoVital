@@ -73,7 +73,14 @@ public class SecurityConfig {
     private static final String[] ROLES_RETIRO = {
             "ROLE_ADMIN_CENTRO_AYUDA", "ROLE_ADMIN_PLATAFORMA", "ROLE_ADMIN_ACOPIO"};
 
-    private static final String[] ROLES_SOLICITANTES = {"ROLE_CIUDADANO", "ROLE_ADMIN_CENTRO_AYUDA"};
+    /**
+     * Administradores que gestionan SU centro (crear, ver, agregar insumos):
+     * el de centro de ayuda y el de acopio hacen lo mismo.
+     */
+    private static final String[] ROLES_ADMIN_DE_CENTRO = {"ROLE_ADMIN_CENTRO_AYUDA", "ROLE_ADMIN_ACOPIO"};
+
+    private static final String[] ROLES_SOLICITANTES =
+            {"ROLE_CIUDADANO", "ROLE_ADMIN_CENTRO_AYUDA", "ROLE_ADMIN_ACOPIO"};
 
     /**
      * Whether the documentation routes are declared as public. It is true for
@@ -157,11 +164,11 @@ public class SecurityConfig {
                         // because the chain is fail-closed, and BEFORE the generic
                         // inventory matchers so "mio" is never read as a center id.
                         .requestMatchers(HttpMethod.GET, "/api/v1/centros-acopio/mio")
-                                .hasAuthority("ROLE_ADMIN_CENTRO_AYUDA")
+                                .hasAnyAuthority(ROLES_ADMIN_DE_CENTRO)
                         .requestMatchers(HttpMethod.POST, "/api/v1/centros-acopio/mio")
-                                .hasAuthority("ROLE_ADMIN_CENTRO_AYUDA")
+                                .hasAnyAuthority(ROLES_ADMIN_DE_CENTRO)
                         .requestMatchers(HttpMethod.POST, "/api/v1/centros-acopio/mio/inventario")
-                                .hasAuthority("ROLE_ADMIN_CENTRO_AYUDA")
+                                .hasAnyAuthority(ROLES_ADMIN_DE_CENTRO)
                         // Inventory of an aid center (EP-03.F1): the citizen sees
                         // the supplies of the center with their traffic light, so
                         // every authenticated role may read it. Declared explicitly

@@ -210,15 +210,15 @@ public class InventarioController {
     }
 
     /**
-     * Regla del retiro: los administradores de plataforma y de acopio retiran
-     * de cualquier centro; el administrador de centro de ayuda solo del suyo.
+     * Regla del retiro: el administrador de la plataforma retira de cualquier
+     * centro; los administradores de centro de ayuda y de acopio solo del suyo.
      * La cadena de seguridad ya dejó pasar únicamente a esos tres roles.
      */
     private boolean puedeRetirarDe(UUID centroId) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         boolean administrador = authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
-                .anyMatch(rol -> rol.equals("ROLE_ADMIN_PLATAFORMA") || rol.equals("ROLE_ADMIN_ACOPIO"));
+                .anyMatch(rol -> rol.equals("ROLE_ADMIN_PLATAFORMA"));
         if (administrador) {
             return true;
         }

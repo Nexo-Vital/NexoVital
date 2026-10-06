@@ -31,12 +31,12 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Adaptador de entrada del centro PROPIO del administrador de centro de ayuda
+ * Adaptador de entrada del centro PROPIO del administrador de centro (de ayuda o de acopio)
  * ({@code /api/v1/centros-acopio/mio}). El centro se resuelve en el servidor a
  * partir del usuario autenticado: el cliente nunca envía un id de centro, así
  * que un administrador no puede crear ni modificar el centro de otro.
  *
- * <p>Las tres operaciones exigen {@code ROLE_ADMIN_CENTRO_AYUDA}
+ * <p>Las tres operaciones exigen {@code ROLE_ADMIN_CENTRO_AYUDA} o {@code ROLE_ADMIN_ACOPIO}
  * ({@code SecurityConfig}). Retirar unidades de un insumo usa el despacho que ya
  * existe ({@code POST /centros-acopio/{id}/inventario/despacho}).
  *

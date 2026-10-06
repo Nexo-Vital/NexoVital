@@ -58,6 +58,8 @@ class MiCentroHttpTest extends LoginTestBase {
     private static final String RANGEL_PASSWORD = "rangel123";
     private static final String CENTRO = "centro@nexovital.co";
     private static final String CENTRO_PASSWORD = "centro123";
+    private static final String ACOPIO = "acopio@nexovital.co";
+    private static final String ACOPIO_PASSWORD = "acopio123";
     private static final String CIUDADANO = "ciudadano@nexovital.co";
     private static final String CIUDADANO_PASSWORD = "ciudadano123";
 
@@ -204,6 +206,61 @@ class MiCentroHttpTest extends LoginTestBase {
     }
 
     @Test
+    @DisplayName("POST mio sin insumos (items vacío o ausente): 201, centro con inventario vacío")
+    void creaUnCentroSinInventario() throws Exception {
+        String token = tokenDe(RANGEL, RANGEL_PASSWORD);
+        String nombre = PREFIJO_PRUEBA + UUID.randomUUID();
+        Map<String, Object> ubicacion = Map.of("lat", 4.75d, "lng", -74.06d);
+        pushPortDePrueba.limpiar();
+
+        mockMvc.perform(post(RUTA)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("nombre", nombre, "ubicacion", ubicacion))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.nombre").value(nombre))
+                .andExpect(jsonPath("$.items.length()").value(0));
+
+        mockMvc.perform(get(RUTA).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(0));
+    }
+
+    @Test
+    @DisplayName("El administrador de acopio hace lo mismo: crea su centro vacío y le agrega insumos")
+    void elAdministradorDeAcopioGestionaSuCentro() throws Exception {
+        String token = tokenDe(ACOPIO, ACOPIO_PASSWORD);
+        String nombre = PREFIJO_PRUEBA + UUID.randomUUID();
+        Map<String, Object> ubicacion = Map.of("lat", 4.75d, "lng", -74.06d);
+
+        mockMvc.perform(get(RUTA).header("Authorization", "Bearer " + token))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(post(RUTA)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("nombre", nombre, "ubicacion", ubicacion))))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post(RUTA + "/inventario")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                Map.of("nombre", "Kits de emergencia", "disponible", 50, "requerido", 50))))
+                .andExpect(status().isCreated());
+        mockMvc.perform(post(RUTA + "/inventario")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                Map.of("nombre", "Medicamento", "disponible", 20, "requerido", 20))))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get(RUTA).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(2));
+    }
+
+    @Test
     @DisplayName("POST mio con datos inválidos: 400 DATOS_INVALIDOS y la base queda intacta")
     void datosInvalidos() throws Exception {
         String token = tokenDe(RANGEL, RANGEL_PASSWORD);
@@ -211,8 +268,6 @@ class MiCentroHttpTest extends LoginTestBase {
         Map<String, Object> ubicacion = Map.of("lat", 4.75d, "lng", -74.06d);
         Map<String, Object> agua = Map.of("nombre", "Agua", "disponible", 20, "requerido", 50);
 
-        // No items.
-        postInvalido(token, Map.of("nombre", nombre, "ubicacion", ubicacion, "items", List.of()));
         // No location.
         postInvalido(token, Map.of("nombre", nombre, "items", List.of(agua)));
         // Blank name.

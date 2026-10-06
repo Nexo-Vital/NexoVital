@@ -64,8 +64,11 @@ public class AdministrarMiCentroUseCaseImpl implements AdministrarMiCentroUseCas
     @Override
     @Transactional
     public MiCentro crear(UUID adminId, String nombre, Double lat, Double lng, List<NuevoItemInventario> items) {
-        if (items == null || items.isEmpty()) {
-            throw new IllegalArgumentException("Agrega al menos un insumo para el centro.");
+        // Un centro puede crearse sin inventario: no tiene nada y no necesita
+        // nada, y se muestra como "completo" (EP-03.F2.US1). Los insumos se
+        // agregan cuando haga falta.
+        if (items == null) {
+            items = List.of();
         }
         if (items.size() > MAXIMO_ITEMS_INICIALES) {
             throw new IllegalArgumentException(

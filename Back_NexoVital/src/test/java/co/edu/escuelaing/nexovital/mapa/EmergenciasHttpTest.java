@@ -49,9 +49,9 @@ class EmergenciasHttpTest extends LoginTestBase {
     private static final String RANGEL = "rangel@nexovital.co";
     private static final String RANGEL_PASSWORD = "rangel123";
 
-    /** ADMIN_ACOPIO: authenticated but NOT authorized to report. */
-    private static final String ACOPIO = "acopio@nexovital.co";
-    private static final String ACOPIO_PASSWORD = "acopio123";
+    /** ADMIN_PLATAFORMA: authenticated but NOT authorized to report. */
+    private static final String NO_AUTORIZADO = "admin@nexovital.co";
+    private static final String NO_AUTORIZADO_PASSWORD = "admin123";
 
     private static final double DELTA = 0.0000001d;
 
@@ -134,13 +134,13 @@ class EmergenciasHttpTest extends LoginTestBase {
 
     // -----------------------------------------------------------------------
     // 403 with a non-authorized role: only the roles that use the citizen
-    // screen (CIUDADANO and ADMIN_CENTRO_AYUDA) may report
+    // screen (CIUDADANO, ADMIN_CENTRO_AYUDA and ADMIN_ACOPIO) may report
     // -----------------------------------------------------------------------
 
     @Test
     @DisplayName("POST /emergencias with a non-authorized role: 403 ACCESO_DENEGADO")
     void t4_rolNoAutorizado_devuelve403() throws Exception {
-        String token = tokenDe(ACOPIO, ACOPIO_PASSWORD);
+        String token = tokenDe(NO_AUTORIZADO, NO_AUTORIZADO_PASSWORD);
 
         mockMvc.perform(post("/api/v1/emergencias")
                         .header("Authorization", "Bearer " + token)
