@@ -24,13 +24,12 @@ public record MapaDto(List<ZonaDto> zonas, List<CentroDto> centros) {
     }
 
     private static CentroDto aCentroDto(Organizacion centro, List<AlertaEscasezActiva> alertas) {
-        List<AlertaEscasezActiva> delCentro = alertas.stream()
+        // Worst first: the first one is the alert the marker badge shows.
+        List<AlertaEscasezDto> delCentro = alertas.stream()
                 .filter(alerta -> alerta.centroAcopioId().equals(centro.getId()))
-                .toList();
-        AlertaEscasezDto peor = delCentro.stream()
-                .max(Comparator.comparingInt(AlertaEscasezActiva::faltante))
+                .sorted(Comparator.comparingInt(AlertaEscasezActiva::faltante).reversed())
                 .map(AlertaEscasezDto::fromDomain)
-                .orElse(null);
-        return CentroDto.fromDomain(centro, peor, delCentro.size());
+                .toList();
+        return CentroDto.fromDomain(centro, delCentro);
     }
 }

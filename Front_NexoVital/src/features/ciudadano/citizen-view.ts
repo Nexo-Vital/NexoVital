@@ -1,6 +1,7 @@
-import { centroSemaforo } from '@/features/recursos/traffic-light';
+import { centroSemaforo, trafficLight } from '@/features/recursos/traffic-light';
 import { distanceKm, etaMinutes } from '@/lib/geo';
 import type {
+  AlertaEscasez,
   AmbulanceState,
   Ambulancia,
   CentroAyuda,
@@ -140,48 +141,91 @@ export function citizenCenterLevel(level: TrafficLight): CitizenCenterLevel | nu
   }
 }
 
-/**
- * Whether the center currently has an active shortage alert.
- *
- * A center is alerted when either real backend source says so: the active-alert
- * COUNT (`alertasActivas`, recomputed by the backend against current stock on
- * every map read) or the presence of the WORST active alert object (`alerta`).
- * Both come from `GET /api/v1/mapa`; neither is invented here.
- */
-export function hasActiveAlert(centro: CentroAyuda): boolean {
-  return (centro.alertasActivas ?? 0) > 0 || centro.alerta != null;
+/** Worst first: the most missing resource leads, ties broken by name. */
+function byMostMissing(a: AlertaEscasez, b: AlertaEscasez): number {
+  return b.faltante - a.faltante || a.nombre.localeCompare(b.nombre);
 }
 
 /**
- * Citizen level of a center, combined from its REAL backend sources.
+ * Active shortage alerts of a center, most missing first (EP-03.F1.US5 /
+ * EP-03.F3.US4): one per resource whose stock is below what the center declared
+ * it needs.
  *
- * The level folds the worst inventory traffic light with the centre's active
- * shortage alert (precedence: critical > alert > stable > not-declared):
+ * ONE source at a time, so the list can never contradict the inventory bars:
+ *   - when the center's inventory is known (it has items, or it was read and is
+ *     empty) the alerts are DERIVED from it, the same rule the backend applies
+ *     (`requerido - disponible > 0`). The inventory is the live state: it moves
+ *     with every `/topic/suministros` frame;
+ *   - otherwise the alerts the map read-model sent (`alertas`, or the single
+ *     worst `alerta` of an older payload) are used as they came.
+ */
+export function centerAlerts(centro: CentroAyuda): AlertaEscasez[] {
+  if (centro.items.length > 0 || centro.inventarioCargado) {
+    return centro.items
+      .filter((item) => item.requerido > item.disponible)
+      .map((item) => ({
+        itemId: item.id,
+        nombre: item.nombre,
+        requerido: item.requerido,
+        disponible: item.disponible,
+        faltante: item.requerido - item.disponible,
+      }))
+      .sort(byMostMissing);
+  }
+  if (centro.alertas) {
+    return [...centro.alertas].sort(byMostMissing);
+  }
+  return centro.alerta ? [centro.alerta] : [];
+}
+
+/** Whether the center is currently missing at least one resource. */
+export function hasActiveAlert(centro: CentroAyuda): boolean {
+  return centerAlerts(centro).length > 0;
+}
+
+const LIGHT_SEVERITY: Record<TrafficLight, number> = {
+  NOT_DECLARED: 0,
+  COMPLETE: 1,
+  GREEN: 2,
+  AMBER: 3,
+  RED: 4,
+};
+
+/**
+ * Worst traffic light of a center. It is the inventory's (`centroSemaforo`);
+ * only when no inventory is known yet does it fall back to the alerts the map
+ * sent, which carry the same two numbers the light is computed from.
+ */
+function worstLight(centro: CentroAyuda): TrafficLight {
+  if (centro.items.length > 0 || centro.inventarioCargado) {
+    return centroSemaforo(centro);
+  }
+  let worst: TrafficLight = 'NOT_DECLARED';
+  for (const alerta of centerAlerts(centro)) {
+    const light = trafficLight(alerta.disponible, alerta.requerido);
+    if (LIGHT_SEVERITY[light] > LIGHT_SEVERITY[worst]) {
+      worst = light;
+    }
+  }
+  return worst;
+}
+
+/**
+ * Citizen level of a center: its worst traffic light, nothing else.
  *
- *   - CRITICAL when the worst item light is RED;
- *   - ALERT when there is at least one active alert OR the worst light is AMBER;
- *   - STABLE when there is known inventory (worst light GREEN) and no active alert;
- *   - COMPLETE when every declared item is 100% covered (worst light COMPLETE) and no alert;
- *   - null (not declared) only when there is neither inventory nor alert data.
+ *   - CRITICAL when the worst light is RED;
+ *   - ALERT when it is AMBER;
+ *   - STABLE when it is GREEN;
+ *   - COMPLETE when every declared item is covered (or it declares nothing);
+ *   - null (not declared) when nothing is known about the center.
  *
- * The same value feeds the citizen rail chip and the map pin badge, so both can
- * never disagree.
+ * A shortage alert does NOT raise the level: an alert only says a resource is
+ * below its maximum, which is true of a GREEN center at 90% too. The level is
+ * how far below. The same value feeds the rail chip and the map pin, so both
+ * can never disagree.
  */
 export function centerLevel(centro: CentroAyuda): CitizenCenterLevel | null {
-  const worst = centroSemaforo(centro);
-  if (worst === 'RED') {
-    return 'critical';
-  }
-  if (hasActiveAlert(centro) || worst === 'AMBER') {
-    return 'alert';
-  }
-  if (worst === 'GREEN') {
-    return 'stable';
-  }
-  if (worst === 'COMPLETE') {
-    return 'complete';
-  }
-  return null;
+  return citizenCenterLevel(worstLight(centro));
 }
 
 /**
@@ -273,9 +317,8 @@ export function centerNeedLabel(centro: CentroAyuda): string {
   }
   const urgent = mostUrgentItem(centro);
   if (!urgent) {
-    return centro.alerta
-      ? `Faltante: ${centro.alerta.nombre.toLowerCase()}`
-      : 'Sin requerimientos declarados';
+    const [worst] = centerAlerts(centro);
+    return worst ? `Faltante: ${worst.nombre.toLowerCase()}` : 'Sin requerimientos declarados';
   }
   return `Faltante: ${urgent.nombre.toLowerCase()}`;
 }

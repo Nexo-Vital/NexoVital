@@ -2,6 +2,7 @@ import L from 'leaflet';
 import {
   CENTER_LEVEL_STYLE,
   CITIZEN_LEVEL_TRAFFIC,
+  centerAlerts,
   centerLevel,
   centerShortName,
   NOT_DECLARED_CENTER_STYLE,
@@ -251,27 +252,27 @@ function hospitalIcon(center: CentroAyuda, selected: boolean, changed: boolean):
 }
 
 /**
- * Shortage badge HTML for a center, or an empty string when it has no active
- * alert.
+ * Shortage badge HTML for a center, or an empty string when it is missing
+ * nothing.
  *
  * It is a SECOND, different message from the traffic-light badge: the light
- * reads the stock against the item's `requerido` threshold, this one is the
- * UNMET DEMAND (the missing quantity a donor still has to cover). It therefore
- * reuses the badge's visual language (a 22px on-accent-bordered pill) but
- * anchors on the OPPOSITE corner and carries the missing quantity as a NUMBER
- * instead of a level glyph, so the two can never be confused. A center without
- * an alert emits nothing and renders exactly as before (FA-7).
+ * says how far the center is from what it needs, this one is HOW MANY units of
+ * its most missing resource a donor still has to cover. It reuses the badge's
+ * visual language (a 22px on-accent-bordered pill) but anchors on the OPPOSITE
+ * corner and carries a NUMBER instead of a level glyph, so the two can never be
+ * confused. It disappears when a donation completes the need.
  */
 function shortageBadgeHtml(center: CentroAyuda): string {
-  if (!center.alerta) {
+  const [worst] = centerAlerts(center);
+  if (!worst) {
     return '';
   }
-  return `<span class="nv-marker__shortage">${escapeHtml(String(center.alerta.faltante))}</span>`;
+  return `<span class="nv-marker__shortage">${escapeHtml(String(worst.faltante))}</span>`;
 }
 
 /**
  * Aid-centre marker: 48px rounded square coloured by the centre's combined level
- * (worst inventory light plus active shortage alert, see `centerLevel`), with a
+ * (its worst inventory light, see `centerLevel`), with a
  * badge that repeats that SAME level as an icon, plus an optional shortage badge
  * carrying the unmet demand.
  *
@@ -291,7 +292,7 @@ export function centerIcon(center: CentroAyuda, selected = false, changed = fals
     return hospitalIcon(center, selected, changed);
   }
   // ONE combined level drives both the pin colour and the badge glyph, exactly
-  // as it drives the citizen rail chip: worst inventory light + active alert.
+  // as it drives the citizen rail chip: the worst inventory light.
   const level = centerLevel(center);
   const traffic = level ? CITIZEN_LEVEL_TRAFFIC[level] : 'NOT_DECLARED';
   const style = level ? CENTER_LEVEL_STYLE[level] : NOT_DECLARED_CENTER_STYLE;

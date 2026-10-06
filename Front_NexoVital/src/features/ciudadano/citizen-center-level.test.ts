@@ -3,6 +3,7 @@ import type { AlertaEscasez, CentroAyuda, InventarioItem, TrafficLight } from '@
 import {
   CENTER_LEVEL_STYLE,
   CITIZEN_LEVEL_TRAFFIC,
+  centerAlerts,
   centerLevel,
   hasActiveAlert,
 } from './citizen-view';
@@ -29,23 +30,56 @@ function centro(overrides: Partial<CentroAyuda> = {}): CentroAyuda {
   };
 }
 
-/** The backend's worst active alert, verbatim from `CentroDto.alerta`. */
+/** An alert as the map read-model sends it: 12 of 20, so 8 are missing (AMBER). */
 const ALERTA: AlertaEscasez = {
   itemId: 'INV-1',
   nombre: 'Alimentos',
-  cantidadSolicitada: 20,
+  requerido: 20,
+  disponible: 12,
   faltante: 8,
-  creadaEn: '2026-09-27T10:00:00Z',
 };
 
-describe('hasActiveAlert', () => {
-  it('is false with neither a count nor an alert object', () => {
+describe('centerAlerts', () => {
+  it('is empty when nothing is known about the center', () => {
+    expect(centerAlerts(centro())).toEqual([]);
     expect(hasActiveAlert(centro())).toBe(false);
-    expect(hasActiveAlert(centro({ alertasActivas: 0 }))).toBe(false);
   });
 
-  it('is true from either backend source: the count or the worst alert object', () => {
-    expect(hasActiveAlert(centro({ alertasActivas: 1 }))).toBe(true);
+  it('derives one alert per item below its maximum, most missing first', () => {
+    const items: InventarioItem[] = [
+      { ...item('GREEN', 'Cobijas'), disponible: 44, requerido: 50 },
+      { ...item('RED', 'Agua potable'), disponible: 12, requerido: 60 },
+      { ...item('COMPLETE', 'Alimentos'), disponible: 30, requerido: 30 },
+      { ...item('COMPLETE', 'Sobrante'), disponible: 9, requerido: 0 },
+    ];
+
+    expect(centerAlerts(centro({ items }))).toEqual([
+      {
+        itemId: 'INV-Agua potable',
+        nombre: 'Agua potable',
+        requerido: 60,
+        disponible: 12,
+        faltante: 48,
+      },
+      { itemId: 'INV-Cobijas', nombre: 'Cobijas', requerido: 50, disponible: 44, faltante: 6 },
+    ]);
+  });
+
+  it('follows the inventory, not a stale map alert, once the inventory is known', () => {
+    const covered: InventarioItem = { ...item('COMPLETE'), disponible: 100, requerido: 100 };
+
+    expect(centerAlerts(centro({ items: [covered], alertas: [ALERTA], alerta: ALERTA }))).toEqual(
+      [],
+    );
+    // Read and empty: the center needs nothing, whatever an older payload said.
+    expect(centerAlerts(centro({ inventarioCargado: true, alertas: [ALERTA] }))).toEqual([]);
+  });
+
+  it('uses the alerts the map sent while the inventory is still unknown', () => {
+    const menor: AlertaEscasez = { ...ALERTA, itemId: 'INV-2', nombre: 'Cobijas', faltante: 2 };
+
+    expect(centerAlerts(centro({ alertas: [menor, ALERTA] }))).toEqual([ALERTA, menor]);
+    expect(centerAlerts(centro({ alerta: ALERTA }))).toEqual([ALERTA]);
     expect(hasActiveAlert(centro({ alerta: ALERTA }))).toBe(true);
   });
 });
@@ -56,7 +90,7 @@ describe('centerLevel', () => {
     expect(centerLevel(centro({ items: [item('NOT_DECLARED')] }))).toBeNull();
   });
 
-  it('is stable from a GREEN inventory with no active alert', () => {
+  it('is stable from a GREEN inventory', () => {
     expect(centerLevel(centro({ items: [item('GREEN')] }))).toBe('stable');
   });
 
@@ -68,17 +102,25 @@ describe('centerLevel', () => {
     expect(centerLevel(centro({ items: [item('GREEN'), item('RED')] }))).toBe('critical');
   });
 
-  it('is alert from a live alert with NO inventory (the alert source alone)', () => {
-    expect(centerLevel(centro({ alertasActivas: 1 }))).toBe('alert');
-    expect(centerLevel(centro({ alerta: ALERTA }))).toBe('alert');
+  it('is complete when the inventory was read and is empty', () => {
+    expect(centerLevel(centro({ inventarioCargado: true }))).toBe('complete');
   });
 
-  it('is alert from an active alert even when the inventory is GREEN', () => {
-    expect(centerLevel(centro({ items: [item('GREEN')], alerta: ALERTA }))).toBe('alert');
+  it('does NOT raise a GREEN center to alert because it is missing something', () => {
+    // 90 of 100 is GREEN and still has an alert (10 missing): the level is the
+    // traffic light, the alert only names what is missing.
+    const green: InventarioItem = { ...item('GREEN'), disponible: 90, requerido: 100 };
+
+    expect(hasActiveAlert(centro({ items: [green] }))).toBe(true);
+    expect(centerLevel(centro({ items: [green] }))).toBe('stable');
   });
 
-  it('keeps critical above an active alert (precedence)', () => {
-    expect(centerLevel(centro({ items: [item('RED')], alertasActivas: 2 }))).toBe('critical');
+  it('takes the level from the map alerts while the inventory is unknown', () => {
+    // 12 of 20 is 60%: AMBER.
+    expect(centerLevel(centro({ alertas: [ALERTA] }))).toBe('alert');
+    // 1 of 20 is 5%: RED wins over the AMBER one.
+    const roja: AlertaEscasez = { ...ALERTA, itemId: 'INV-2', disponible: 1, faltante: 19 };
+    expect(centerLevel(centro({ alertas: [ALERTA, roja] }))).toBe('critical');
   });
 
   it('drives one style and one badge per level, with no level left unmapped', () => {

@@ -24,13 +24,13 @@ function centro(overrides: Partial<CentroAyuda> = {}): CentroAyuda {
   };
 }
 
-/** The backend's worst active alert, verbatim from `CentroDto.alerta`. */
+/** An alert as the map read-model sends it. */
 const ALERTA: AlertaEscasez = {
   itemId: 'INV-1',
   nombre: 'Alimentos',
-  cantidadSolicitada: 20,
+  requerido: 20,
+  disponible: 12,
   faltante: 8,
-  creadaEn: '2026-09-27T10:00:00Z',
 };
 
 describe('centerNeedLabel', () => {

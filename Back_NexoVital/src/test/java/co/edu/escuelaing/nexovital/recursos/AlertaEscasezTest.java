@@ -1,19 +1,12 @@
 package co.edu.escuelaing.nexovital.recursos;
 
-import co.edu.escuelaing.nexovital.recursos.application.usecase.AlertaEscasezPushListener;
-import co.edu.escuelaing.nexovital.recursos.domain.exception.StockInsuficienteException;
-import co.edu.escuelaing.nexovital.recursos.domain.model.AlertaEscasez;
-import co.edu.escuelaing.nexovital.recursos.domain.port.in.DespacharStockUseCase;
+import co.edu.escuelaing.nexovital.recursos.domain.model.AlertaEscasezActiva;
+import co.edu.escuelaing.nexovital.recursos.domain.port.in.ConsultarAlertasEscasezUseCase;
 import co.edu.escuelaing.nexovital.recursos.domain.port.in.RegistrarDonacionUseCase;
-import co.edu.escuelaing.nexovital.recursos.domain.port.out.AlertaEscasezRepository;
-import co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.out.AlertaEscasezJpaEntity;
-import co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.out.AlertaEscasezJpaRepository;
 import co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.out.ItemInventarioJpaEntity;
 import co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.out.ItemInventarioJpaRepository;
 import co.edu.escuelaing.nexovital.support.LoginTestBase;
 import co.edu.escuelaing.nexovital.support.PushPortDePruebaConfig;
-import co.edu.escuelaing.nexovital.support.PushPortDePruebaConfig.PublicacionCapturada;
-import co.edu.escuelaing.nexovital.support.PushPortDePruebaConfig.PushPortDePrueba;
 import co.edu.escuelaing.nexovital.support.TestClockConfig;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.Organizacion;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.TipoOrganizacion;
@@ -36,38 +29,35 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Pruebas de la alerta de escasez (EP-03.F1.US5, Azure 225).
+ * Pruebas de la alerta de escasez (EP-03.F1.US5) y de su consulta por el
+ * donante (EP-03.F3.US4).
  *
- * <p>Cubre, escenario por escenario, lo que la historia exige:
+ * <p>La alerta NO se guarda: existe mientras un recurso esté por debajo de lo
+ * que su centro declaró necesitar, y se calcula del inventario en cada lectura.
+ * Escenarios cubiertos:
  * <ul>
- *   <li><b>FA-6</b> — un despacho RECHAZADO tiene que dejar la alerta en la
- *       base: el rechazo revierte su transacción y la alerta se persiste en
- *       otra. Sin esta prueba el bug más probable de la historia queda sin
- *       cubrir.</li>
- *   <li><b>AC</b> — 5 disponibles, se solicitan 8 → 409 y alerta activa que
- *       nombra el recurso con faltante 3.</li>
- *   <li><b>FA-3</b> — la donación que cubre la demanda vuelve inactiva la
- *       alerta, sin endpoint ni acción de admin.</li>
- *   <li><b>FA-4</b> — varias solicitudes sobre el mismo item: gana la mayor y
- *       una menor no baja la alerta ya levantada.</li>
- *   <li><b>FA-5</b> — el mapa del centro publica la peor alerta activa.</li>
+ *   <li><b>US5</b> — un recurso en 5 de 8 muestra la alerta con 3 faltantes.</li>
+ *   <li>Una donación parcial reduce el faltante; la que completa la necesidad
+ *       hace desaparecer la alerta, sin endpoint ni acción de administrador.</li>
+ *   <li>Un recurso cubierto o sin requerimiento no genera alerta.</li>
+ *   <li>Un retiro rechazado (409) no crea ninguna alerta.</li>
+ *   <li><b>US4</b> — con 2 centros con alertas activas, el mapa publica cada
+ *       centro con el recurso y la cantidad que le falta.</li>
+ *   <li>El centro publica todas sus alertas con la peor primero.</li>
  * </ul>
  *
- * <p>Patrón de la casa: perfil {@code test} (H2 + seed), login real para el
- * token, reloj controlado y doble del {@code PushPort}. Cada test crea su PROPIO
- * item (id aleatorio, prefijo) y limpia sus items y alertas al final: la H2 es
- * compartida y otros tests leen cantidades exactas del inventario sembrado.
+ * <p>Patrón de la casa: perfil {@code test} (H2 + seed) y login real para el
+ * token. Cada test crea sus PROPIOS items (id aleatorio, prefijo) y los borra
+ * al final: la H2 es compartida y otros tests leen cantidades exactas del
+ * inventario sembrado.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -75,16 +65,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import({TestClockConfig.class, PushPortDePruebaConfig.class})
 class AlertaEscasezTest extends LoginTestBase {
 
+    private static final String CIUDADANO = "ciudadano@nexovital.co";
+    private static final String CIUDADANO_PASSWORD = "ciudadano123";
     private static final String ADMIN = "admin@nexovital.co";
     private static final String ADMIN_PASSWORD = "admin123";
 
     /** Prefix of the items created only by this test, removed afterwards. */
     private static final String PREFIJO_PRUEBA = "Prueba US5-ESC ";
 
-    private static final int REQUERIDO = 100;
-
     @Autowired
-    private DespacharStockUseCase despacharStockUseCase;
+    private ConsultarAlertasEscasezUseCase consultarAlertasEscasezUseCase;
 
     @Autowired
     private RegistrarDonacionUseCase registrarDonacionUseCase;
@@ -93,22 +83,15 @@ class AlertaEscasezTest extends LoginTestBase {
     private ListarOrganizacionesUseCase listarOrganizacionesUseCase;
 
     @Autowired
-    private AlertaEscasezRepository alertaEscasezRepository;
-
-    @Autowired
-    private AlertaEscasezJpaRepository alertaEscasezJpaRepository;
-
-    @Autowired
     private ItemInventarioJpaRepository itemInventarioJpaRepository;
 
-    @Autowired
-    private PushPortDePrueba pushPortDePrueba;
-
     private UUID centroId;
+    private UUID otroCentroId;
 
     @BeforeEach
-    void resolverCentroDePrueba() {
+    void resolverCentrosDePrueba() {
         centroId = centroIdPorNombre("Acopio Suba Norte");
+        otroCentroId = centroIdPorNombre("Acopio La Gaitana");
     }
 
     @AfterEach
@@ -117,226 +100,184 @@ class AlertaEscasezTest extends LoginTestBase {
                 .filter(entidad -> entidad.getNombre().startsWith(PREFIJO_PRUEBA))
                 .toList();
         itemInventarioJpaRepository.deleteAll(itemsABorrar);
-
-        List<AlertaEscasezJpaEntity> alertasABorrar = alertaEscasezJpaRepository.findAll().stream()
-                .filter(entidad -> entidad.getNombre().startsWith(PREFIJO_PRUEBA))
-                .toList();
-        alertaEscasezJpaRepository.deleteAll(alertasABorrar);
     }
 
     // -----------------------------------------------------------------------
-    // FA-6 — the alert survives the rollback of the rejected dispatch
+    // EP-03.F1.US5 — the alert is the missing quantity
     // -----------------------------------------------------------------------
 
     @Test
-    @DisplayName("FA-6: un despacho rechazado (409) deja la alerta PERSISTIDA en la base, pese al rollback")
-    void fa6_elRechazoDejaLaAlertaEnLaBase() throws Exception {
-        UUID itemId = sembrarItem(5);
-        String token = tokenDe(ADMIN, ADMIN_PASSWORD);
+    @DisplayName("US5: un recurso en 5 de 8 genera la alerta con 3 faltantes")
+    void recursoPorDebajoDelMaximoGeneraAlerta() {
+        UUID itemId = sembrarItem(centroId, 5, 8);
 
-        mockMvc.perform(despachoHttp(itemId, 8, token))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.codigo").value("STOCK_INSUFICIENTE"));
+        AlertaEscasezActiva alerta = alertaDe(itemId);
 
-        // El 409 revierte la transacción del despacho. Si la alerta se hubiera
-        // guardado dentro de esa transacción, acá no habría nada.
-        List<AlertaEscasezJpaEntity> alertas = alertasDe(itemId);
-        assertEquals(1, alertas.size(),
-                "el rechazo debe dejar EXACTAMENTE una alerta persistida, sobreviviendo al rollback");
-        AlertaEscasezJpaEntity alerta = alertas.get(0);
-        assertEquals(centroId, alerta.getCentroAcopioId(), "la alerta debe apuntar al centro que rechazó");
-        assertEquals(8, alerta.getCantidadSolicitada(), "la alerta guarda la demanda solicitada, no el déficit");
-        assertTrue(alerta.getNombre().startsWith(PREFIJO_PRUEBA), "la alerta debe nombrar el recurso");
-    }
-
-    // -----------------------------------------------------------------------
-    // Realtime: creating/updating the alert publishes AFTER its commit
-    // -----------------------------------------------------------------------
-
-    @Test
-    @DisplayName("push: crear la alerta publica en /topic/alerts tras el commit de su transaccion REQUIRES_NEW")
-    void crearLaAlertaPublicaEnElTopicoPostCommit() throws Exception {
-        pushPortDePrueba.limpiar();
-        UUID itemId = sembrarItem(5);
-        String token = tokenDe(ADMIN, ADMIN_PASSWORD);
-
-        mockMvc.perform(despachoHttp(itemId, 8, token))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.codigo").value("STOCK_INSUFICIENTE"));
-
-        PublicacionCapturada publicacion =
-                pushPortDePrueba.ultimaHacia(AlertaEscasezPushListener.DESTINO_ALERTAS);
-        assertNotNull(publicacion,
-                "crear la alerta debe publicar en " + AlertaEscasezPushListener.DESTINO_ALERTAS);
-        assertInstanceOf(AlertaEscasezPushListener.AlertaEscasezPushPayload.class, publicacion.payload(),
-                "el payload es la proyeccion de la alerta ya armada por el modulo");
-
-        AlertaEscasezPushListener.AlertaEscasezPushPayload payload =
-                (AlertaEscasezPushListener.AlertaEscasezPushPayload) publicacion.payload();
-        assertEquals(centroId, payload.centroAcopioId(), "la alerta publicada apunta al centro que rechazo");
-        assertEquals(itemId, payload.itemId(), "la alerta publicada nombra el recurso rechazado");
-        assertTrue(payload.nombre().startsWith(PREFIJO_PRUEBA), "la alerta publicada lleva el nombre del recurso");
-        assertEquals(8, payload.cantidadSolicitada(), "publica la demanda solicitada, no el deficit");
-        assertEquals(5, payload.disponibleActual(), "publica el stock visto al rechazar");
-        assertEquals(3, payload.faltante(), "el faltante publicado es la necesidad actual: 8 - 5 = 3");
+        assertNotNull(alerta, "un recurso por debajo de su máximo tiene alerta activa");
+        assertEquals(centroId, alerta.centroAcopioId());
+        assertEquals(8, alerta.requerido());
+        assertEquals(5, alerta.disponible());
+        assertEquals(3, alerta.faltante(), "faltante = requerido - disponible = 8 - 5");
     }
 
     @Test
-    @DisplayName("push: un rechazo que NO cambia la alerta (demanda ya mayor) no vuelve a publicar")
-    void elRechazoQueNoCambiaLaAlertaNoRepublica() throws Exception {
-        pushPortDePrueba.limpiar();
-        UUID itemId = sembrarItem(0);
-        String token = tokenDe(ADMIN, ADMIN_PASSWORD);
+    @DisplayName("Una donación parcial reduce el faltante de la alerta")
+    void donacionParcialReduceElFaltante() {
+        UUID itemId = sembrarItem(centroId, 5, 8);
 
-        // First rejection creates the alert (demand 20) and publishes once.
-        mockMvc.perform(despachoHttp(itemId, 20, token)).andExpect(status().isConflict());
-        // Second rejection asks for LESS: FA-4 keeps the larger demand, no write.
-        mockMvc.perform(despachoHttp(itemId, 5, token)).andExpect(status().isConflict());
+        registrarDonacionUseCase.donar(centroId, itemId, 2);
 
-        long emitidas = pushPortDePrueba.publicaciones().stream()
-                .filter(publicacion -> AlertaEscasezPushListener.DESTINO_ALERTAS.equals(publicacion.destino()))
-                .count();
-        assertEquals(1, emitidas,
-                "solo el rechazo que Persiste la alerta emite; el que no la cambia no republica");
+        AlertaEscasezActiva alerta = alertaDe(itemId);
+        assertNotNull(alerta, "todavía falta una unidad: la alerta sigue activa");
+        assertEquals(7, alerta.disponible());
+        assertEquals(1, alerta.faltante());
     }
 
-    // -----------------------------------------------------------------------
-    // AC — 5 available, request 8: 409 + active alert naming the resource
-    // -----------------------------------------------------------------------
-
     @Test
-    @DisplayName("AC: 5 disponibles, se solicitan 8 → 409 y alerta activa con faltante 3 nombrando el recurso")
-    void ac_cincoDisponiblesSolicitaOchoDejaAlertaDeTres() throws Exception {
-        UUID itemId = sembrarItem(5);
-        String token = tokenDe(ADMIN, ADMIN_PASSWORD);
-
-        mockMvc.perform(despachoHttp(itemId, 8, token))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.codigo").value("STOCK_INSUFICIENTE"));
-
-        AlertaEscasez alerta = alertaDe(itemId);
-        assertEquals(8, alerta.getCantidadSolicitada(), "la demanda viva es la solicitada: 8");
-        assertTrue(alerta.estaActiva(5), "con 5 disponibles la alerta sigue activa");
-        assertEquals(3, alerta.faltante(5), "el faltante mostrado es la necesidad actual: 8 - 5 = 3");
-        assertTrue(alerta.getNombre().startsWith(PREFIJO_PRUEBA), "la alerta nombra el recurso");
-    }
-
-    // -----------------------------------------------------------------------
-    // FA-3 — the alert clears itself when a donation covers the demand
-    // -----------------------------------------------------------------------
-
-    @Test
-    @DisplayName("FA-3: la donación que sube el stock a lo solicitado vuelve inactiva la alerta, sin acción de admin")
-    void fa3_laDonacionQueCubreLaDemandaDesactivaLaAlerta() throws Exception {
-        UUID itemId = sembrarItem(5);
-        assertThrows(StockInsuficienteException.class, () -> despacharStockUseCase.despachar(centroId, itemId, 8));
-
-        AlertaEscasez alerta = alertaDe(itemId);
-        assertTrue(alerta.estaActiva(5), "tras el rechazo la alerta está activa");
+    @DisplayName("US5: la alerta desaparece cuando una donación completa la necesidad")
+    void donacionQueCompletaLaNecesidadApagaLaAlerta() {
+        UUID itemId = sembrarItem(centroId, 5, 8);
 
         registrarDonacionUseCase.donar(centroId, itemId, 3);
 
-        int stockAhora = itemInventarioJpaRepository.findById(itemId).orElseThrow().getDisponible();
-        assertEquals(8, stockAhora, "la donación debe dejar el stock en lo solicitado");
-        assertFalse(alerta.estaActiva(stockAhora),
-                "con el stock cubriendo la demanda, la alerta deja de estar activa por sí sola");
-        assertEquals(0, alerta.faltante(stockAhora), "ya no falta nada por cubrir");
-
-        // El registro sigue existiendo con su fecha: es trazabilidad, no un flag.
-        assertEquals(1, alertasDe(itemId).size(), "la alerta se conserva como registro histórico");
+        assertNull(alertaDe(itemId), "con 8 de 8 ya no falta nada: no hay alerta");
     }
 
-    // -----------------------------------------------------------------------
-    // FA-4 — several requests on the same item: the largest demand wins
-    // -----------------------------------------------------------------------
-
     @Test
-    @DisplayName("FA-4: rechazos de 8 y luego 20 dejan demanda 20; un rechazo posterior de 5 no la baja")
-    void fa4_laMayorDemandaGanaYLaMenorNoLaBaja() {
-        UUID itemId = sembrarItem(0);
+    @DisplayName("Un recurso cubierto o sin requerimiento no genera alerta")
+    void recursoCubiertoOSinRequerimientoNoGeneraAlerta() {
+        UUID cubierto = sembrarItem(centroId, 8, 8);
+        UUID sobrado = sembrarItem(centroId, 12, 8);
+        UUID sinRequerimiento = sembrarItem(centroId, 0, 0);
 
-        assertThrows(StockInsuficienteException.class, () -> despacharStockUseCase.despachar(centroId, itemId, 8));
-        assertEquals(8, alertaDe(itemId).getCantidadSolicitada(), "el primer rechazo levanta la demanda en 8");
-
-        assertThrows(StockInsuficienteException.class, () -> despacharStockUseCase.despachar(centroId, itemId, 20));
-        assertEquals(20, alertaDe(itemId).getCantidadSolicitada(), "una demanda mayor sube la alerta a 20");
-
-        assertThrows(StockInsuficienteException.class, () -> despacharStockUseCase.despachar(centroId, itemId, 5));
-        assertEquals(20, alertaDe(itemId).getCantidadSolicitada(), "una demanda menor NO puede bajar la alerta");
-
-        assertEquals(1, alertasDe(itemId).size(), "sigue habiendo una sola alerta viva por item");
+        assertNull(alertaDe(cubierto));
+        assertNull(alertaDe(sobrado));
+        assertNull(alertaDe(sinRequerimiento));
     }
 
-    // -----------------------------------------------------------------------
-    // FA-5 — the map carries the worst active alert of the center
-    // -----------------------------------------------------------------------
-
     @Test
-    @DisplayName("FA-5: GET /mapa publica en el centro la peor alerta activa (recurso y faltante) y cuántas hay")
-    void fa5_elMapaMuestraLaPeorAlertaActivaDelCentro() throws Exception {
-        UUID itemId = sembrarItem(5);
-        assertThrows(StockInsuficienteException.class, () -> despacharStockUseCase.despachar(centroId, itemId, 8));
-
+    @DisplayName("Un retiro rechazado por stock insuficiente no crea ninguna alerta")
+    void retiroRechazadoNoCreaAlerta() throws Exception {
+        UUID itemId = sembrarItem(centroId, 5, 5);
         String token = tokenDe(ADMIN, ADMIN_PASSWORD);
-        MvcResult resultado = mockMvc.perform(get("/api/v1/mapa")
-                        .header("Authorization", "Bearer " + token))
-                .andExpect(status().isOk())
-                .andReturn();
 
-        JsonNode centro = centroPorId(objectMapper.readTree(resultado.getResponse().getContentAsString()), centroId);
-        assertNotNull(centro, "el centro sembrado debe aparecer en el mapa");
-        assertTrue(centro.get("alertasActivas").asInt() >= 1,
-                "el centro debe reportar al menos la alerta activa de este test");
-        JsonNode alerta = centro.get("alerta");
-        assertNotNull(alerta, "el centro con alerta activa debe publicar la peor alerta");
-        assertEquals(itemId.toString(), alerta.get("itemId").asText(),
-                "la alerta publicada corresponde al recurso rechazado");
-        assertEquals(3, alerta.get("faltante").asInt(),
-                "el mapa muestra el faltante actual: 8 - 5 = 3");
-        assertEquals(8, alerta.get("cantidadSolicitada").asInt(),
-                "el mapa publica la demanda solicitada");
+        mockMvc.perform(post("/api/v1/centros-acopio/{id}/inventario/despacho", centroId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "itemId", itemId.toString(),
+                                "cantidad", 8))))
+                .andExpect(status().isConflict());
+
+        assertEquals(5, itemInventarioJpaRepository.findById(itemId).orElseThrow().getDisponible(),
+                "un rechazo no mueve el stock");
+        assertNull(alertaDe(itemId), "el recurso sigue cubierto (5 de 5): un retiro rechazado no crea alerta");
+    }
+
+    // -----------------------------------------------------------------------
+    // EP-03.F3.US4 — the donor sees each center with what it is missing
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("US4: con 2 centros con alertas, el mapa publica cada centro con el recurso y el faltante")
+    void mapaPublicaLasAlertasDeCadaCentro() throws Exception {
+        UUID itemUno = sembrarItem(centroId, 5, 8);
+        UUID itemDos = sembrarItem(otroCentroId, 10, 30);
+
+        JsonNode mapa = mapaComo(CIUDADANO, CIUDADANO_PASSWORD);
+
+        JsonNode alertaUno = alertaEnMapa(mapa, centroId, itemUno);
+        assertNotNull(alertaUno, "el primer centro publica la alerta de su recurso");
+        assertEquals(PREFIJO_PRUEBA + itemUno, alertaUno.get("nombre").asText());
+        assertEquals(8, alertaUno.get("requerido").asInt());
+        assertEquals(5, alertaUno.get("disponible").asInt());
+        assertEquals(3, alertaUno.get("faltante").asInt());
+
+        JsonNode alertaDos = alertaEnMapa(mapa, otroCentroId, itemDos);
+        assertNotNull(alertaDos, "el segundo centro publica la alerta de su recurso");
+        assertEquals(20, alertaDos.get("faltante").asInt());
+    }
+
+    @Test
+    @DisplayName("El centro publica todas sus alertas con la peor primero, y la peor es la del marcador")
+    void centroPublicaSusAlertasOrdenadasPorFaltante() throws Exception {
+        sembrarItem(centroId, 5, 8);
+        // Larger than any seeded gap, so it is deterministically the worst.
+        UUID peor = sembrarItem(centroId, 0, 5000);
+
+        JsonNode centro = centroPorId(mapaComo(CIUDADANO, CIUDADANO_PASSWORD), centroId);
+        assertNotNull(centro);
+        JsonNode alertas = centro.get("alertas");
+
+        assertTrue(alertas.size() >= 2, "el centro publica cada recurso que le falta");
+        assertEquals(alertas.size(), centro.get("alertasActivas").asInt(),
+                "alertasActivas cuenta las alertas publicadas");
+        assertEquals(peor.toString(), alertas.get(0).get("itemId").asText(), "la peor alerta va primero");
+        assertEquals(peor.toString(), centro.get("alerta").get("itemId").asText(),
+                "la alerta del marcador es la peor");
+        for (int i = 1; i < alertas.size(); i++) {
+            assertTrue(alertas.get(i - 1).get("faltante").asInt() >= alertas.get(i).get("faltante").asInt(),
+                    "las alertas van de mayor a menor faltante");
+        }
+    }
+
+    @Test
+    @DisplayName("La alerta sale del mapa cuando la donación completa la necesidad")
+    void alertaSaleDelMapaAlCompletarLaNecesidad() throws Exception {
+        UUID itemId = sembrarItem(centroId, 5, 8);
+        assertNotNull(alertaEnMapa(mapaComo(CIUDADANO, CIUDADANO_PASSWORD), centroId, itemId));
+
+        registrarDonacionUseCase.donar(centroId, itemId, 3);
+
+        assertNull(alertaEnMapa(mapaComo(CIUDADANO, CIUDADANO_PASSWORD), centroId, itemId),
+                "con la necesidad cubierta el centro deja de publicar la alerta");
     }
 
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 
-    /** Seeds an isolated item of this test with the given stock. */
-    private UUID sembrarItem(int disponible) {
+    /** Seeds an isolated item of this test in the given center. */
+    private UUID sembrarItem(UUID centro, int disponible, int requerido) {
         UUID itemId = UUID.randomUUID();
         itemInventarioJpaRepository.save(new ItemInventarioJpaEntity(
                 itemId,
-                centroId,
+                centro,
                 PREFIJO_PRUEBA + itemId,
                 disponible,
-                REQUERIDO,
+                requerido,
                 null,
                 null));
         return itemId;
     }
 
-    /** POST del despacho de {@code cantidad} unidades de este item. */
-    private org.springframework.test.web.servlet.RequestBuilder despachoHttp(UUID itemId, int cantidad, String token)
-            throws Exception {
-        return post("/api/v1/centros-acopio/{id}/inventario/despacho", centroId)
-                .header("Authorization", "Bearer " + token)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of(
-                        "itemId", itemId.toString(),
-                        "cantidad", cantidad)));
+    /** Active alert of the item through the public port, or {@code null}. */
+    private AlertaEscasezActiva alertaDe(UUID itemId) {
+        return consultarAlertasEscasezUseCase.listarActivas().stream()
+                .filter(alerta -> alerta.itemId().equals(itemId))
+                .findFirst()
+                .orElse(null);
     }
 
-    /** Persisted alert rows for the item, straight from the database. */
-    private List<AlertaEscasezJpaEntity> alertasDe(UUID itemId) {
-        return alertaEscasezJpaRepository.findAll().stream()
-                .filter(entidad -> entidad.getItemId().equals(itemId))
-                .toList();
+    /** Reads {@code GET /api/v1/mapa} with a real token. */
+    private JsonNode mapaComo(String email, String password) throws Exception {
+        MvcResult respuesta = mockMvc.perform(get("/api/v1/mapa")
+                        .header("Authorization", "Bearer " + tokenDe(email, password)))
+                .andExpect(status().isOk())
+                .andReturn();
+        return objectMapper.readTree(respuesta.getResponse().getContentAsString());
     }
 
-    /** The live alert through the domain port (largest demand wins). */
-    private AlertaEscasez alertaDe(UUID itemId) {
-        return alertaEscasezRepository.buscarMayorDemanda(centroId, itemId)
-                .orElseThrow(() -> new AssertionError("expected a persisted shortage alert for item " + itemId));
+    /** Alert of the item inside the center's {@code alertas}, or {@code null}. */
+    private JsonNode alertaEnMapa(JsonNode mapa, UUID centroIdBuscado, UUID itemId) {
+        JsonNode centro = centroPorId(mapa, centroIdBuscado);
+        assertNotNull(centro, "el centro sembrado debe estar en el mapa");
+        for (JsonNode alerta : centro.get("alertas")) {
+            if (itemId.toString().equals(alerta.get("itemId").asText())) {
+                return alerta;
+            }
+        }
+        return null;
     }
 
     /** Finds the center with the given id inside the map payload, or {@code null}. */

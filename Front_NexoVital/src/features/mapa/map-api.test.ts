@@ -144,6 +144,20 @@ describe('mapaToCentros', () => {
   });
 
   it('EP-03.F1.US5: carries the worst active alert and the count through, verbatim', () => {
+    const AGUA = {
+      itemId: 'INV-1',
+      nombre: 'Agua potable',
+      requerido: 8,
+      disponible: 5,
+      faltante: 3,
+    };
+    const COBIJAS = {
+      itemId: 'INV-2',
+      nombre: 'Cobijas',
+      requerido: 4,
+      disponible: 3,
+      faltante: 1,
+    };
     const centros = mapaToCentros({
       zonas: [],
       centros: [
@@ -152,14 +166,9 @@ describe('mapaToCentros', () => {
           nombre: 'Acopio Alerta',
           tipo: 'CENTRO_ACOPIO',
           ubicacion: { lat: 4.7, lng: -74.06 },
-          alerta: {
-            itemId: 'INV-1',
-            nombre: 'Agua potable',
-            cantidadSolicitada: 8,
-            faltante: 3,
-            creadaEn: '2026-09-27T10:00:00Z',
-          },
+          alerta: AGUA,
           alertasActivas: 2,
+          alertas: [AGUA, COBIJAS],
         },
       ],
     });
@@ -168,11 +177,13 @@ describe('mapaToCentros', () => {
     expect(centros[0].alerta).toEqual({
       itemId: 'INV-1',
       nombre: 'Agua potable',
-      cantidadSolicitada: 8,
+      requerido: 8,
+      disponible: 5,
       faltante: 3,
-      creadaEn: '2026-09-27T10:00:00Z',
     });
     expect(centros[0].alertasActivas).toBe(2);
+    // EP-03.F3.US4: every resource the center is missing travels with it.
+    expect(centros[0].alertas).toEqual([AGUA, COBIJAS]);
   });
 
   it('EP-03.F1.US5: an absent or null alert is OMITTED, never a present-but-nullish key', () => {

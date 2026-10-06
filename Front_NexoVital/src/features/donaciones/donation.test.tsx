@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { trafficLight } from '@/features/recursos/traffic-light';
 import { MOCK_CENTROS_AYUDA } from '@/mocks/fixtures';
 import { GLOBALS_CSS } from '@/test/mockup-palette';
 import type { CentroAyuda } from '@/types/domain';
@@ -371,6 +372,53 @@ describe('DonationCenterPicker', () => {
     expect(onSelect).toHaveBeenCalledWith('CA-LA-GAITANA');
   });
 
+  it('EP-03.F3.US4: shows each center with the resource and the quantity it is missing', () => {
+    const centro = (id: string, nombre: string, items: CentroAyuda['items']): CentroAyuda => ({
+      id,
+      nombre,
+      ubicacion: { lat: 4.7, lng: -74.08 },
+      items,
+    });
+    const item = (id: string, nombre: string, disponible: number, requerido: number) => ({
+      id,
+      centroAcopioId: 'C',
+      nombre,
+      disponible,
+      requerido,
+      semaforo: trafficLight(disponible, requerido),
+    });
+    // Two centers with an active alert each, the story's scenario.
+    const centros = [
+      centro('C-1', 'Acopio Uno', [item('I-1', 'Medicamento', 5, 8)]),
+      centro('C-2', 'Acopio Dos', [
+        item('I-2', 'Agua potable', 10, 30),
+        item('I-3', 'Cobijas', 4, 5),
+        item('I-4', 'Alimentos', 9, 9),
+      ]),
+    ];
+    render(
+      <DonationCenterPicker
+        centros={donableCenters(centros)}
+        onSelect={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    const uno = screen.getByRole('list', { name: 'Lo que le falta a Acopio Uno' });
+    expect(
+      within(uno)
+        .getAllByRole('listitem')
+        .map((row) => row.textContent),
+    ).toEqual(['Medicamentofaltan 3']);
+    // Most missing first; the covered resource (Alimentos) is not an alert.
+    const dos = screen.getByRole('list', { name: 'Lo que le falta a Acopio Dos' });
+    expect(
+      within(dos)
+        .getAllByRole('listitem')
+        .map((row) => row.textContent),
+    ).toEqual(['Agua potablefaltan 20', 'Cobijasfaltan 1']);
+  });
+
   it('never selects a center on its own and can be left without donating', () => {
     const onSelect = vi.fn();
     const onCancel = vi.fn();
@@ -392,7 +440,7 @@ describe('DonationCenterPicker', () => {
     render(<DonationCenterPicker centros={[]} onSelect={vi.fn()} onCancel={vi.fn()} />);
 
     expect(
-      screen.getByText('Ningún centro declara insumos que necesiten donación.'),
+      screen.getByText('Ningún centro tiene alertas de donación pendientes.'),
     ).toBeInTheDocument();
   });
 });
@@ -449,17 +497,11 @@ describe('CenterDetailRail', () => {
     expect(screen.getByRole('button', { name: 'Volver al mapa' })).toBeInTheDocument();
   });
 
-  it('EP-03.F1.US5: shows the active shortage alert with the resource and the missing quantity', () => {
+  it('EP-03.F1.US5: shows the alert with the most missing resource and the quantity', () => {
+    // 5 of 8: the story's own example, 3 are missing.
     const centro: CentroAyuda = {
       ...subaNorte(),
-      alerta: {
-        itemId: 'INV-SN-1',
-        nombre: 'Agua potable',
-        cantidadSolicitada: 8,
-        faltante: 3,
-        creadaEn: '2026-09-27T10:00:00Z',
-      },
-      alertasActivas: 1,
+      items: [{ ...subaNorte().items[0], nombre: 'Agua potable', disponible: 5, requerido: 8 }],
     };
     render(
       <CenterDetailRail
@@ -475,23 +517,15 @@ describe('CenterDetailRail', () => {
     // The AC: the alert names the resource AND the amount that is missing.
     expect(alert.textContent).toContain('agua potable');
     expect(within(alert).getByText('3')).toBeInTheDocument();
-    expect(alert.textContent).toContain('se solicitaron 8');
+    expect(alert.textContent).toContain('tiene 5 de 8');
     // A single alert says nothing about further ones.
     expect(alert.textContent).not.toContain('recursos en escasez');
   });
 
   it('EP-03.F1.US5: mentions the other active alerts only when there is more than one', () => {
-    const centro: CentroAyuda = {
-      ...subaNorte(),
-      alerta: {
-        itemId: 'INV-SN-1',
-        nombre: 'Agua potable',
-        cantidadSolicitada: 8,
-        faltante: 3,
-        creadaEn: '2026-09-27T10:00:00Z',
-      },
-      alertasActivas: 3,
-    };
+    const centro = subaNorte();
+    const missing = centro.items.filter((item) => item.disponible < item.requerido).length;
+    expect(missing).toBeGreaterThan(1);
     render(
       <CenterDetailRail
         centro={centro}
@@ -503,14 +537,20 @@ describe('CenterDetailRail', () => {
     );
 
     expect(screen.getByTestId('centro-alerta-escasez').textContent).toContain(
-      'Hay 3 recursos en escasez en este centro.',
+      `Hay ${missing} recursos en escasez en este centro.`,
     );
   });
 
-  it('EP-03.F1.US5: a center without an alert renders no alert block', () => {
+  it('EP-03.F1.US5: a center that is missing nothing renders no alert block', () => {
+    const base = subaNorte();
+    // Every need covered: the alert is gone, with nobody having to close it.
+    const cubierto: CentroAyuda = {
+      ...base,
+      items: base.items.map((item) => ({ ...item, disponible: item.requerido })),
+    };
     render(
       <CenterDetailRail
-        centro={subaNorte()}
+        centro={cubierto}
         origin={SUBAS}
         lastDonation={null}
         onDonate={vi.fn()}

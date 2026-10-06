@@ -175,9 +175,9 @@ describe('MapCanvas smoke', () => {
             alerta: {
               itemId: 'INV-1',
               nombre: 'Agua potable',
-              cantidadSolicitada: 8,
+              requerido: 8,
+              disponible: 5,
               faltante: 3,
-              creadaEn: '2026-09-27T10:00:00Z',
             },
           },
         ]}
@@ -199,16 +199,45 @@ describe('MapCanvas smoke', () => {
     expect(GLOBALS_CSS).toContain('.nv-marker__shortage');
   });
 
-  it('EP-03.F1.US5: a center without an alert draws no shortage badge', () => {
+  it('EP-03.F1.US5: a center that is missing nothing draws no shortage badge', () => {
+    const { container } = render(
+      <MapCanvas
+        ambulancias={[]}
+        emergencias={[]}
+        centros={[
+          {
+            id: 'CA-CUBIERTO',
+            nombre: 'Acopio Cubierto',
+            ubicacion: { lat: 4.7, lng: -74.08 },
+            items: [
+              {
+                id: 'INV-1',
+                centroAcopioId: 'CA-CUBIERTO',
+                nombre: 'Agua potable',
+                disponible: 8,
+                requerido: 8,
+                semaforo: 'COMPLETE',
+              },
+            ],
+          },
+        ]}
+        onSelectAmbulance={() => undefined}
+        onSelectEmergency={() => undefined}
+      />,
+    );
+
+    // The need is covered: the level badge stays, the shortage badge is gone.
+    const marker = markerByLabel(container, 'Cubierto');
+    expect(marker.querySelector('.nv-marker__shortage')).toBeNull();
+    expect(marker.querySelector('.nv-marker__badge')).not.toBeNull();
+  });
+
+  it('EP-03.F1.US5: a center below its maximum carries its most missing quantity', () => {
     const { container } = renderMapWithCenters(() => undefined);
 
-    // Degradation: the demo centers carry no alert, so every one of them keeps
-    // exactly today's marker (level badge only, no second badge).
-    for (const label of ['Suba Norte', 'La Gaitana', 'Tibabuyes']) {
-      const marker = markerByLabel(container, label);
-      expect(marker.querySelector('.nv-marker__shortage')).toBeNull();
-      expect(marker.querySelector('.nv-marker__badge')).not.toBeNull();
-    }
+    // Demo data: Suba Norte holds 12 of 60 units of water, its largest gap.
+    const marker = markerByLabel(container, 'Suba Norte');
+    expect(marker.querySelector('.nv-marker__shortage')?.textContent).toBe('48');
   });
 
   it('AC1: draws a hospital with its own marker, distinct from a supply center', () => {

@@ -2,7 +2,6 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MOCK_CENTROS_AYUDA } from '@/mocks/fixtures';
 import { setToken } from '@/services/apiClient';
-import { DESTINATIONS } from '@/shared/realtime';
 import { FakeRealtimePort } from '@/test/fake-realtime-port';
 import type { CentroAyuda } from '@/types/domain';
 import { useInventarioStore } from './inventory-store';
@@ -123,30 +122,6 @@ describe('useInventario', () => {
     renderHook(() => useInventario(CENTROS, new FakeRealtimePort()));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    expect(useInventarioStore.getState().itemsByCentro).toEqual({});
-  });
-
-  it('re-reads the map read-model when a /topic/alerts frame arrives, without touching inventory', async () => {
-    fetchMock.mockResolvedValue(mockResponse(200, []));
-    const port = new FakeRealtimePort();
-    const onReadModelChange = vi.fn();
-
-    renderHook(() => useInventario(CENTROS, port, onReadModelChange));
-
-    act(() =>
-      port.emit(DESTINATIONS.alertas, {
-        centroAcopioId: 'c-1',
-        itemId: 'i-1',
-        nombre: 'Agua potable',
-        cantidadSolicitada: 8,
-        disponibleActual: 5,
-        faltante: 3,
-        creadaEn: '2026-09-28T12:00:00Z',
-      }),
-    );
-
-    expect(onReadModelChange).toHaveBeenCalledTimes(1);
-    // The alert channel is not inventory: no item is merged by it.
     expect(useInventarioStore.getState().itemsByCentro).toEqual({});
   });
 });

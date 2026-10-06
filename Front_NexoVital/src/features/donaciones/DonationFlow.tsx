@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import {
   CENTER_LEVEL_STYLE,
   CITIZEN_LEVEL_META,
-  centerNeedLabel,
+  centerAlerts,
   citizenCenterLevel,
   NOT_DECLARED_CENTER_STYLE,
 } from '@/features/ciudadano/citizen-view';
@@ -134,6 +134,8 @@ export function CenterDetailRail({
     centro.items.length === 0
       ? 'Este centro no declara insumos todavía.'
       : 'Este centro ya tiene todo lo que necesita.';
+  const alerts = centerAlerts(centro);
+  const [worstAlert] = alerts;
   const donatedItem = lastDonation
     ? (centro.items.find((item) => item.id === lastDonation.itemId) ?? null)
     : null;
@@ -180,25 +182,24 @@ export function CenterDetailRail({
         </div>
 
         {/*
-          Active shortage alert (EP-03.F1.US5): the resource a center could not
-          dispatch and the amount still missing. It is NOT the traffic light —
-          the light measures stock against the item's threshold, this is an
-          unmet demand — so it gets its own red block. A center with no alert
-          renders nothing here, exactly as before (FA-7).
+          Active shortage alert (EP-03.F1.US5): the resource the center is most
+          short of and how many units are still missing. It is NOT the traffic
+          light — the light says how far the center is from what it needs, this
+          names the resource and the amount — so it gets its own red block. A
+          center missing nothing renders nothing here, and the block goes away
+          on its own when a donation completes the need.
         */}
-        {centro.alerta && (
+        {worstAlert && (
           <div
             data-testid="centro-alerta-escasez"
             className="flex items-start gap-2 rounded-nv-md bg-nv-red-600/10 p-2.5 text-nv-navy text-xs"
           >
             <AlertTriangle className="mt-px size-4 shrink-0 text-nv-red-600" aria-hidden />
             <span>
-              <b className="text-nv-red-600">Alerta de escasez:</b> se solicitaron{' '}
-              {centro.alerta.cantidadSolicitada} y faltan <b>{centro.alerta.faltante}</b> de{' '}
-              {centro.alerta.nombre.toLowerCase()}.
-              {centro.alertasActivas !== undefined && centro.alertasActivas > 1 && (
-                <> Hay {centro.alertasActivas} recursos en escasez en este centro.</>
-              )}
+              <b className="text-nv-red-600">Alerta de escasez:</b> faltan{' '}
+              <b>{worstAlert.faltante}</b> de {worstAlert.nombre.toLowerCase()} (tiene{' '}
+              {worstAlert.disponible} de {worstAlert.requerido}).
+              {alerts.length > 1 && <> Hay {alerts.length} recursos en escasez en este centro.</>}
             </span>
           </div>
         )}
@@ -265,15 +266,21 @@ interface DonationCenterPickerProps {
   onCancel: () => void;
 }
 
+/** How many alerts a picker row lists before folding the rest into a count. */
+const PICKER_ALERTS_SHOWN = 3;
+
 /**
- * Center picker for the donation flow.
+ * Center picker for the donation flow, and the donor's view of the pending
+ * donation alerts (EP-03.F3.US4).
  *
  * "Donar suministros" must NOT choose a center for the citizen, so this lists
- * the centers that actually need a donation (`donableCenters`: declared,
- * non-stable items only) and waits. Picking one here — or tapping it on the map,
- * which calls the same `onSelect` — opens the c7 detail; without a pick there is
- * no donation. The palette is the mockup's fixed one (only `nv-*` tokens and an
- * explicit white), so the panel reads the same in either theme.
+ * the centers that actually need a donation (`donableCenters`, most urgent
+ * first) and waits. Each row shows the center with EVERY resource it is missing
+ * and how many units (`centerAlerts`), which is what lets the donor decide whom
+ * to help. Picking one here — or tapping it on the map, which calls the same
+ * `onSelect` — opens the c7 detail; without a pick there is no donation. The
+ * palette is the mockup's fixed one (only `nv-*` tokens and an explicit white),
+ * so the panel reads the same in either theme.
  */
 export function DonationCenterPicker({ centros, onSelect, onCancel }: DonationCenterPickerProps) {
   return (
@@ -284,36 +291,60 @@ export function DonationCenterPicker({ centros, onSelect, onCancel }: DonationCe
       <section className="flex flex-col gap-3 rounded-nv-lg bg-white p-4 shadow-nv-card">
         <h4 className="flex items-center gap-2 font-bold text-sm">
           <Warehouse className="size-4 text-nv-navy" aria-hidden />
-          Elige el centro de acopio
+          Centros que necesitan ayuda
         </h4>
         <p className="text-nv-navy-400 text-sm">
-          ¿A qué centro vas a llevar tu donación? También puedes tocar uno en el mapa.
+          Cada centro muestra lo que le falta. Elige a cuál vas a llevar tu donación; también puedes
+          tocar uno en el mapa.
         </p>
         {centros.length === 0 ? (
           <p className="text-nv-navy-400 text-sm">
-            Ningún centro declara insumos que necesiten donación.
+            Ningún centro tiene alertas de donación pendientes.
           </p>
         ) : (
           <ul className="flex list-none flex-col gap-2.5 p-0">
-            {centros.map((centro) => (
-              <li key={centro.id}>
-                <button
-                  type="button"
-                  onClick={() => onSelect(centro.id)}
-                  className="flex w-full items-center gap-2.5 rounded-nv-md border border-nv-line bg-white p-2.5 text-left"
-                >
-                  <span className="min-w-0 flex-1">
-                    <b className="block truncate font-semibold text-[13.5px] text-nv-navy">
-                      {centro.nombre}
-                    </b>
-                    <small className="block truncate text-nv-navy-400 text-xs">
-                      {centerNeedLabel(centro)}
-                    </small>
-                  </span>
-                  <LevelChip level={centroSemaforo(centro)} />
-                </button>
-              </li>
-            ))}
+            {centros.map((centro) => {
+              const alerts = centerAlerts(centro);
+              const hidden = alerts.length - PICKER_ALERTS_SHOWN;
+              return (
+                <li key={centro.id}>
+                  <button
+                    type="button"
+                    onClick={() => onSelect(centro.id)}
+                    aria-label={`Donar a ${centro.nombre}`}
+                    className="flex w-full flex-col gap-2 rounded-nv-md border border-nv-line bg-white p-2.5 text-left"
+                  >
+                    <span className="flex w-full items-center gap-2.5">
+                      <b className="min-w-0 flex-1 truncate font-semibold text-[13.5px] text-nv-navy">
+                        {centro.nombre}
+                      </b>
+                      <LevelChip level={centroSemaforo(centro)} />
+                    </span>
+                    <ul
+                      aria-label={`Lo que le falta a ${centro.nombre}`}
+                      className="flex w-full list-none flex-col gap-1 p-0"
+                    >
+                      {alerts.slice(0, PICKER_ALERTS_SHOWN).map((alert) => (
+                        <li
+                          key={alert.itemId}
+                          className="flex items-baseline gap-2 text-nv-navy-400 text-xs"
+                        >
+                          <span className="min-w-0 flex-1 truncate">{alert.nombre}</span>
+                          <span className="tabular shrink-0">
+                            faltan <b className="text-nv-navy">{alert.faltante}</b>
+                          </span>
+                        </li>
+                      ))}
+                      {hidden > 0 && (
+                        <li className="text-nv-navy-400 text-xs">
+                          y {hidden} {hidden === 1 ? 'recurso más' : 'recursos más'}
+                        </li>
+                      )}
+                    </ul>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
         <button

@@ -208,22 +208,20 @@ export interface InventarioItem {
 export type TipoCentroAyuda = 'CENTRO_AYUDA' | 'CENTRO_ACOPIO' | 'HOSPITAL';
 
 /**
- * Active shortage alert of an aid center (contract `AlertaEscasez`,
- * EP-03.F1.US5 / Azure 225). It is NOT a traffic light: the light compares the
- * stock against the item's `requerido` threshold, while this records an unmet
- * DEMAND — a requested amount the center could not dispatch.
+ * Active shortage alert of ONE resource of an aid center (contract
+ * `AlertaEscasez`, EP-03.F1.US5 / EP-03.F3.US4): the center declared it needs
+ * `requerido` units, holds `disponible` and is missing `faltante`.
  *
- * `faltante` is deliberately NOT a frozen deficit: it is
- * `cantidadSolicitada - disponibleActual`, the CURRENT missing quantity, which
- * shrinks on its own as donations arrive (backend FA-2). The map receives, per
- * center, its WORST active alert and `alertasActivas` as the total count (FA-5).
+ * It is never stored: an alert exists exactly while `disponible < requerido`,
+ * so `faltante` shrinks as donations arrive and the alert disappears when the
+ * need is covered.
  */
 export interface AlertaEscasez {
   itemId: string;
   nombre: string;
-  cantidadSolicitada: number;
+  requerido: number;
+  disponible: number;
   faltante: number;
-  creadaEn: string;
 }
 
 export interface CentroAyuda {
@@ -239,19 +237,19 @@ export interface CentroAyuda {
    */
   inventarioCargado?: boolean;
   /**
-   * Worst active shortage alert of the center, if any (contract `alerta`,
-   * EP-03.F1.US5). OPTIONAL by design (backend FA-7): most centers have none
-   * and the backend omits the field from the JSON when it does, so an absent
-   * alert must degrade to today's rendering instead of breaking the payload.
-   * Distinct from the traffic light — see `AlertaEscasez`.
+   * Worst active shortage alert of the center, if any (contract `alerta`).
+   * OPTIONAL: the backend omits it when the center needs nothing. Prefer
+   * `centerAlerts(centro)`, which also covers a center whose inventory is known.
    */
   alerta?: AlertaEscasez;
-  /**
-   * How many active shortage alerts the center has (contract `alertasActivas`,
-   * EP-03.F1.US5). Optional for the same reason as `alerta`; the marker only
-   * carries the worst one, so this count is the detail's hint that more exist.
-   */
+  /** How many active shortage alerts the center has (contract `alertasActivas`). */
   alertasActivas?: number;
+  /**
+   * Every active shortage alert of the center as the map read-model sends it,
+   * most missing first (contract `alertas`, EP-03.F3.US4). Optional: demo data
+   * does not carry it and derives the same list from `items`.
+   */
+  alertas?: AlertaEscasez[];
   /**
    * Organisation type from the backend map read-model. Optional by design
    * (decision FH-2 / criterion AC4): a center that arrives without one — or

@@ -4,8 +4,9 @@ import type { AlertaEscasez, CentroAyuda, TipoCentroAyuda, Ubicacion, Zona } fro
 /**
  * Aid center exactly as `GET /api/v1/mapa` returns it (verified live): identity,
  * name, type, zone and location. It carries NO inventory — that belongs to the
- * `recursos` module (EP-03) — but it DOES carry the center's worst active
- * shortage alert and the number of active alerts (EP-03.F1.US5).
+ * `recursos` module (EP-03) — but it DOES carry the center's active shortage
+ * alerts: every resource it is missing, the worst one and the count
+ * (EP-03.F1.US5 / EP-03.F3.US4).
  */
 export interface MapaCentroDto {
   id: string;
@@ -32,6 +33,12 @@ export interface MapaCentroDto {
    * degrade to today's behaviour.
    */
   alertasActivas?: number;
+  /**
+   * Every active shortage alert of the center, most missing first
+   * (EP-03.F3.US4). The backend always sends the array (empty when the center
+   * needs nothing); it stays optional so an older payload still parses.
+   */
+  alertas?: AlertaEscasez[] | null;
 }
 
 /** Body of `GET /api/v1/mapa`: active zones and aid centers with their location. */
@@ -96,6 +103,7 @@ export function mapaToCentros(mapa: MapaResponse): CentroAyuda[] {
       ...(centro.alerta == null ? {} : { alerta: centro.alerta }),
       // Same rule for the count: an absent key must not overwrite a known one.
       ...(centro.alertasActivas == null ? {} : { alertasActivas: centro.alertasActivas }),
+      ...(centro.alertas == null ? {} : { alertas: centro.alertas }),
       ubicacion: centro.ubicacion,
       items: [],
     };

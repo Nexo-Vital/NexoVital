@@ -1,5 +1,24 @@
 # Alerta de escasez en vivo — push post-commit a `/topic/alerts`
 
+> **Delta 2026-10-06 — este diseño quedó reemplazado (EP-03.F1.US5 / EP-03.F3.US4).**
+> La alerta de escasez ya NO se persiste ni nace de un retiro rechazado. Ahora es una
+> proyección de lectura: existe mientras un recurso tenga `disponible < requerido` y se
+> calcula del inventario en cada consulta (`ConsultarAlertasEscasezUseCaseImpl`,
+> `AlertaEscasezActiva.de(item)`).
+>
+> - Se eliminaron `AlertaEscasez`, `AlertaEscasezRepository`, las clases JPA, la tabla
+>   `alerta_escasez`, `RegistrarAlertaEscasezUseCase` y el canal `/topic/alerts`.
+> - Un retiro rechazado (409 `STOCK_INSUFICIENTE`) no crea nada.
+> - `GET /api/v1/mapa` publica por centro `alertas` (todas, la de mayor faltante primero),
+>   `alerta` (la peor) y `alertasActivas`. Cada alerta: `{itemId, nombre, requerido,
+>   disponible, faltante}`.
+> - Tiempo real: la alerta cambia con el inventario, así que el frame de
+>   `/topic/suministros` es la señal para volver a leer el mapa.
+> - Pruebas: `AlertaEscasezTest`.
+>
+> Lo que sigue abajo es el diseño anterior y se conserva solo como historia.
+
+
 **Historia:** Azure 225 / EP-03.F1.US5 (extiende la alerta persistida).
 **Rama:** `back-alerta-push` (backend) y `front-alerta-push` (front).
 

@@ -1,0 +1,681 @@
+NexoVital/
+├─ .github/modernize/java-upgrade/
+│  ├─ hooks/scripts/
+│  │  ├─ recordToolUse.ps1
+│  │  └─ recordToolUse.sh
+│  └─ .gitignore
+├─ Back_NexoVital/
+│  ├─ docs/diseno/
+│  │  ├─ back-alerta-push.md
+│  │  ├─ back-cancelar-solicitud.md
+│  │  ├─ back-solicitud-sin-zona.md
+│  │  ├─ ep-01-f1-us2-inicio-sesion.md
+│  │  ├─ ep-02-f1-us2-canal-tiempo-real-mapa.md
+│  │  ├─ ep-02-f1-us3-reporte-zona.md
+│  │  ├─ ep-02-f2-us1-semaforo.md
+│  │  └─ ep-03-f1-us1-mi-centro.md
+│  ├─ scripts/
+│  │  ├─ prueba-concurrencia-c2.ps1
+│  │  └─ prueba-funcional-alerta-escasez.ps1
+│  ├─ src/
+│  │  ├─ main/
+│  │  │  ├─ java/co/edu/escuelaing/nexovital/
+│  │  │  │  ├─ flota/
+│  │  │  │  │  ├─ application/usecase/
+│  │  │  │  │  │  ├─ AceptarSolicitudUseCaseImpl.java
+│  │  │  │  │  │  ├─ CancelarSolicitudUseCaseImpl.java
+│  │  │  │  │  │  ├─ ConfirmarSolicitudUseCaseImpl.java
+│  │  │  │  │  │  ├─ ConsultarFlotaUseCaseImpl.java
+│  │  │  │  │  │  ├─ DeclararLlegadaUseCaseImpl.java
+│  │  │  │  │  │  ├─ ExpirarSolicitudesVencidasUseCaseImpl.java
+│  │  │  │  │  │  ├─ FinalizarSolicitudUseCaseImpl.java
+│  │  │  │  │  │  ├─ FlotaPushListener.java
+│  │  │  │  │  │  ├─ ListarSolicitudesDeMiAmbulanciaUseCaseImpl.java
+│  │  │  │  │  │  ├─ RechazarSolicitudUseCaseImpl.java
+│  │  │  │  │  │  ├─ ReportarPosicionUseCaseImpl.java
+│  │  │  │  │  │  └─ SolicitarAmbulanciaUseCaseImpl.java
+│  │  │  │  │  ├─ domain/
+│  │  │  │  │  │  ├─ enums/
+│  │  │  │  │  │  │  ├─ EstadoAmbulancia.java
+│  │  │  │  │  │  │  ├─ EstadoSolicitud.java
+│  │  │  │  │  │  │  └─ FuentePosicion.java
+│  │  │  │  │  │  ├─ event/
+│  │  │  │  │  │  │  ├─ FlotaActualizadaEvent.java
+│  │  │  │  │  │  │  ├─ PosicionActualizadaEvent.java
+│  │  │  │  │  │  │  ├─ SolicitudAsignadaEvent.java
+│  │  │  │  │  │  │  ├─ SolicitudCanceladaEvent.java
+│  │  │  │  │  │  │  ├─ SolicitudConfirmadaEvent.java
+│  │  │  │  │  │  │  ├─ SolicitudCreadaEvent.java
+│  │  │  │  │  │  │  ├─ SolicitudExpiradaEvent.java
+│  │  │  │  │  │  │  ├─ SolicitudFinalizadaEvent.java
+│  │  │  │  │  │  │  ├─ SolicitudLlegadaEvent.java
+│  │  │  │  │  │  │  └─ SolicitudRechazadaEvent.java
+│  │  │  │  │  │  ├─ exception/
+│  │  │  │  │  │  │  ├─ AmbulanciaAjenaException.java
+│  │  │  │  │  │  │  ├─ AmbulanciaNoDisponibleException.java
+│  │  │  │  │  │  │  ├─ SolicitudAjenaException.java
+│  │  │  │  │  │  │  ├─ SolicitudNoAsignableException.java
+│  │  │  │  │  │  │  └─ SolicitudNoEncontradaException.java
+│  │  │  │  │  │  ├─ model/
+│  │  │  │  │  │  │  ├─ Ambulancia.java
+│  │  │  │  │  │  │  ├─ ResultadoAceptarSolicitud.java
+│  │  │  │  │  │  │  └─ SolicitudAmbulancia.java
+│  │  │  │  │  │  └─ port/
+│  │  │  │  │  │     ├─ in/
+│  │  │  │  │  │     │  ├─ AceptarSolicitudUseCase.java
+│  │  │  │  │  │     │  ├─ CancelarSolicitudUseCase.java
+│  │  │  │  │  │     │  ├─ ConfirmarSolicitudUseCase.java
+│  │  │  │  │  │     │  ├─ ConsultarFlotaUseCase.java
+│  │  │  │  │  │     │  ├─ DeclararLlegadaUseCase.java
+│  │  │  │  │  │     │  ├─ ExpirarSolicitudesVencidasUseCase.java
+│  │  │  │  │  │     │  ├─ FinalizarSolicitudUseCase.java
+│  │  │  │  │  │     │  ├─ ListarSolicitudesDeMiAmbulanciaUseCase.java
+│  │  │  │  │  │     │  ├─ RechazarSolicitudUseCase.java
+│  │  │  │  │  │     │  ├─ ReportarPosicionUseCase.java
+│  │  │  │  │  │     │  └─ SolicitarAmbulanciaUseCase.java
+│  │  │  │  │  │     └─ out/
+│  │  │  │  │  │        ├─ AmbulanciaRepository.java
+│  │  │  │  │  │        ├─ FlotaQueryPort.java
+│  │  │  │  │  │        └─ SolicitudRepository.java
+│  │  │  │  │  ├─ infrastructure/adapter/
+│  │  │  │  │  │  ├─ in/
+│  │  │  │  │  │  │  ├─ dto/
+│  │  │  │  │  │  │  │  ├─ AceptarSolicitudRequest.java
+│  │  │  │  │  │  │  │  ├─ AceptarSolicitudResponse.java
+│  │  │  │  │  │  │  │  ├─ AmbulanciaDto.java
+│  │  │  │  │  │  │  │  ├─ RechazarSolicitudRequest.java
+│  │  │  │  │  │  │  │  ├─ ReportarPosicionRequest.java
+│  │  │  │  │  │  │  │  ├─ SolicitudAmbulanciaDto.java
+│  │  │  │  │  │  │  │  ├─ SolicitudRequest.java
+│  │  │  │  │  │  │  │  └─ UbicacionDto.java
+│  │  │  │  │  │  │  ├─ FlotaController.java
+│  │  │  │  │  │  │  ├─ FlotaSimulationScheduler.java
+│  │  │  │  │  │  │  ├─ SolicitudController.java
+│  │  │  │  │  │  │  └─ SolicitudExpiryScheduler.java
+│  │  │  │  │  │  └─ out/
+│  │  │  │  │  │     ├─ AmbulanciaJpaEntity.java
+│  │  │  │  │  │     ├─ AmbulanciaJpaRepository.java
+│  │  │  │  │  │     ├─ AmbulanciaRepositoryAdapter.java
+│  │  │  │  │  │     ├─ SolicitudJpaEntity.java
+│  │  │  │  │  │     ├─ SolicitudJpaRepository.java
+│  │  │  │  │  │     └─ SolicitudRepositoryAdapter.java
+│  │  │  │  │  └─ package-info.java
+│  │  │  │  ├─ gateway/
+│  │  │  │  │  ├─ application/usecase/
+│  │  │  │  │  ├─ domain/
+│  │  │  │  │  │  ├─ model/
+│  │  │  │  │  │  └─ port/
+│  │  │  │  │  │     ├─ in/
+│  │  │  │  │  │     └─ out/
+│  │  │  │  │  ├─ infrastructure/adapter/
+│  │  │  │  │  │  ├─ in/
+│  │  │  │  │  │  └─ out/
+│  │  │  │  │  │     └─ PushFanOutAdapter.java
+│  │  │  │  │  └─ package-info.java
+│  │  │  │  ├─ infrastructure/
+│  │  │  │  │  ├─ application/usecase/
+│  │  │  │  │  ├─ config/
+│  │  │  │  │  │  ├─ ClockConfig.java
+│  │  │  │  │  │  ├─ DataSeeder.java
+│  │  │  │  │  │  ├─ JwtAuthFilter.java
+│  │  │  │  │  │  ├─ OpenApiConfig.java
+│  │  │  │  │  │  ├─ SchedulingConfig.java
+│  │  │  │  │  │  ├─ SecurityConfig.java
+│  │  │  │  │  │  ├─ StompAuthChannelInterceptor.java
+│  │  │  │  │  │  └─ WebSocketConfig.java
+│  │  │  │  │  ├─ domain/
+│  │  │  │  │  │  ├─ model/
+│  │  │  │  │  │  └─ port/
+│  │  │  │  │  │     ├─ in/
+│  │  │  │  │  │     └─ out/
+│  │  │  │  │  ├─ infrastructure/adapter/
+│  │  │  │  │  │  ├─ in/
+│  │  │  │  │  │  └─ out/
+│  │  │  │  │  └─ package-info.java
+│  │  │  │  ├─ mapa/
+│  │  │  │  │  ├─ application/usecase/
+│  │  │  │  │  │  ├─ ActualizarEmergenciaUseCaseImpl.java
+│  │  │  │  │  │  ├─ ConsultarMapaUseCaseImpl.java
+│  │  │  │  │  │  ├─ EmergenciaActualizadaEvento.java
+│  │  │  │  │  │  ├─ EmergenciaPushListener.java
+│  │  │  │  │  │  ├─ EmergenciaRegistradaEvento.java
+│  │  │  │  │  │  ├─ ListarEmergenciasUseCaseImpl.java
+│  │  │  │  │  │  └─ ReportarEmergenciaUseCaseImpl.java
+│  │  │  │  │  ├─ domain/
+│  │  │  │  │  │  ├─ exception/
+│  │  │  │  │  │  │  └─ EmergenciaNoEncontradaException.java
+│  │  │  │  │  │  ├─ model/
+│  │  │  │  │  │  │  ├─ Emergencia.java
+│  │  │  │  │  │  │  ├─ EstadoEmergencia.java
+│  │  │  │  │  │  │  ├─ Mapa.java
+│  │  │  │  │  │  │  ├─ NivelEmergencia.java
+│  │  │  │  │  │  │  ├─ TipoEmergencia.java
+│  │  │  │  │  │  │  └─ Zona.java
+│  │  │  │  │  │  └─ port/
+│  │  │  │  │  │     ├─ in/
+│  │  │  │  │  │     │  ├─ ActualizarEmergenciaUseCase.java
+│  │  │  │  │  │     │  ├─ ConsultarMapaUseCase.java
+│  │  │  │  │  │     │  ├─ ListarEmergenciasUseCase.java
+│  │  │  │  │  │     │  └─ ReportarEmergenciaUseCase.java
+│  │  │  │  │  │     └─ out/
+│  │  │  │  │  │        ├─ AlertasEscasezQueryPort.java
+│  │  │  │  │  │        ├─ CentroMapaQueryPort.java
+│  │  │  │  │  │        ├─ EmergenciaRepository.java
+│  │  │  │  │  │        └─ ZonaRepository.java
+│  │  │  │  │  ├─ infrastructure/adapter/
+│  │  │  │  │  │  ├─ in/
+│  │  │  │  │  │  │  ├─ dto/
+│  │  │  │  │  │  │  │  ├─ AlertaEscasezDto.java
+│  │  │  │  │  │  │  │  ├─ CentroDto.java
+│  │  │  │  │  │  │  │  ├─ EmergenciaActualizarRequest.java
+│  │  │  │  │  │  │  │  ├─ EmergenciaDto.java
+│  │  │  │  │  │  │  │  ├─ EmergenciaRequest.java
+│  │  │  │  │  │  │  │  ├─ MapaDto.java
+│  │  │  │  │  │  │  │  ├─ UbicacionDto.java
+│  │  │  │  │  │  │  │  └─ ZonaDto.java
+│  │  │  │  │  │  │  ├─ EmergenciaController.java
+│  │  │  │  │  │  │  └─ MapaController.java
+│  │  │  │  │  │  └─ out/
+│  │  │  │  │  │     ├─ AlertasEscasezQueryAdapter.java
+│  │  │  │  │  │     ├─ CentroMapaQueryAdapter.java
+│  │  │  │  │  │     ├─ EmergenciaJpaEntity.java
+│  │  │  │  │  │     ├─ EmergenciaJpaRepository.java
+│  │  │  │  │  │     ├─ EmergenciaRepositoryAdapter.java
+│  │  │  │  │  │     ├─ VerticeZonaJpa.java
+│  │  │  │  │  │     ├─ ZonaJpaEntity.java
+│  │  │  │  │  │     ├─ ZonaJpaRepository.java
+│  │  │  │  │  │     └─ ZonaRepositoryAdapter.java
+│  │  │  │  │  └─ package-info.java
+│  │  │  │  ├─ observabilidad/
+│  │  │  │  │  ├─ application/usecase/
+│  │  │  │  │  ├─ domain/
+│  │  │  │  │  │  ├─ model/
+│  │  │  │  │  │  └─ port/
+│  │  │  │  │  │     ├─ in/
+│  │  │  │  │  │     └─ out/
+│  │  │  │  │  ├─ infrastructure/adapter/
+│  │  │  │  │  │  ├─ in/
+│  │  │  │  │  │  └─ out/
+│  │  │  │  │  └─ package-info.java
+│  │  │  │  ├─ recursos/
+│  │  │  │  │  ├─ application/usecase/
+│  │  │  │  │  │  ├─ AdministrarMiCentroUseCaseImpl.java
+│  │  │  │  │  │  ├─ AlertaEscasezPushListener.java
+│  │  │  │  │  │  ├─ AlertaEscasezRegistradaEvento.java
+│  │  │  │  │  │  ├─ ConsultarAlertasEscasezUseCaseImpl.java
+│  │  │  │  │  │  ├─ ConsultarInventarioUseCaseImpl.java
+│  │  │  │  │  │  ├─ ConsultarSemaforoCentrosUseCaseImpl.java
+│  │  │  │  │  │  ├─ DespacharStockUseCaseImpl.java
+│  │  │  │  │  │  ├─ DonacionRegistradaEvento.java
+│  │  │  │  │  │  ├─ InventarioPushListener.java
+│  │  │  │  │  │  ├─ ItemInventarioRegistradoEvento.java
+│  │  │  │  │  │  ├─ RegistrarAlertaEscasezUseCaseImpl.java
+│  │  │  │  │  │  ├─ RegistrarDonacionUseCaseImpl.java
+│  │  │  │  │  │  └─ StockDespachadoEvento.java
+│  │  │  │  │  ├─ domain/
+│  │  │  │  │  │  ├─ exception/
+│  │  │  │  │  │  │  ├─ CentroAcopioNoEncontradoException.java
+│  │  │  │  │  │  │  ├─ CentroPropioNoEncontradoException.java
+│  │  │  │  │  │  │  ├─ CentroYaRegistradoException.java
+│  │  │  │  │  │  │  ├─ ItemInventarioDuplicadoException.java
+│  │  │  │  │  │  │  ├─ ItemInventarioNoEncontradoException.java
+│  │  │  │  │  │  │  ├─ NecesidadCubiertaException.java
+│  │  │  │  │  │  │  ├─ NombreCentroDuplicadoException.java
+│  │  │  │  │  │  │  └─ StockInsuficienteException.java
+│  │  │  │  │  │  ├─ model/
+│  │  │  │  │  │  │  ├─ AlertaEscasez.java
+│  │  │  │  │  │  │  ├─ AlertaEscasezActiva.java
+│  │  │  │  │  │  │  ├─ CentroPropio.java
+│  │  │  │  │  │  │  ├─ DonacionAceptada.java
+│  │  │  │  │  │  │  ├─ ItemInventario.java
+│  │  │  │  │  │  │  ├─ MiCentro.java
+│  │  │  │  │  │  │  ├─ NuevoItemInventario.java
+│  │  │  │  │  │  │  └─ Semaforo.java
+│  │  │  │  │  │  └─ port/
+│  │  │  │  │  │     ├─ in/
+│  │  │  │  │  │     │  ├─ AdministrarMiCentroUseCase.java
+│  │  │  │  │  │     │  ├─ ConsultarAlertasEscasezUseCase.java
+│  │  │  │  │  │     │  ├─ ConsultarInventarioUseCase.java
+│  │  │  │  │  │     │  ├─ ConsultarSemaforoCentrosUseCase.java
+│  │  │  │  │  │     │  ├─ DespacharStockUseCase.java
+│  │  │  │  │  │     │  ├─ RegistrarAlertaEscasezUseCase.java
+│  │  │  │  │  │     │  └─ RegistrarDonacionUseCase.java
+│  │  │  │  │  │     └─ out/
+│  │  │  │  │  │        ├─ AlertaEscasezRepository.java
+│  │  │  │  │  │        ├─ CentroAcopioQueryPort.java
+│  │  │  │  │  │        ├─ CentroPropioPort.java
+│  │  │  │  │  │        └─ InventarioRepository.java
+│  │  │  │  │  ├─ infrastructure/adapter/
+│  │  │  │  │  │  ├─ in/
+│  │  │  │  │  │  │  ├─ dto/
+│  │  │  │  │  │  │  │  ├─ DespachoRequest.java
+│  │  │  │  │  │  │  │  ├─ DonacionRequest.java
+│  │  │  │  │  │  │  │  ├─ DonacionResultadoDto.java
+│  │  │  │  │  │  │  │  ├─ ItemInventarioDto.java
+│  │  │  │  │  │  │  │  ├─ MiCentroDto.java
+│  │  │  │  │  │  │  │  ├─ MiCentroRequest.java
+│  │  │  │  │  │  │  │  └─ NuevoItemRequest.java
+│  │  │  │  │  │  │  ├─ InventarioController.java
+│  │  │  │  │  │  │  └─ MiCentroController.java
+│  │  │  │  │  │  └─ out/
+│  │  │  │  │  │     ├─ AlertaEscasezJpaEntity.java
+│  │  │  │  │  │     ├─ AlertaEscasezJpaRepository.java
+│  │  │  │  │  │     ├─ AlertaEscasezRepositoryAdapter.java
+│  │  │  │  │  │     ├─ CentroAcopioQueryAdapter.java
+│  │  │  │  │  │     ├─ CentroPropioAdapter.java
+│  │  │  │  │  │     ├─ InventarioRepositoryAdapter.java
+│  │  │  │  │  │     ├─ ItemInventarioJpaEntity.java
+│  │  │  │  │  │     └─ ItemInventarioJpaRepository.java
+│  │  │  │  │  └─ package-info.java
+│  │  │  │  ├─ shared/
+│  │  │  │  │  ├─ application/usecase/
+│  │  │  │  │  ├─ domain/
+│  │  │  │  │  │  ├─ model/
+│  │  │  │  │  │  │  └─ PushMessage.java
+│  │  │  │  │  │  └─ port/
+│  │  │  │  │  │     ├─ in/
+│  │  │  │  │  │     └─ out/
+│  │  │  │  │  │        └─ PushPort.java
+│  │  │  │  │  ├─ infrastructure/
+│  │  │  │  │  │  ├─ adapter/
+│  │  │  │  │  │  │  ├─ in/
+│  │  │  │  │  │  │  │  └─ ApiExceptionHandler.java
+│  │  │  │  │  │  │  └─ out/
+│  │  │  │  │  │  │     └─ PushPortPublicadorAdapter.java
+│  │  │  │  │  │  └─ dto/
+│  │  │  │  │  │     └─ ErrorResponse.java
+│  │  │  │  │  └─ package-info.java
+│  │  │  │  ├─ usuarios/
+│  │  │  │  │  ├─ application/usecase/
+│  │  │  │  │  │  ├─ AuthenticationUseCaseImpl.java
+│  │  │  │  │  │  ├─ CentroDeAdministradorUseCaseImpl.java
+│  │  │  │  │  │  ├─ CrearOrganizacionUseCaseImpl.java
+│  │  │  │  │  │  ├─ ListarOrganizacionesUseCaseImpl.java
+│  │  │  │  │  │  ├─ OrganizacionPushListener.java
+│  │  │  │  │  │  └─ OrganizacionRegistradaEvento.java
+│  │  │  │  │  ├─ domain/
+│  │  │  │  │  │  ├─ exception/
+│  │  │  │  │  │  │  ├─ AdministradorConCentroException.java
+│  │  │  │  │  │  │  ├─ CredencialesInvalidasException.java
+│  │  │  │  │  │  │  ├─ CuentaBloqueadaException.java
+│  │  │  │  │  │  │  ├─ OrganizacionDuplicadaException.java
+│  │  │  │  │  │  │  └─ UsuarioNoEncontradoException.java
+│  │  │  │  │  │  ├─ model/
+│  │  │  │  │  │  │  ├─ CredencialesLogin.java
+│  │  │  │  │  │  │  ├─ EstadoIntentos.java
+│  │  │  │  │  │  │  ├─ Organizacion.java
+│  │  │  │  │  │  │  ├─ RolUsuario.java
+│  │  │  │  │  │  │  ├─ SesionAuth.java
+│  │  │  │  │  │  │  ├─ TipoOrganizacion.java
+│  │  │  │  │  │  │  ├─ Ubicacion.java
+│  │  │  │  │  │  │  └─ Usuario.java
+│  │  │  │  │  │  └─ port/
+│  │  │  │  │  │     ├─ in/
+│  │  │  │  │  │     │  ├─ AuthenticationUseCase.java
+│  │  │  │  │  │     │  ├─ CentroDeAdministradorUseCase.java
+│  │  │  │  │  │     │  ├─ CrearOrganizacionUseCase.java
+│  │  │  │  │  │     │  └─ ListarOrganizacionesUseCase.java
+│  │  │  │  │  │     └─ out/
+│  │  │  │  │  │        ├─ EstadoIntentosPort.java
+│  │  │  │  │  │        ├─ OrganizacionRepository.java
+│  │  │  │  │  │        ├─ PasswordEncoderPort.java
+│  │  │  │  │  │        ├─ TokenPort.java
+│  │  │  │  │  │        └─ UsuarioRepository.java
+│  │  │  │  │  ├─ infrastructure/adapter/
+│  │  │  │  │  │  ├─ in/
+│  │  │  │  │  │  │  ├─ dto/
+│  │  │  │  │  │  │  │  ├─ OrganizacionDto.java
+│  │  │  │  │  │  │  │  ├─ OrganizacionRequest.java
+│  │  │  │  │  │  │  │  ├─ SesionRequest.java
+│  │  │  │  │  │  │  │  ├─ SesionResponse.java
+│  │  │  │  │  │  │  │  ├─ UbicacionDto.java
+│  │  │  │  │  │  │  │  └─ UsuarioDto.java
+│  │  │  │  │  │  │  ├─ OrganizacionController.java
+│  │  │  │  │  │  │  └─ SesionController.java
+│  │  │  │  │  │  └─ out/
+│  │  │  │  │  │     ├─ EstadoIntentosAdapter.java
+│  │  │  │  │  │     ├─ JwtTokenAdapter.java
+│  │  │  │  │  │     ├─ OrganizacionJpaEntity.java
+│  │  │  │  │  │     ├─ OrganizacionJpaRepository.java
+│  │  │  │  │  │     ├─ OrganizacionRepositoryAdapter.java
+│  │  │  │  │  │     ├─ PasswordEncoderAdapter.java
+│  │  │  │  │  │     ├─ UsuarioJpaEntity.java
+│  │  │  │  │  │     ├─ UsuarioJpaRepository.java
+│  │  │  │  │  │     └─ UsuarioRepositoryAdapter.java
+│  │  │  │  │  └─ package-info.java
+│  │  │  │  └─ NexovitalApplication.java
+│  │  │  └─ resources/
+│  │  │     ├─ application-prod.properties
+│  │  │     └─ application.properties
+│  │  └─ test/
+│  │     ├─ java/co/edu/escuelaing/nexovital/
+│  │     │  ├─ flota/
+│  │     │  │  ├─ domain/model/
+│  │     │  │  │  ├─ AmbulanciaTest.java
+│  │     │  │  │  └─ SolicitudAmbulanciaTest.java
+│  │     │  │  ├─ ListarSolicitudesDeMiAmbulanciaUseCaseImplTest.java
+│  │     │  │  ├─ PosicionHttpTest.java
+│  │     │  │  ├─ PosicionPropagacionHttpTest.java
+│  │     │  │  ├─ ReportarPosicionUseCaseImplTest.java
+│  │     │  │  ├─ SimulacionFlotaTest.java
+│  │     │  │  ├─ SolicitudConcurrenciaTest.java
+│  │     │  │  ├─ SolicitudExpiracionTest.java
+│  │     │  │  ├─ SolicitudFlujoHttpTest.java
+│  │     │  │  └─ SolicitudHistorialHttpTest.java
+│  │     │  ├─ gateway/infrastructure/adapter/out/
+│  │     │  │  └─ PushFanOutAdapterTest.java
+│  │     │  ├─ infrastructure/config/
+│  │     │  │  ├─ DataSeederIdempotenciaTest.java
+│  │     │  │  └─ SwaggerSecurityContractTest.java
+│  │     │  ├─ mapa/
+│  │     │  │  ├─ domain/model/
+│  │     │  │  │  └─ ZonaTest.java
+│  │     │  │  ├─ EmergenciaActualizacionHttpTest.java
+│  │     │  │  ├─ EmergenciaConvergenciaTest.java
+│  │     │  │  ├─ EmergenciasHttpTest.java
+│  │     │  │  └─ MapaHttpTest.java
+│  │     │  ├─ realtime/
+│  │     │  │  ├─ CanalTiempoRealDosSesionesTest.java
+│  │     │  │  └─ FlotaBroadcastRealtimeTest.java
+│  │     │  ├─ recursos/
+│  │     │  │  ├─ domain/model/
+│  │     │  │  │  └─ ItemInventarioTest.java
+│  │     │  │  ├─ AlertaEscasezTest.java
+│  │     │  │  ├─ ConfirmacionAsignacionTest.java
+│  │     │  │  ├─ DespachoConcurrenciaTest.java
+│  │     │  │  ├─ DespachoHttpTest.java
+│  │     │  │  ├─ DonacionConcurrenciaTest.java
+│  │     │  │  ├─ DonacionHttpTest.java
+│  │     │  │  ├─ DonacionNecesidadConcurrenciaTest.java
+│  │     │  │  ├─ InventarioHttpTest.java
+│  │     │  │  ├─ InventarioPersistenciaTest.java
+│  │     │  │  └─ MiCentroHttpTest.java
+│  │     │  ├─ support/
+│  │     │  │  ├─ LoginTestBase.java
+│  │     │  │  ├─ MutableClock.java
+│  │     │  │  ├─ PushPortDePruebaConfig.java
+│  │     │  │  └─ TestClockConfig.java
+│  │     │  └─ usuarios/
+│  │     │     ├─ IntentosConcurrentesTest.java
+│  │     │     ├─ JwtSecretoArranqueTest.java
+│  │     │     ├─ OrganizacionEmisionTest.java
+│  │     │     ├─ OrganizacionesHttpTest.java
+│  │     │     └─ SesionesHttpTest.java
+│  │     └─ resources/
+│  │        └─ application-test.properties
+│  ├─ .gitignore
+│  ├─ pom.xml
+│  └─ README.md
+├─ Front_NexoVital/
+│  ├─ .husky/
+│  │  ├─ commit-msg
+│  │  └─ pre-commit
+│  ├─ e2e/
+│  │  ├─ ambulance-cycle.spec.ts
+│  │  ├─ citizen-cancel.spec.ts
+│  │  ├─ citizen-center-level.spec.ts
+│  │  ├─ citizen-request-sin-zona.spec.ts
+│  │  ├─ citizen-request.spec.ts
+│  │  ├─ driver-center-level.spec.ts
+│  │  ├─ driver-inbox.spec.ts
+│  │  └─ session-header.spec.ts
+│  ├─ public/
+│  │  ├─ logo-dark.png
+│  │  └─ logo.png
+│  ├─ src/
+│  │  ├─ app/
+│  │  │  ├─ AppFrame.test.tsx
+│  │  │  ├─ AppFrame.tsx
+│  │  │  ├─ AppRouter.test.tsx
+│  │  │  ├─ AppRouter.tsx
+│  │  │  └─ providers.tsx
+│  │  ├─ components/ui/
+│  │  │  ├─ badge.tsx
+│  │  │  ├─ button.tsx
+│  │  │  ├─ card.tsx
+│  │  │  ├─ dialog.test.tsx
+│  │  │  ├─ dialog.tsx
+│  │  │  ├─ scroll-area.tsx
+│  │  │  ├─ separator.tsx
+│  │  │  ├─ sheet.tsx
+│  │  │  ├─ skeleton.tsx
+│  │  │  ├─ tabs.tsx
+│  │  │  ├─ toast.tsx
+│  │  │  └─ tooltip.tsx
+│  │  ├─ features/
+│  │  │  ├─ centro/
+│  │  │  │  ├─ CenterSupplyDialogs.tsx
+│  │  │  │  ├─ CreateCenterDialog.test.tsx
+│  │  │  │  ├─ CreateCenterDialog.tsx
+│  │  │  │  ├─ my-center-api.test.ts
+│  │  │  │  ├─ my-center-api.ts
+│  │  │  │  ├─ my-center-form.test.ts
+│  │  │  │  ├─ my-center-form.ts
+│  │  │  │  ├─ MyCenterRail.tsx
+│  │  │  │  └─ use-my-center.ts
+│  │  │  ├─ ciudadano/
+│  │  │  │  ├─ AcceptancePopup.test.tsx
+│  │  │  │  ├─ AcceptancePopup.tsx
+│  │  │  │  ├─ ArrivalPopup.tsx
+│  │  │  │  ├─ citizen-center-level.test.ts
+│  │  │  │  ├─ citizen-need-label.test.ts
+│  │  │  │  ├─ citizen-request-store.ts
+│  │  │  │  ├─ citizen-request.test.ts
+│  │  │  │  ├─ citizen-request.ts
+│  │  │  │  ├─ citizen-view.ts
+│  │  │  │  ├─ CitizenMapLegend.tsx
+│  │  │  │  ├─ CitizenRail.tsx
+│  │  │  │  ├─ CitizenRequestRail.tsx
+│  │  │  │  └─ CitizenSummaryChips.tsx
+│  │  │  ├─ conductor/
+│  │  │  │  ├─ driver-alerts-store.test.ts
+│  │  │  │  ├─ driver-alerts-store.ts
+│  │  │  │  ├─ driver-online-store.test.ts
+│  │  │  │  ├─ driver-online-store.ts
+│  │  │  │  ├─ driver-session.test.ts
+│  │  │  │  ├─ driver-session.ts
+│  │  │  │  ├─ driver-status.ts
+│  │  │  │  ├─ DriverMissionPanel.tsx
+│  │  │  │  ├─ DriverRail.tsx
+│  │  │  │  ├─ history-api.test.ts
+│  │  │  │  ├─ history-api.ts
+│  │  │  │  ├─ request-sound.test.ts
+│  │  │  │  ├─ request-sound.ts
+│  │  │  │  ├─ solicitud-api.test.ts
+│  │  │  │  ├─ solicitud-api.ts
+│  │  │  │  ├─ solicitud-response.test.ts
+│  │  │  │  ├─ solicitud-response.ts
+│  │  │  │  ├─ use-solicitud-inbox.test.ts
+│  │  │  │  └─ use-solicitud-inbox.ts
+│  │  │  ├─ donaciones/
+│  │  │  │  ├─ donation.test.tsx
+│  │  │  │  ├─ donation.ts
+│  │  │  │  └─ DonationFlow.tsx
+│  │  │  ├─ emergencias/
+│  │  │  │  ├─ citizen-report-form.test.ts
+│  │  │  │  ├─ citizen-report-form.ts
+│  │  │  │  ├─ CitizenReportDialog.test.tsx
+│  │  │  │  ├─ CitizenReportDialog.tsx
+│  │  │  │  ├─ emergency-api.test.ts
+│  │  │  │  ├─ emergency-api.ts
+│  │  │  │  ├─ emergency-form.test.ts
+│  │  │  │  ├─ emergency-form.ts
+│  │  │  │  ├─ emergency-store.test.ts
+│  │  │  │  ├─ emergency-store.ts
+│  │  │  │  ├─ emergency-type.test.ts
+│  │  │  │  ├─ emergency-type.ts
+│  │  │  │  ├─ emergency-wire.test.ts
+│  │  │  │  ├─ emergency-wire.ts
+│  │  │  │  ├─ use-emergency-sync.test.ts
+│  │  │  │  └─ use-emergency-sync.ts
+│  │  │  ├─ flota/
+│  │  │  │  ├─ fleet-api.test.ts
+│  │  │  │  ├─ fleet-api.ts
+│  │  │  │  ├─ fleet-form.test.ts
+│  │  │  │  ├─ fleet-form.ts
+│  │  │  │  ├─ fleet-store.test.ts
+│  │  │  │  ├─ fleet-store.ts
+│  │  │  │  ├─ README.txt
+│  │  │  │  ├─ use-fleet-sync.test.ts
+│  │  │  │  └─ use-fleet-sync.ts
+│  │  │  ├─ geocodificacion/
+│  │  │  │  ├─ geocoding-api.test.ts
+│  │  │  │  ├─ geocoding-api.ts
+│  │  │  │  └─ LocationPicker.tsx
+│  │  │  ├─ geolocalizacion/
+│  │  │  │  ├─ LocationPermissionDialog.test.tsx
+│  │  │  │  ├─ LocationPermissionDialog.tsx
+│  │  │  │  ├─ LocationSimulationControls.tsx
+│  │  │  │  ├─ use-device-location.test.ts
+│  │  │  │  └─ use-device-location.ts
+│  │  │  ├─ mapa/
+│  │  │  │  ├─ layers-store.test.ts
+│  │  │  │  ├─ layers-store.ts
+│  │  │  │  ├─ map-api.test.ts
+│  │  │  │  ├─ map-api.ts
+│  │  │  │  ├─ map-filter.test.ts
+│  │  │  │  ├─ map-filter.ts
+│  │  │  │  ├─ map-smoke.test.tsx
+│  │  │  │  ├─ MapCanvas.tsx
+│  │  │  │  ├─ mapConfig.ts
+│  │  │  │  ├─ markers.test.ts
+│  │  │  │  ├─ markers.ts
+│  │  │  │  ├─ radar-rings.test.ts
+│  │  │  │  ├─ radar-rings.ts
+│  │  │  │  ├─ README.txt
+│  │  │  │  ├─ routing-api.test.ts
+│  │  │  │  ├─ routing-api.ts
+│  │  │  │  ├─ use-map-data.test.tsx
+│  │  │  │  ├─ use-map-data.ts
+│  │  │  │  ├─ zone-selection.test.ts
+│  │  │  │  └─ zone-selection.ts
+│  │  │  ├─ observabilidad/
+│  │  │  │  └─ README.txt
+│  │  │  ├─ recursos/
+│  │  │  │  ├─ inventory-api.test.ts
+│  │  │  │  ├─ inventory-api.ts
+│  │  │  │  ├─ inventory-store.test.ts
+│  │  │  │  ├─ inventory-store.ts
+│  │  │  │  ├─ README.txt
+│  │  │  │  ├─ traffic-light.test.ts
+│  │  │  │  ├─ traffic-light.ts
+│  │  │  │  ├─ use-alertas-escasez-sync.test.ts
+│  │  │  │  ├─ use-alertas-escasez-sync.ts
+│  │  │  │  ├─ use-inventario.test.tsx
+│  │  │  │  ├─ use-inventario.ts
+│  │  │  │  ├─ use-suministros-sync.test.ts
+│  │  │  │  └─ use-suministros-sync.ts
+│  │  │  ├─ seguimiento/
+│  │  │  │  ├─ tracking.test.tsx
+│  │  │  │  └─ tracking.tsx
+│  │  │  ├─ solicitudes/
+│  │  │  │  ├─ request-status.ts
+│  │  │  │  ├─ solicitud-api.test.ts
+│  │  │  │  ├─ solicitud-api.ts
+│  │  │  │  ├─ solicitud-form.test.ts
+│  │  │  │  ├─ solicitud-form.ts
+│  │  │  │  ├─ solicitudes-store.test.ts
+│  │  │  │  ├─ solicitudes-store.ts
+│  │  │  │  └─ use-solicitud-registry-sync.ts
+│  │  │  ├─ tema/
+│  │  │  │  ├─ theme-store.test.ts
+│  │  │  │  ├─ theme-store.ts
+│  │  │  │  ├─ ThemeProvider.tsx
+│  │  │  │  └─ ThemeToggle.tsx
+│  │  │  └─ usuarios/
+│  │  │     ├─ DemoProfilesPanel.tsx
+│  │  │     ├─ guards.test.tsx
+│  │  │     ├─ guards.tsx
+│  │  │     ├─ README.txt
+│  │  │     ├─ role-home.test.ts
+│  │  │     ├─ role-home.ts
+│  │  │     ├─ session-sync.test.ts
+│  │  │     ├─ session-sync.ts
+│  │  │     ├─ session.test.ts
+│  │  │     └─ session.ts
+│  │  ├─ hooks/
+│  │  │  ├─ README.txt
+│  │  │  ├─ use-clock.ts
+│  │  │  └─ use-ruta.ts
+│  │  ├─ lib/
+│  │  │  ├─ format.ts
+│  │  │  ├─ geo.ts
+│  │  │  ├─ unit-label.ts
+│  │  │  └─ utils.ts
+│  │  ├─ mocks/
+│  │  │  ├─ demo-users.test.ts
+│  │  │  ├─ demo-users.ts
+│  │  │  ├─ fixtures.test.ts
+│  │  │  └─ fixtures.ts
+│  │  ├─ pages/
+│  │  │  ├─ CitizenMapPage.centerAdmin.test.tsx
+│  │  │  ├─ CitizenMapPage.remote.test.tsx
+│  │  │  ├─ CitizenMapPage.test.tsx
+│  │  │  ├─ CitizenMapPage.tsx
+│  │  │  ├─ DriverConsolePage.centers.test.tsx
+│  │  │  ├─ DriverConsolePage.remote.test.tsx
+│  │  │  ├─ DriverConsolePage.test.tsx
+│  │  │  ├─ DriverConsolePage.tsx
+│  │  │  ├─ DriverHistoryPage.test.tsx
+│  │  │  ├─ DriverHistoryPage.tsx
+│  │  │  ├─ DriverUnitPage.test.tsx
+│  │  │  ├─ DriverUnitPage.tsx
+│  │  │  ├─ LoginPage.test.tsx
+│  │  │  ├─ LoginPage.tsx
+│  │  │  └─ README.txt
+│  │  ├─ routes/
+│  │  │  └─ README.txt
+│  │  ├─ services/
+│  │  │  ├─ apiClient.demo.test.ts
+│  │  │  ├─ apiClient.test.ts
+│  │  │  └─ apiClient.ts
+│  │  ├─ shared/realtime/
+│  │  │  ├─ ConnectionBanner.test.tsx
+│  │  │  ├─ ConnectionBanner.tsx
+│  │  │  ├─ dev-arbiter.test.ts
+│  │  │  ├─ dev-arbiter.ts
+│  │  │  ├─ dev-relay-adapter.test.ts
+│  │  │  ├─ dev-relay-adapter.ts
+│  │  │  ├─ index.ts
+│  │  │  ├─ messages.ts
+│  │  │  ├─ port.ts
+│  │  │  ├─ solicitud-wire.test.ts
+│  │  │  ├─ solicitud-wire.ts
+│  │  │  ├─ stomp-adapter.test.ts
+│  │  │  ├─ stomp-adapter.ts
+│  │  │  ├─ use-realtime-connection.ts
+│  │  │  ├─ use-realtime-reconnect.test.ts
+│  │  │  └─ use-realtime-reconnect.ts
+│  │  ├─ styles/
+│  │  │  └─ globals.css
+│  │  ├─ test/
+│  │  │  ├─ fake-realtime-port.ts
+│  │  │  ├─ mockup-palette.ts
+│  │  │  └─ setup.ts
+│  │  ├─ types/
+│  │  │  └─ domain.ts
+│  │  ├─ App.tsx
+│  │  └─ main.tsx
+│  ├─ worker/
+│  │  ├─ index.ts
+│  │  └─ realtime-room.ts
+│  ├─ .env.production
+│  ├─ .gitattributes
+│  ├─ .gitignore
+│  ├─ biome.json
+│  ├─ commitlint.config.mjs
+│  ├─ components.json
+│  ├─ index.html
+│  ├─ package-lock.json
+│  ├─ package.json
+│  ├─ playwright.config.ts
+│  ├─ README.md
+│  ├─ tsconfig.json
+│  ├─ tsconfig.node.json
+│  ├─ vite-plugin-dev-realtime.ts
+│  ├─ vite.config.ts
+│  ├─ vitest.config.ts
+│  └─ wrangler.jsonc
+├─ .gitignore
+├─ README.md
+└─ run.cmd
