@@ -162,13 +162,13 @@ describe('RequireAuth', () => {
 
   it('blocks an administrative server role that has no home', async () => {
     signInAs('CONDUCTOR', 'jwt.admin');
-    fetchMock.mockResolvedValue(mockResponse(200, usuario('ADMIN_CENTRO_AYUDA')));
+    fetchMock.mockResolvedValue(mockResponse(200, usuario('ADMIN_ACOPIO')));
 
     renderGuarded();
 
     expect(await screen.findByTestId('login-screen')).toBeInTheDocument();
     expect(screen.queryByTestId('protected')).not.toBeInTheDocument();
-    expect(useSessionStore.getState().role).toBe('ADMIN_CENTRO_AYUDA');
+    expect(useSessionStore.getState().role).toBe('ADMIN_ACOPIO');
   });
 
   it('redirects with no token and never calls the session endpoint', async () => {

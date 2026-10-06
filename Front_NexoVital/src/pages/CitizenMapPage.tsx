@@ -1,10 +1,21 @@
 import { Check, HandHeart } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from '@/components/ui/toast';
+import { AddSupplyDialog, WithdrawSupplyDialog } from '@/features/centro/CenterSupplyDialogs';
+import { CreateCenterDialog } from '@/features/centro/CreateCenterDialog';
+import { MyCenterRail } from '@/features/centro/MyCenterRail';
+import {
+  agregarInsumo,
+  type CrearMiCentroInput,
+  crearMiCentro,
+  type NuevoInsumoInput,
+  retirarInsumo,
+} from '@/features/centro/my-center-api';
+import { useMyCenter } from '@/features/centro/use-my-center';
 import { AcceptancePopup } from '@/features/ciudadano/AcceptancePopup';
 import { ArrivalPopup } from '@/features/ciudadano/ArrivalPopup';
 import { CitizenMapLegend } from '@/features/ciudadano/CitizenMapLegend';
-import { CitizenRail } from '@/features/ciudadano/CitizenRail';
+import { type CenterAdminAction, CitizenRail } from '@/features/ciudadano/CitizenRail';
 import { CitizenRequestRail } from '@/features/ciudadano/CitizenRequestRail';
 import { CitizenSummaryChips } from '@/features/ciudadano/CitizenSummaryChips';
 import { citizenSceneLabel, countAvailableUnits } from '@/features/ciudadano/citizen-request';
@@ -54,7 +65,7 @@ import {
   writePersistedMapFilter,
 } from '@/features/mapa/map-filter';
 import { useMapData } from '@/features/mapa/use-map-data';
-import { registrarDonacion } from '@/features/recursos/inventory-api';
+import { fetchInventario, registrarDonacion } from '@/features/recursos/inventory-api';
 import { useInventarioStore, withInventario } from '@/features/recursos/inventory-store';
 import { centroSemaforo } from '@/features/recursos/traffic-light';
 import { useInventario } from '@/features/recursos/use-inventario';
@@ -70,7 +81,7 @@ import {
   MOCK_EMERGENCIAS,
   MOCK_SOLICITUDES,
 } from '@/mocks/fixtures';
-import { isDemoMode } from '@/services/apiClient';
+import { ApiError, isDemoMode } from '@/services/apiClient';
 import {
   DESTINATIONS,
   type EmergencyUpsertPayload,
@@ -82,6 +93,7 @@ import type {
   Ambulancia,
   CentroAyuda,
   Emergencia,
+  InventarioItem,
   SolicitudAmbulancia,
   Ubicacion,
 } from '@/types/domain';
@@ -105,7 +117,19 @@ const NO_UNIT_IDS: readonly string[] = [];
 const REPORT_SUCCESS_MESSAGE =
   'Reporte registrado. Los centros de ayuda cercanos lo verán en el mapa.';
 
+/** Reason shown while the center action cannot be used, by cause. */
+const CENTER_ACTION_DEMO_REASON =
+  'Administrar un centro necesita el servidor; no está en el modo demo.';
+const CENTER_ACTION_LOADING_REASON = 'Consultando tu centro…';
+const CENTER_ACTION_ERROR_REASON = 'No pudimos consultar tu centro. Toca para reintentar.';
+
 interface CitizenMapPageProps {
+  /**
+   * `true` renders the help-center administrator's variant (EP-03.F1.US1): the
+   * same map and the same actions, except that "Donar suministros" is replaced
+   * by "Crear centro" / "Administrar mi centro". Defaults to the citizen screen.
+   */
+  centerAdmin?: boolean;
   ambulancias?: Ambulancia[];
   emergencias?: Emergencia[];
   solicitudes?: SolicitudAmbulancia[];
@@ -126,8 +150,13 @@ interface CitizenMapPageProps {
  * so a mock id can never mix with a backend one — the defect that sent `EMG-002`
  * to `POST /solicitudes`. The realtime layer UPSERTs remote changes on top of
  * whichever base was loaded.
+ *
+ * The help-center administrator lands on this same screen with `centerAdmin`:
+ * they can request an ambulance, report a zone and read the map like a citizen,
+ * and manage their own center instead of donating.
  */
 export default function CitizenMapPage({
+  centerAdmin = false,
   ambulancias,
   emergencias,
   solicitudes,
@@ -324,6 +353,44 @@ export default function CitizenMapPage({
   // whether the action is offered; it never picks one for the citizen.
   const donable = useMemo(() => donableCenters(centros), [centros]);
 
+  // --- Help-center administrator's own center (EP-03.F1.US1) ------------------
+  // Backend only: the demo build has no server to own a center, so the hook
+  // stays off there and the action is offered disabled with its reason.
+  const myCenter = useMyCenter(centerAdmin && !demo);
+  const myCentroId = myCenter.centro?.id ?? null;
+  const [manageOpen, setManageOpen] = useState(false);
+  const [createCenterOpen, setCreateCenterOpen] = useState(false);
+  const [addSupplyOpen, setAddSupplyOpen] = useState(false);
+  const [withdrawItemId, setWithdrawItemId] = useState<string | null>(null);
+  // The center as the rail paints it. Identity comes from the map's copy when
+  // the map already knows the center (it carries the alert projection), and the
+  // inventory comes from the shared store, which holds the LIVE items (REST
+  // snapshot + realtime upserts, so a citizen's donation shows up here). Until
+  // the store has read this center, the items the center read returned are
+  // used: the panel never opens empty while that second read is in flight.
+  const myCentro: CentroAyuda | null = useMemo(() => {
+    const propio = myCenter.centro;
+    if (!propio) {
+      return null;
+    }
+    const onMap = centros.find((centro) => centro.id === propio.id);
+    const items = inventario[propio.id] ?? propio.items;
+    if (onMap) {
+      return { ...onMap, items };
+    }
+    return {
+      id: propio.id,
+      nombre: propio.nombre,
+      ubicacion: propio.ubicacion,
+      tipo: 'CENTRO_ACOPIO',
+      items,
+    };
+  }, [myCenter.centro, centros, inventario]);
+  const withdrawItem: InventarioItem | null = useMemo(
+    () => myCentro?.items.find((item) => item.id === withdrawItemId) ?? null,
+    [myCentro, withdrawItemId],
+  );
+
   const requestPhase = useCitizenRequestStore((state) => state.phase);
   // Honest reason the last attempt could not start (no active emergency, no
   // zone, no center, backend rejection); rendered by the rail so a blocked
@@ -415,8 +482,10 @@ export default function CitizenMapPage({
   );
 
   const handleRequest = useCallback(() => {
-    // A request takes over the rail, so any open donation picker is dropped.
+    // A request takes over the rail, so any open donation picker is dropped,
+    // and so is the administrator's center panel.
     setPickerOpen(false);
+    setManageOpen(false);
     // `start` decides the transport (relay in demo, REST against a backend) and
     // resolves when the search state is set; the handler stays fire-and-forget.
     // The pickup point is the device fix, or the point marked on the map when
@@ -488,11 +557,22 @@ export default function CitizenMapPage({
 
   // Opens a center's c7 detail and closes the picker: the same handler serves the
   // picker row and the map tap, so both paths land on the identical detail.
-  const openCenterDetail = useCallback((id: string) => {
-    setPickerOpen(false);
-    setDetailCentroId(id);
-    setLastDonation(null);
-  }, []);
+  const openCenterDetail = useCallback(
+    (id: string) => {
+      setPickerOpen(false);
+      // The administrator's OWN center opens its management panel, not the
+      // donation detail: they administer it, they do not donate to it.
+      if (centerAdmin && id === myCentroId) {
+        setDetailCentroId(null);
+        setManageOpen(true);
+        return;
+      }
+      setManageOpen(false);
+      setDetailCentroId(id);
+      setLastDonation(null);
+    },
+    [centerAdmin, myCentroId],
+  );
 
   // "Donar suministros" only OPENS THE PICKER. It never selects a center: the
   // citizen chooses one from the list or taps it on the map (criterion 3).
@@ -511,8 +591,88 @@ export default function CitizenMapPage({
   // rail really comes back instead of staying stuck behind the map.
   const handleClearSelection = useCallback(() => {
     setPickerOpen(false);
+    setManageOpen(false);
     handleBackFromDetail();
   }, [handleBackFromDetail]);
+
+  // --- Center administration (EP-03.F1.US1) ----------------------------------
+
+  // Creates the center. The response already carries the center and its items,
+  // so they go straight into the shared state; the map read-model is read again
+  // so the new center is painted without waiting for the realtime frame. A
+  // failure is rethrown: the dialog stays open and shows the backend's message.
+  const { setCentro: setMyCentro, reload: reloadMyCenter } = myCenter;
+  const refreshMapa = mapa.refresh;
+  const handleCreateCenter = useCallback(
+    async (input: CrearMiCentroInput) => {
+      const creado = await crearMiCentro(input);
+      useInventarioStore.getState().hydrate(creado.id, creado.items);
+      setMyCentro(creado);
+      refreshMapa();
+      setDetailCentroId(null);
+      setManageOpen(true);
+      toast(`Centro "${creado.nombre}" creado. Ya aparece en el mapa.`);
+    },
+    [setMyCentro, refreshMapa],
+  );
+
+  const handleAddSupply = useCallback(async (input: NuevoInsumoInput) => {
+    const item = await agregarInsumo(input);
+    useInventarioStore.getState().upsert(item);
+    toast(`Insumo "${item.nombre}" agregado al centro.`);
+  }, []);
+
+  // Withdrawing is the existing dispatch (atomic decrement). The response is the
+  // item after the decrement, and the realtime upsert repeats it idempotently.
+  const handleWithdrawSupply = useCallback(
+    async (item: InventarioItem, cantidad: number) => {
+      if (!myCentroId) {
+        return;
+      }
+      const actualizado = await retirarInsumo(myCentroId, item.id, cantidad);
+      useInventarioStore.getState().upsert(actualizado);
+      toast(
+        `Retiraste ${cantidad} de ${actualizado.nombre}. Quedan ${actualizado.disponible} de ${actualizado.requerido}.`,
+      );
+    },
+    [myCentroId],
+  );
+
+  // The one action that differs from the citizen's: create the center while
+  // there is none, manage it once it exists. Every disabled state says why.
+  const centerAction: CenterAdminAction | undefined = useMemo(() => {
+    if (!centerAdmin) {
+      return undefined;
+    }
+    if (demo) {
+      return {
+        label: 'Administrar mi centro',
+        onClick: () => undefined,
+        disabled: true,
+        reason: CENTER_ACTION_DEMO_REASON,
+      };
+    }
+    if (myCenter.status === 'ready') {
+      return { label: 'Administrar mi centro', onClick: () => setManageOpen(true) };
+    }
+    if (myCenter.status === 'none') {
+      return { label: 'Crear centro', onClick: () => setCreateCenterOpen(true) };
+    }
+    if (myCenter.status === 'error') {
+      // Unknown whether a center exists: never offer "Crear centro" on a guess.
+      return {
+        label: 'Reintentar consulta de mi centro',
+        onClick: reloadMyCenter,
+        reason: CENTER_ACTION_ERROR_REASON,
+      };
+    }
+    return {
+      label: 'Administrar mi centro',
+      onClick: () => undefined,
+      disabled: true,
+      reason: CENTER_ACTION_LOADING_REASON,
+    };
+  }, [centerAdmin, demo, myCenter.status, reloadMyCenter]);
 
   // Confirming applies the donation and remembers the level the center moved
   // from, so the c9 card can say "Antes estaba en crítico". With the demo flag on
@@ -532,11 +692,39 @@ export default function CitizenMapPage({
         return;
       }
       try {
-        const item = await registrarDonacion(detailCentro.id, itemId, amount);
+        const { item, aceptada, ofrecida } = await registrarDonacion(
+          detailCentro.id,
+          itemId,
+          amount,
+        );
         useInventarioStore.getState().upsert(item);
-        setLastDonation({ centroId: detailCentro.id, itemId, amount, beforeCenterLevel });
+        // The record carries what REALLY entered: the server caps the donation
+        // to the gap, so a donor who offered more than was missing completes the
+        // need with less and the card must not claim the offered amount.
+        setLastDonation({
+          centroId: detailCentro.id,
+          itemId,
+          amount: aceptada,
+          beforeCenterLevel,
+        });
         setDonationOpen(false);
+        if (aceptada < ofrecida) {
+          toast(
+            `Se aceptaron ${aceptada} de las ${ofrecida} unidades: era lo que faltaba para completar la necesidad.`,
+          );
+        }
       } catch (error) {
+        if (error instanceof ApiError && error.codigo === 'NECESIDAD_CUBIERTA') {
+          // The donor who lost the race: another donor completed the need. The
+          // dialog closes (there is nothing left to donate) and the center is
+          // re-read so the rail shows the real, covered state.
+          setDonationOpen(false);
+          toast(error.message, 'error');
+          void fetchInventario(detailCentro.id)
+            .then((items) => useInventarioStore.getState().hydrate(detailCentro.id, items))
+            .catch(() => undefined);
+          return;
+        }
         // The dialog stays open so the citizen can retry; the backend's Spanish
         // `mensaje` is surfaced instead of a silent failure.
         toast(
@@ -596,10 +784,12 @@ export default function CitizenMapPage({
     detailCentro && detailDonation && donatedItem
       ? donationToast(detailCentro, detailDonation, donatedItem)
       : null;
-  const showDetail = requestPhase === 'idle' && detailCentro !== null;
+  const showManage = requestPhase === 'idle' && manageOpen && myCentro !== null;
+  const showDetail = requestPhase === 'idle' && !showManage && detailCentro !== null;
 
-  const title =
-    detailCentro && showDetail
+  const title = showManage
+    ? 'Mi centro'
+    : detailCentro && showDetail
       ? 'Centro de acopio'
       : searching
         ? 'Pidiendo ambulancia'
@@ -612,8 +802,9 @@ export default function CitizenMapPage({
               : expired
                 ? 'Solicitud expirada'
                 : 'Mapa de operación';
-  const subtitle =
-    detailCentro && showDetail
+  const subtitle = showManage
+    ? `Administras ${myCentro?.nombre ?? 'tu centro'}`
+    : detailCentro && showDetail
       ? detailDonation
         ? `El semáforo de ${detailCentro.nombre} se actualizó para todos`
         : `Seleccionaste ${detailCentro.nombre} en el mapa`
@@ -646,10 +837,16 @@ export default function CitizenMapPage({
           emergencias={emergencies}
           centros={visibleMapLayers.centros}
           center={selfPosition}
-          focus={showDetail && detailCentro ? detailCentro.ubicacion : null}
+          focus={
+            showManage && myCentro
+              ? myCentro.ubicacion
+              : showDetail && detailCentro
+                ? detailCentro.ubicacion
+                : null
+          }
           self={self}
           selectedAmbulanceId={assigned ? acceptedBy : null}
-          selectedCentroId={detailCentro?.id ?? null}
+          selectedCentroId={showManage ? myCentroId : (detailCentro?.id ?? null)}
           changedCentroId={detailDonation?.centroId ?? null}
           selfRings={searching}
           notifiedAmbulanceIds={searching ? notifiedIds : NO_UNIT_IDS}
@@ -726,6 +923,13 @@ export default function CitizenMapPage({
           cancelError={requestCancelError}
           onBackToMap={handleBackToMap}
         />
+      ) : showManage && myCentro ? (
+        <MyCenterRail
+          centro={myCentro}
+          onAddSupply={() => setAddSupplyOpen(true)}
+          onWithdraw={(item) => setWithdrawItemId(item.id)}
+          onBackToMap={() => setManageOpen(false)}
+        />
       ) : detailCentro && showDetail ? (
         <CenterDetailRail
           centro={detailCentro}
@@ -755,7 +959,34 @@ export default function CitizenMapPage({
           filter={mapFilter}
           filterCounts={mapFilterCounts}
           onToggleFilter={handleToggleFilter}
+          roleLabel={centerAdmin ? 'Administrador de centro' : 'Ciudadano'}
+          centerAction={centerAction}
         />
+      )}
+
+      {/* EP-03.F1.US1: the administrator's center. The dialogs only exist for
+          that role; for a citizen none of them is ever mounted. */}
+      {centerAdmin && (
+        <>
+          <CreateCenterDialog
+            open={createCenterOpen}
+            onOpenChange={setCreateCenterOpen}
+            mapCenter={mapCenter}
+            location={location}
+            onSubmit={handleCreateCenter}
+          />
+          <AddSupplyDialog
+            open={addSupplyOpen}
+            onOpenChange={setAddSupplyOpen}
+            existingNames={myCentro?.items.map((item) => item.nombre) ?? []}
+            onSubmit={handleAddSupply}
+          />
+          <WithdrawSupplyDialog
+            item={withdrawItem}
+            onClose={() => setWithdrawItemId(null)}
+            onSubmit={handleWithdrawSupply}
+          />
+        </>
       )}
 
       {donationOpen && detailCentro && (

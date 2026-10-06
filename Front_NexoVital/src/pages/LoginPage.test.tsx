@@ -8,11 +8,12 @@ import { DEMO_USERS, useSessionStore } from '@/features/usuarios/session';
 import { SESSION_KEY, TOKEN_KEY } from '@/services/apiClient';
 import LoginPage from './LoginPage';
 
+/** An administrative role that still has no screen in this version. */
 const ADMIN = {
   id: 'usr-1',
-  nombre: 'Rangel Dev',
-  email: 'rangel@nexovital.co',
-  rol: 'ADMIN_CENTRO_AYUDA',
+  nombre: 'Paula Méndez',
+  email: 'acopio@nexovital.co',
+  rol: 'ADMIN_ACOPIO',
 };
 
 /** Citizen account, whose role now lands on the citizen map. */
@@ -40,10 +41,16 @@ function seededProfile(rol: 'CIUDADANO' | 'CONDUCTOR') {
   return profile;
 }
 
-/** Profiles the login panel offers: the MVP personas, citizen and driver. */
-const MVP_PROFILES = DEMO_USERS.filter(
-  (profile) => profile.rol === 'CIUDADANO' || profile.rol === 'CONDUCTOR',
-);
+/**
+ * Profiles the login panel offers: the MVP personas. Citizens and drivers are
+ * all listed; the help-center administrator is offered as a single profile, the
+ * first seeded one.
+ */
+const ADMIN_CENTRO_PROFILE = DEMO_USERS.find((profile) => profile.rol === 'ADMIN_CENTRO_AYUDA');
+const MVP_PROFILES = [
+  ...DEMO_USERS.filter((profile) => profile.rol === 'CIUDADANO' || profile.rol === 'CONDUCTOR'),
+  ...(ADMIN_CENTRO_PROFILE ? [ADMIN_CENTRO_PROFILE] : []),
+];
 
 /** Citizen row: it lives inside the "Ciudadanos" group, which starts collapsed. */
 const DEMO_PROFILE = seededProfile('CIUDADANO');
@@ -187,7 +194,7 @@ describe('LoginPage', () => {
     await user.click(screen.getByRole('button', { name: 'Iniciar sesión' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'El perfil Administrador de centro de ayuda todavía no tiene una pantalla en esta versión.',
+      'El perfil Administrador de centro de acopio todavía no tiene una pantalla en esta versión.',
     );
     expect(screen.queryByTestId('home')).not.toBeInTheDocument();
     expect(useSessionStore.getState().token).toBeNull();
@@ -277,11 +284,16 @@ describe('LoginPage', () => {
     expect(screen.getAllByText('Recibe y responde solicitudes de ambulancia')).toHaveLength(5);
     expect(screen.getAllByText('Solicita una ambulancia y reporta emergencias')).toHaveLength(2);
 
-    // The seeded administrators are not offered: this panel is what the demo shows.
+    // The help-center administrator is offered once, as a plain row and not as a group.
     expect(
       screen.queryByRole('button', { name: /Administradores de centro de ayuda/ }),
     ).not.toBeInTheDocument();
-    expect(screen.queryByText('Opera la sala de operaciones CRUE')).not.toBeInTheDocument();
+    expect(
+      screen.getAllByText('Pide ambulancias y administra los insumos de su centro'),
+    ).toHaveLength(1);
+    expect(screen.queryByText('centro@nexovital.co')).not.toBeInTheDocument();
+
+    // The other seeded administrators are not offered: this panel is what the demo shows.
     expect(screen.queryByText('Administra la plataforma y los usuarios')).not.toBeInTheDocument();
     expect(
       screen.queryByText('Gestiona el inventario y las donaciones del centro de acopio'),

@@ -19,6 +19,20 @@ import {
   type NearbyAmbulance,
 } from './citizen-view';
 
+/**
+ * The action that REPLACES "Donar suministros" for the help-center
+ * administrator: "Crear centro" while they have none, "Administrar mi centro"
+ * once it exists (EP-03.F1.US1). The page owns the label and the state; the rail
+ * only renders it. A disabled action always carries its reason.
+ */
+export interface CenterAdminAction {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  /** Why the action is disabled; shown as the tooltip and under the buttons. */
+  reason?: string;
+}
+
 const ACTION_BUTTON_CLASS =
   'inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md px-5 font-semibold text-sm disabled:cursor-not-allowed disabled:opacity-60';
 
@@ -31,6 +45,9 @@ const ACTION_BUTTON_CLASS =
  * its reason only when no center declares a scarce requirement, so a back-mode
  * map (empty inventory) never offers a dead end. "Reportar zona afectada" opens
  * the citizen report dialog and is always available: reporting needs no data.
+ *
+ * The help-center administrator uses this same block with ONE difference: the
+ * donation button is replaced by `centerAction` (create or manage their center).
  */
 function CitizenRoleActions({
   onRequest,
@@ -39,6 +56,8 @@ function CitizenRoleActions({
   onDonate,
   donationEnabled,
   onReport,
+  roleLabel,
+  centerAction,
 }: {
   onRequest: () => void;
   availableCount: number;
@@ -47,6 +66,8 @@ function CitizenRoleActions({
   onDonate: () => void;
   donationEnabled: boolean;
   onReport: () => void;
+  roleLabel: string;
+  centerAction?: CenterAdminAction;
 }) {
   const noUnitsAvailable = availableCount === 0;
   return (
@@ -56,7 +77,7 @@ function CitizenRoleActions({
     >
       <p className="flex items-center gap-1.5 font-bold text-[11px] text-nv-navy-400 uppercase tracking-[0.1em]">
         <User className="size-3.5" aria-hidden />
-        Acciones de tu rol · Ciudadano
+        Acciones de tu rol · {roleLabel}
       </p>
 
       <button
@@ -70,18 +91,31 @@ function CitizenRoleActions({
         Pedir ambulancia
       </button>
 
-      <button
-        type="button"
-        onClick={onDonate}
-        disabled={!donationEnabled}
-        title={
-          donationEnabled ? undefined : 'Ningún centro declara insumos que necesiten donación.'
-        }
-        className={cn(ACTION_BUTTON_CLASS, 'bg-nv-lime text-nv-navy')}
-      >
-        <HandHeart className="size-5" aria-hidden />
-        Donar suministros
-      </button>
+      {centerAction ? (
+        <button
+          type="button"
+          onClick={centerAction.onClick}
+          disabled={centerAction.disabled}
+          title={centerAction.disabled ? centerAction.reason : undefined}
+          className={cn(ACTION_BUTTON_CLASS, 'bg-nv-lime text-nv-navy')}
+        >
+          <Warehouse className="size-5" aria-hidden />
+          {centerAction.label}
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={onDonate}
+          disabled={!donationEnabled}
+          title={
+            donationEnabled ? undefined : 'Ningún centro declara insumos que necesiten donación.'
+          }
+          className={cn(ACTION_BUTTON_CLASS, 'bg-nv-lime text-nv-navy')}
+        >
+          <HandHeart className="size-5" aria-hidden />
+          Donar suministros
+        </button>
+      )}
 
       <button
         type="button"
@@ -103,6 +137,14 @@ function CitizenRoleActions({
       {availableCount === 0 && (
         <p role="status" className="text-critical text-xs">
           No hay ambulancias disponibles en este momento.
+        </p>
+      )}
+
+      {/* A disabled center action states its reason in the open, not only as a
+          tooltip: a touch screen has no hover. */}
+      {centerAction?.disabled && centerAction.reason && (
+        <p role="status" className="text-nv-navy-400 text-xs">
+          {centerAction.reason}
         </p>
       )}
     </section>
@@ -268,6 +310,13 @@ interface CitizenRailProps {
   filterCounts: MapFilterCounts;
   /** Flips one map layer; the page applies it to what the map paints. */
   onToggleFilter: (layer: MapFilterLayer) => void;
+  /** Role named in the actions header. Defaults to the citizen. */
+  roleLabel?: string;
+  /**
+   * When present, replaces "Donar suministros" with the help-center
+   * administrator's own action. Absent, the rail is the citizen's, unchanged.
+   */
+  centerAction?: CenterAdminAction;
 }
 
 /** Citizen rail: role actions, then the units and centers nearest to the map. */
@@ -285,6 +334,8 @@ export function CitizenRail({
   filter,
   filterCounts,
   onToggleFilter,
+  roleLabel = 'Ciudadano',
+  centerAction,
 }: CitizenRailProps) {
   return (
     <aside
@@ -315,6 +366,8 @@ export function CitizenRail({
         onDonate={onDonate}
         donationEnabled={donationEnabled}
         onReport={onReport}
+        roleLabel={roleLabel}
+        centerAction={centerAction}
       />
 
       <MapFilterControl filter={filter} counts={filterCounts} onToggle={onToggleFilter} />

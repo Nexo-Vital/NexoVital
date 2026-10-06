@@ -57,11 +57,39 @@ public class InventarioRepositoryAdapter implements InventarioRepository {
 
     @Override
     @Transactional
+    public int acreditarSiCabe(UUID centroAcopioId, UUID itemId, int cantidad) {
+        if (cantidad < 1) {
+            throw new IllegalArgumentException("cantidad must be >= 1: " + cantidad);
+        }
+        return jpaRepository.acreditarSiCabe(centroAcopioId, itemId, cantidad);
+    }
+
+    @Override
+    @Transactional
     public int transicionAtomicaDespacho(UUID centroAcopioId, UUID itemId, int cantidad) {
         if (cantidad < 1) {
             throw new IllegalArgumentException("cantidad must be >= 1: " + cantidad);
         }
         return jpaRepository.transicionAtomicaDespacho(centroAcopioId, itemId, cantidad);
+    }
+
+    @Override
+    @Transactional
+    public ItemInventario guardar(ItemInventario item) {
+        ItemInventarioJpaEntity entity = new ItemInventarioJpaEntity(
+                item.getId(),
+                item.getCentroAcopioId(),
+                item.getNombre(),
+                item.getDisponible(),
+                item.getRequerido(),
+                item.getUnidad(),
+                item.getUnitDetail());
+        return toDomain(jpaRepository.save(entity));
+    }
+
+    @Override
+    public boolean existePorNombre(UUID centroAcopioId, String nombre) {
+        return jpaRepository.existsByCentroAcopioIdAndNombreIgnoreCase(centroAcopioId, nombre);
     }
 
     private static ItemInventario toDomain(ItemInventarioJpaEntity entity) {

@@ -42,9 +42,16 @@ class EmergenciasHttpTest extends LoginTestBase {
     private static final String CIUDADANO = "ciudadano@nexovital.co";
     private static final String CIUDADANO_PASSWORD = "ciudadano123";
 
-    /** ADMIN_CENTRO_AYUDA: authenticated but NOT authorized for this route. */
+    /**
+     * ADMIN_CENTRO_AYUDA: shares the citizen screen, so it may report an
+     * affected zone too (and read the emergencies, like every role).
+     */
     private static final String RANGEL = "rangel@nexovital.co";
     private static final String RANGEL_PASSWORD = "rangel123";
+
+    /** ADMIN_ACOPIO: authenticated but NOT authorized to report. */
+    private static final String ACOPIO = "acopio@nexovital.co";
+    private static final String ACOPIO_PASSWORD = "acopio123";
 
     private static final double DELTA = 0.0000001d;
 
@@ -126,13 +133,14 @@ class EmergenciasHttpTest extends LoginTestBase {
     }
 
     // -----------------------------------------------------------------------
-    // 403 with a non-authorized role: only ROLE_CIUDADANO may report
+    // 403 with a non-authorized role: only the roles that use the citizen
+    // screen (CIUDADANO and ADMIN_CENTRO_AYUDA) may report
     // -----------------------------------------------------------------------
 
     @Test
     @DisplayName("POST /emergencias with a non-authorized role: 403 ACCESO_DENEGADO")
     void t4_rolNoAutorizado_devuelve403() throws Exception {
-        String token = tokenDe(RANGEL, RANGEL_PASSWORD);
+        String token = tokenDe(ACOPIO, ACOPIO_PASSWORD);
 
         mockMvc.perform(post("/api/v1/emergencias")
                         .header("Authorization", "Bearer " + token)
@@ -140,6 +148,19 @@ class EmergenciasHttpTest extends LoginTestBase {
                         .content(cuerpo(SUBA_LAT, SUBA_LNG, "ALTO", "Rol no autorizado")))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.codigo").value("ACCESO_DENEGADO"));
+    }
+
+    @Test
+    @DisplayName("POST /emergencias as the help-center administrator: 201 (same screen as the citizen)")
+    void t4b_adminCentroAyudaPuedeReportar() throws Exception {
+        String token = tokenDe(RANGEL, RANGEL_PASSWORD);
+
+        mockMvc.perform(post("/api/v1/emergencias")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpo(SUBA_LAT, SUBA_LNG, "ALTO", "Reporte del administrador de centro")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").isNotEmpty());
     }
 
     // -----------------------------------------------------------------------

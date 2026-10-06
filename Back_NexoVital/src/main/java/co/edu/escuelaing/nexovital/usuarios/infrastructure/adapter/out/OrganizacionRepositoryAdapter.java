@@ -7,6 +7,8 @@ import co.edu.escuelaing.nexovital.usuarios.domain.port.out.OrganizacionReposito
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.UUID;
+import java.util.Optional;
 
 @Component
 public class OrganizacionRepositoryAdapter implements OrganizacionRepository {
@@ -38,8 +40,14 @@ public class OrganizacionRepositoryAdapter implements OrganizacionRepository {
                 organizacion.getTipo(),
                 organizacion.getZonaId(),
                 organizacion.getUbicacion().lat(),
-                organizacion.getUbicacion().lng());
+                organizacion.getUbicacion().lng(),
+                organizacion.getAdminId());
         return toDomain(jpaRepository.save(entity));
+    }
+
+    @Override
+    public Optional<Organizacion> buscarPorAdmin(UUID adminId) {
+        return jpaRepository.findByAdminId(adminId).map(OrganizacionRepositoryAdapter::toDomain);
     }
 
     private static Organizacion toDomain(OrganizacionJpaEntity entity) {
@@ -48,6 +56,7 @@ public class OrganizacionRepositoryAdapter implements OrganizacionRepository {
                 entity.getNombre(),
                 entity.getTipo(),
                 entity.getZonaId(),
-                new Ubicacion(entity.getLat(), entity.getLng()));
+                new Ubicacion(entity.getLat(), entity.getLng()),
+                entity.getAdminId());
     }
 }

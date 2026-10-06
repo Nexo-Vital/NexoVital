@@ -24,17 +24,46 @@ function groupByRole(profiles: DemoUser[]): ProfileGroup[] {
 }
 
 /**
- * Roles the MVP offers on the login panel: citizen and ambulance driver.
+ * Roles the MVP offers on the login panel: citizen, ambulance driver and the
+ * help-center administrator (the actor of EP-03.F1.US1).
  *
- * The seeded administrator accounts still exist in the database and still sign
- * in if their credentials are typed, but they are not offered here: this panel
- * is what the demo shows, and everything it shows is expected to work end to
- * end. Hiding them is a presentation rule, not a permission change.
+ * The other seeded administrator accounts still exist in the database and still
+ * sign in if their credentials are typed, but they are not offered here: this
+ * panel is what the demo shows. Hiding them is a presentation rule, not a
+ * permission change.
  */
-const MVP_ROLES: ReadonlySet<DemoUser['rol']> = new Set(['CIUDADANO', 'CONDUCTOR']);
+const MVP_ROLES: ReadonlySet<DemoUser['rol']> = new Set([
+  'CIUDADANO',
+  'CONDUCTOR',
+  'ADMIN_CENTRO_AYUDA',
+]);
+
+/**
+ * Roles the panel offers as ONE profile even though the seed has several. The
+ * MVP needs a single help-center administrator, so only the first seeded one is
+ * listed; the second account stays in the seed because backend tests use it.
+ */
+const SINGLE_PROFILE_ROLES: ReadonlySet<DemoUser['rol']> = new Set(['ADMIN_CENTRO_AYUDA']);
+
+/** The profiles the panel lists: MVP roles, one row for the single-profile roles. */
+function offeredProfiles(profiles: DemoUser[]): DemoUser[] {
+  const seen = new Set<DemoUser['rol']>();
+  return profiles.filter((profile) => {
+    if (!MVP_ROLES.has(profile.rol)) {
+      return false;
+    }
+    if (SINGLE_PROFILE_ROLES.has(profile.rol)) {
+      if (seen.has(profile.rol)) {
+        return false;
+      }
+      seen.add(profile.rol);
+    }
+    return true;
+  });
+}
 
 /** Static data: computed once at module load instead of on every render. */
-const PROFILE_GROUPS = groupByRole(DEMO_USERS.filter((profile) => MVP_ROLES.has(profile.rol)));
+const PROFILE_GROUPS = groupByRole(offeredProfiles(DEMO_USERS));
 
 const ROW_CLASS =
   'flex w-full flex-col gap-0.5 rounded-nv-md px-2 py-1.5 text-left transition-colors hover:bg-nv-mint focus-visible:ring-2 focus-visible:ring-nv-teal disabled:pointer-events-none disabled:opacity-50';

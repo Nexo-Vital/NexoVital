@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Toaster } from '@/components/ui/toast';
 import { useEmergencyStore } from '@/features/emergencias/emergency-store';
 import { useFleetStore } from '@/features/flota/fleet-store';
 import type { MapaResponse } from '@/features/mapa/map-api';
@@ -383,5 +384,125 @@ describe('CitizenMapPage emergency/request source off demo mode', () => {
     // There is no request listing endpoint: off demo the registry is EMPTY, not
     // the `MOCK_SOLICITUDES` seed.
     expect(useSolicitudesStore.getState().items).toEqual([]);
+  });
+});
+
+/**
+ * Donation off demo mode: the server caps a donation to what the center still
+ * needs. The donor who loses the race (409 NECESIDAD_CUBIERTA) gets the backend
+ * message, and one who offers more than is missing is told what really entered.
+ */
+describe('CitizenMapPage donation off demo mode', () => {
+  const fetchMock = vi.fn();
+  const NEED = {
+    id: 'item-agua',
+    centroAcopioId: 'ORG-SUBA',
+    nombre: 'Agua',
+    disponible: 0,
+    requerido: 10,
+    semaforo: 'ROJO',
+  };
+
+  function mockBackend(donation: Response) {
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/inventario/donacion') && init?.method === 'POST') {
+        return Promise.resolve(donation);
+      }
+      if (url.includes('/centros-acopio/ORG-SUBA/inventario')) {
+        return Promise.resolve(mockResponse(200, [NEED]));
+      }
+      if (url.includes('/inventario')) {
+        return Promise.resolve(mockResponse(200, []));
+      }
+      return Promise.resolve(mockResponse(200, RESPONSE));
+    });
+  }
+
+  async function openDonationDialog(container: HTMLElement) {
+    await waitFor(() => {
+      fireEvent.click(markerByLabel(container, 'Suba Norte'));
+      expect(screen.getByRole('button', { name: 'Donar a este centro' })).toBeEnabled();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Donar a este centro' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Donar a Acopio Suba Norte' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirmar donación' }));
+  }
+
+  beforeEach(() => {
+    vi.stubEnv('VITE_DEMO_MODE', '0');
+    localStorage.clear();
+    fetchMock.mockReset();
+    vi.stubGlobal('fetch', fetchMock);
+    setToken('jwt.test');
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('shows the backend message to the donor who lost the race and closes the dialog', async () => {
+    mockBackend(
+      mockResponse(409, {
+        codigo: 'NECESIDAD_CUBIERTA',
+        mensaje: 'Otro donante cubrió esta necesidad.',
+      }),
+    );
+    const { container } = render(
+      <>
+        <CitizenMapPage
+          port={new FakeRealtimePort()}
+          ambulancias={[]}
+          emergencias={[]}
+          solicitudes={[]}
+          centrosAyuda={[]}
+        />
+        <Toaster />
+      </>,
+    );
+
+    await openDonationDialog(container);
+
+    expect(await screen.findByText('Otro donante cubrió esta necesidad.')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: 'Donar a Acopio Suba Norte' }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it('tells the donor what really entered when the server accepts less than offered', async () => {
+    mockBackend(
+      mockResponse(200, {
+        ...NEED,
+        disponible: 10,
+        semaforo: 'COMPLETO',
+        cantidadAceptada: 4,
+        cantidadOfrecida: 10,
+      }),
+    );
+    const { container } = render(
+      <>
+        <CitizenMapPage
+          port={new FakeRealtimePort()}
+          ambulancias={[]}
+          emergencias={[]}
+          solicitudes={[]}
+          centrosAyuda={[]}
+        />
+        <Toaster />
+      </>,
+    );
+
+    await openDonationDialog(container);
+
+    expect(
+      await screen.findByText(
+        'Se aceptaron 4 de las 10 unidades: era lo que faltaba para completar la necesidad.',
+      ),
+    ).toBeInTheDocument();
   });
 });

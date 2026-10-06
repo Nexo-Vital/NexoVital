@@ -7,15 +7,20 @@ import type { RolUsuario } from '@/types/domain';
  * declare its destination, so adding a role without a screen is a compile-time
  * error rather than a silent fall-through to a screen that is not its own. A
  * `null` value means "this role has no screen in this version": it is blocked at
- * login and on hydration (see LoginPage, guards and session.ts). The three
- * administrative roles are `null` on purpose: this build only ships the citizen
- * and driver surfaces, so those roles cannot enter.
+ * login and on hydration (see LoginPage, guards and session.ts). The platform
+ * and supply-center administrators are `null` on purpose: this build ships the
+ * citizen, driver and help-center administrator surfaces, so those two roles
+ * cannot enter.
+ *
+ * `CENTER_ADMIN_MAP` is the citizen map with ONE different action: instead of
+ * donating supplies, the help-center administrator creates and manages their
+ * own center (EP-03.F1.US1).
  */
-export type RoleHomeKind = 'DRIVER_CONSOLE' | 'CITIZEN_MAP';
+export type RoleHomeKind = 'DRIVER_CONSOLE' | 'CITIZEN_MAP' | 'CENTER_ADMIN_MAP';
 
 export const ROLE_HOME: Record<RolUsuario, RoleHomeKind | null> = {
   ADMIN_PLATAFORMA: null,
-  ADMIN_CENTRO_AYUDA: null,
+  ADMIN_CENTRO_AYUDA: 'CENTER_ADMIN_MAP',
   ADMIN_ACOPIO: null,
   CONDUCTOR: 'DRIVER_CONSOLE',
   CIUDADANO: 'CITIZEN_MAP',

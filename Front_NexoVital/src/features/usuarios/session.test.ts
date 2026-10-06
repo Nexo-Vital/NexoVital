@@ -20,11 +20,12 @@ const CITIZEN = {
   rol: 'CIUDADANO',
 };
 
+/** An administrative role that still has no screen in this version. */
 const ADMIN = {
   id: 'usr-admin',
-  nombre: 'Rangel Dev',
-  email: 'rangel@nexovital.co',
-  rol: 'ADMIN_CENTRO_AYUDA',
+  nombre: 'Paula Méndez',
+  email: 'acopio@nexovital.co',
+  rol: 'ADMIN_ACOPIO',
 };
 
 /**

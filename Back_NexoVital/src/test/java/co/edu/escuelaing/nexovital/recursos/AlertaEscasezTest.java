@@ -75,8 +75,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import({TestClockConfig.class, PushPortDePruebaConfig.class})
 class AlertaEscasezTest extends LoginTestBase {
 
-    private static final String CIUDADANO = "ciudadano@nexovital.co";
-    private static final String CIUDADANO_PASSWORD = "ciudadano123";
+    private static final String ADMIN = "admin@nexovital.co";
+    private static final String ADMIN_PASSWORD = "admin123";
 
     /** Prefix of the items created only by this test, removed afterwards. */
     private static final String PREFIJO_PRUEBA = "Prueba US5-ESC ";
@@ -132,7 +132,7 @@ class AlertaEscasezTest extends LoginTestBase {
     @DisplayName("FA-6: un despacho rechazado (409) deja la alerta PERSISTIDA en la base, pese al rollback")
     void fa6_elRechazoDejaLaAlertaEnLaBase() throws Exception {
         UUID itemId = sembrarItem(5);
-        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+        String token = tokenDe(ADMIN, ADMIN_PASSWORD);
 
         mockMvc.perform(despachoHttp(itemId, 8, token))
                 .andExpect(status().isConflict())
@@ -158,7 +158,7 @@ class AlertaEscasezTest extends LoginTestBase {
     void crearLaAlertaPublicaEnElTopicoPostCommit() throws Exception {
         pushPortDePrueba.limpiar();
         UUID itemId = sembrarItem(5);
-        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+        String token = tokenDe(ADMIN, ADMIN_PASSWORD);
 
         mockMvc.perform(despachoHttp(itemId, 8, token))
                 .andExpect(status().isConflict())
@@ -186,7 +186,7 @@ class AlertaEscasezTest extends LoginTestBase {
     void elRechazoQueNoCambiaLaAlertaNoRepublica() throws Exception {
         pushPortDePrueba.limpiar();
         UUID itemId = sembrarItem(0);
-        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+        String token = tokenDe(ADMIN, ADMIN_PASSWORD);
 
         // First rejection creates the alert (demand 20) and publishes once.
         mockMvc.perform(despachoHttp(itemId, 20, token)).andExpect(status().isConflict());
@@ -208,7 +208,7 @@ class AlertaEscasezTest extends LoginTestBase {
     @DisplayName("AC: 5 disponibles, se solicitan 8 → 409 y alerta activa con faltante 3 nombrando el recurso")
     void ac_cincoDisponiblesSolicitaOchoDejaAlertaDeTres() throws Exception {
         UUID itemId = sembrarItem(5);
-        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+        String token = tokenDe(ADMIN, ADMIN_PASSWORD);
 
         mockMvc.perform(despachoHttp(itemId, 8, token))
                 .andExpect(status().isConflict())
@@ -277,7 +277,7 @@ class AlertaEscasezTest extends LoginTestBase {
         UUID itemId = sembrarItem(5);
         assertThrows(StockInsuficienteException.class, () -> despacharStockUseCase.despachar(centroId, itemId, 8));
 
-        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+        String token = tokenDe(ADMIN, ADMIN_PASSWORD);
         MvcResult resultado = mockMvc.perform(get("/api/v1/mapa")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())

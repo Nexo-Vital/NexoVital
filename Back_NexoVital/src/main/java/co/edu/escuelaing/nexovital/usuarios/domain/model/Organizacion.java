@@ -18,13 +18,25 @@ public final class Organizacion {
     private final TipoOrganizacion tipo;
     private final String zonaId;
     private final Ubicacion ubicacion;
+    /**
+     * Usuario que administra el centro, o {@code null} cuando no tiene uno
+     * asignado (los centros sembrados y los que crea el administrador de
+     * plataforma). Es una referencia simple por id al usuario dueño.
+     */
+    private final UUID adminId;
 
     public Organizacion(UUID id, String nombre, TipoOrganizacion tipo, String zonaId, Ubicacion ubicacion) {
+        this(id, nombre, tipo, zonaId, ubicacion, null);
+    }
+
+    public Organizacion(UUID id, String nombre, TipoOrganizacion tipo, String zonaId, Ubicacion ubicacion,
+                        UUID adminId) {
         this.id = Objects.requireNonNull(id, "id es obligatorio");
         this.nombre = Objects.requireNonNull(nombre, "nombre es obligatorio");
         this.tipo = Objects.requireNonNull(tipo, "tipo es obligatorio");
         this.zonaId = zonaId;
         this.ubicacion = Objects.requireNonNull(ubicacion, "ubicacion es obligatoria");
+        this.adminId = adminId;
     }
 
     public UUID getId() {
@@ -54,6 +66,11 @@ public final class Organizacion {
 
     public Ubicacion getUbicacion() {
         return ubicacion;
+    }
+
+    /** @return el usuario que administra el centro, o {@code null} si no tiene */
+    public UUID getAdminId() {
+        return adminId;
     }
 
     @Override

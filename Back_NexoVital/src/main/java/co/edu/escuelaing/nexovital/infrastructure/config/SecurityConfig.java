@@ -59,6 +59,23 @@ public class SecurityConfig {
     private final ObjectMapper objectMapper;
 
     /**
+     * Roles that use the citizen screen: they may request an ambulance (and
+     * confirm or cancel their own request) and report an affected zone. The
+     * help-center administrator shares that screen, so it shares those actions;
+     * the use cases still verify the caller is the request's own requester.
+     */
+    /**
+     * Quién puede retirar stock de un centro (despacho): los administradores
+     * de la plataforma y de acopio en cualquier centro, y el administrador de
+     * centro de ayuda SOLO en el suyo (esa regla de dueño la aplica el
+     * controlador, que conoce el centro de la ruta).
+     */
+    private static final String[] ROLES_RETIRO = {
+            "ROLE_ADMIN_CENTRO_AYUDA", "ROLE_ADMIN_PLATAFORMA", "ROLE_ADMIN_ACOPIO"};
+
+    private static final String[] ROLES_SOLICITANTES = {"ROLE_CIUDADANO", "ROLE_ADMIN_CENTRO_AYUDA"};
+
+    /**
      * Whether the documentation routes are declared as public. It is true for
      * dev/test; the {@code prod} profile turns it off, so the routes fall
      * through to {@code anyRequest().denyAll()} and the docs are never exposed
@@ -106,10 +123,12 @@ public class SecurityConfig {
                         // organizations list, every authenticated role may read it.
                         .requestMatchers(HttpMethod.GET, "/api/v1/mapa").authenticated()
                         // Report an emergency (US3): the citizen reports the affected
-                        // zone. Azure fixes the role as CIUDADANO, so the matcher names
-                        // only that authority. Declared explicitly because the chain is
-                        // fail-closed; without it, POST /emergencias would be denied.
-                        .requestMatchers(HttpMethod.POST, "/api/v1/emergencias").hasAuthority("ROLE_CIUDADANO")
+                        // zone. The help-center administrator's screen is the citizen
+                        // map with one different action, so that role may report too.
+                        // Declared explicitly because the chain is fail-closed; without
+                        // it, POST /emergencias would be denied.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/emergencias")
+                                .hasAnyAuthority(ROLES_SOLICITANTES)
                         // Read model of reported emergencies (US3 D7): a client that
                         // connects late reads the current state instead of relying on the
                         // realtime push, which does not replay. Same audience as GET
@@ -131,6 +150,18 @@ public class SecurityConfig {
                         // /organizaciones would be denied.
                         .requestMatchers(HttpMethod.POST, "/api/v1/organizaciones")
                                 .hasAuthority("ROLE_ADMIN_PLATAFORMA")
+                        // The help-center administrator's OWN center (EP-03.F1.US1):
+                        // read it, create it with its supplies and declare a new
+                        // supply. The center is resolved server-side from the caller,
+                        // so only that role reaches these routes. Declared explicitly
+                        // because the chain is fail-closed, and BEFORE the generic
+                        // inventory matchers so "mio" is never read as a center id.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/centros-acopio/mio")
+                                .hasAuthority("ROLE_ADMIN_CENTRO_AYUDA")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/centros-acopio/mio")
+                                .hasAuthority("ROLE_ADMIN_CENTRO_AYUDA")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/centros-acopio/mio/inventario")
+                                .hasAuthority("ROLE_ADMIN_CENTRO_AYUDA")
                         // Inventory of an aid center (EP-03.F1): the citizen sees
                         // the supplies of the center with their traffic light, so
                         // every authenticated role may read it. Declared explicitly
@@ -144,18 +175,12 @@ public class SecurityConfig {
                         // /centros-acopio/{id}/inventario/donacion se denegaría.
                         .requestMatchers(HttpMethod.POST, "/api/v1/centros-acopio/*/inventario/donacion")
                                 .authenticated()
-                        // Despacho de un recurso (EP-03.F1.US1): el contrato NO
-                        // fija rol para la operación, así que cualquier rol
-                        // autenticado puede despachar, igual que la donación.
-                        // Declarado explícitamente porque la cadena es
-                        // fail-closed; sin él, POST
-                        // /centros-acopio/{id}/inventario/despacho devolvería 403
-                        // y parecería no implementado. Si el equipo decide
-                        // exigir el rol del actor de la historia
-                        // (ROLE_ADMIN_CENTRO_AYUDA), es un cambio de una línea:
-                        // .hasAuthority("ROLE_ADMIN_CENTRO_AYUDA").
+                        // Retiro de stock (despacho): solo administradores. El de centro
+                        // de ayuda únicamente sobre su propio centro (lo valida el
+                        // controlador); cualquier otro rol recibe 403. Declarado
+                        // explícitamente porque la cadena es fail-closed.
                         .requestMatchers(HttpMethod.POST, "/api/v1/centros-acopio/*/inventario/despacho")
-                                .authenticated()
+                                .hasAnyAuthority(ROLES_RETIRO)
                         // Fleet read model (EP-04): the operations room and the
                         // drivers need the fleet with position and state, so
                         // every authenticated role may read it. Declared
@@ -185,11 +210,12 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/flota/ambulancias/*/posicion")
                                 .hasAuthority("ROLE_CONDUCTOR")
                         // Request an ambulance (EP-04, broadcast C2): the
-                        // citizen raises the request, the role Azure fixes.
-                        // Declared explicitly because the chain is fail-closed;
-                        // without it, POST /solicitudes would be denied.
+                        // citizen raises the request. The help-center
+                        // administrator may request one too (same screen as the
+                        // citizen). Declared explicitly because the chain is
+                        // fail-closed; without it, POST /solicitudes would be denied.
                         .requestMatchers(HttpMethod.POST, "/api/v1/solicitudes")
-                                .hasAuthority("ROLE_CIUDADANO")
+                                .hasAnyAuthority(ROLES_SOLICITANTES)
                         // Accept a request (EP-04, C2): only the driver bids;
                         // the first accept wins the CAS server-side. Declared
                         // explicitly because the chain is fail-closed.
@@ -218,16 +244,17 @@ public class SecurityConfig {
                         // cannot resolve, so the actor is the citizen and the use
                         // case additionally verifies the caller IS the request's
                         // own solicitanteId. Declared explicitly because the chain
-                        // is fail-closed.
+                        // is fail-closed. The roles are the ones that may raise a
+                        // request (ROLES_SOLICITANTES).
                         .requestMatchers(HttpMethod.POST, "/api/v1/solicitudes/*/confirmar")
-                                .hasAuthority("ROLE_CIUDADANO")
+                                .hasAnyAuthority(ROLES_SOLICITANTES)
                         // Cancel the requester's own open request (EP-04): only
                         // the citizen withdraws, and the use case additionally
                         // verifies the caller IS the request's own solicitanteId
                         // (403 otherwise). Declared explicitly because the chain
                         // is fail-closed; without it, /cancelar would be denied.
                         .requestMatchers(HttpMethod.POST, "/api/v1/solicitudes/*/cancelar")
-                                .hasAuthority("ROLE_CIUDADANO");
+                                .hasAnyAuthority(ROLES_SOLICITANTES);
 
                     // Swagger UI and the OpenAPI JSON. These routes must be
                     // declared explicitly: the chain is fail-closed, so without

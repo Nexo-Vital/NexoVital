@@ -2,13 +2,21 @@ package co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.in;
 
 import co.edu.escuelaing.nexovital.recursos.domain.exception.CentroAcopioNoEncontradoException;
 import co.edu.escuelaing.nexovital.recursos.domain.exception.ItemInventarioNoEncontradoException;
+import co.edu.escuelaing.nexovital.recursos.domain.exception.NecesidadCubiertaException;
 import co.edu.escuelaing.nexovital.recursos.domain.exception.StockInsuficienteException;
+import co.edu.escuelaing.nexovital.recursos.domain.model.DonacionAceptada;
 import co.edu.escuelaing.nexovital.recursos.domain.model.ItemInventario;
 import co.edu.escuelaing.nexovital.recursos.domain.port.in.ConsultarInventarioUseCase;
 import co.edu.escuelaing.nexovital.recursos.domain.port.in.DespacharStockUseCase;
 import co.edu.escuelaing.nexovital.recursos.domain.port.in.RegistrarDonacionUseCase;
+import co.edu.escuelaing.nexovital.recursos.domain.port.out.CentroPropioPort;
+import co.edu.escuelaing.nexovital.usuarios.domain.model.Usuario;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.in.dto.DespachoRequest;
 import co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.in.dto.DonacionRequest;
+import co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.in.dto.DonacionResultadoDto;
 import co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.in.dto.ItemInventarioDto;
 import co.edu.escuelaing.nexovital.shared.infrastructure.dto.ErrorResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -47,20 +55,27 @@ public class InventarioController {
             "No existe el insumo indicado en el centro de acopio.";
     private static final String MENSAJE_DATOS_INVALIDOS =
             "La donación no es válida: revise el insumo y la cantidad.";
+    private static final String MENSAJE_NECESIDAD_CUBIERTA =
+            "Otro donante cubrió esta necesidad.";
     private static final String MENSAJE_ERROR_DONACION = "No fue posible registrar la donación.";
     private static final String MENSAJE_STOCK_INSUFICIENTE =
             "No hay unidades suficientes del insumo para atender la solicitud.";
     private static final String MENSAJE_DATOS_DESPACHO =
             "El despacho no es válido: revise el insumo y la cantidad.";
+    private static final String MENSAJE_NO_ES_DUENO =
+            "Solo el administrador del centro puede retirar insumos de él.";
     private static final String MENSAJE_ERROR_DESPACHO = "No fue posible despachar el recurso.";
 
     private final ConsultarInventarioUseCase consultarInventarioUseCase;
     private final RegistrarDonacionUseCase registrarDonacionUseCase;
     private final DespacharStockUseCase despacharStockUseCase;
+    private final CentroPropioPort centroPropioPort;
 
     public InventarioController(ConsultarInventarioUseCase consultarInventarioUseCase,
                                 RegistrarDonacionUseCase registrarDonacionUseCase,
-                                DespacharStockUseCase despacharStockUseCase) {
+                                DespacharStockUseCase despacharStockUseCase,
+                                CentroPropioPort centroPropioPort) {
+        this.centroPropioPort = centroPropioPort;
         this.consultarInventarioUseCase = consultarInventarioUseCase;
         this.registrarDonacionUseCase = registrarDonacionUseCase;
         this.despacharStockUseCase = despacharStockUseCase;
@@ -93,21 +108,24 @@ public class InventarioController {
     }
 
     /**
-     * Registra una donación: acredita stock al item indicado, en la cantidad
-     * elegida. El crédito es inmediato y sin tope (no se recorta al
-     * {@code requerido}), y lo aplica el servicio de forma atómica dentro de su
-     * transacción; el controlador nunca es el disparador del push.
+     * Registra una donación: acredita stock al item indicado, acotado a lo que
+     * todavía falta ({@code requerido - disponible}). Si el donante ofrece más
+     * de lo que falta, se acepta solo lo necesario para completar; si la
+     * necesidad ya está cubierta (otro donante la completó antes), se rechaza.
+     * El crédito lo aplica el servicio con una sola sentencia atómica dentro de
+     * su transacción; el controlador nunca es el disparador del push.
      *
      * <p>El orden de los {@code catch} importa: las excepciones de "no
      * encontrado" (404) caen antes que {@link IllegalArgumentException} (400), y
      * esta antes que la genérica (500).
      *
-     * @return 200 con el {@code ItemInventarioDto} acreditado; 404
-     *         {@code CENTRO_ACOPIO_NO_ENCONTRADO} si no existe el centro; 404
-     *         {@code ITEM_INVENTARIO_NO_ENCONTRADO} si el item no existe en ese
-     *         centro; 400 {@code DATOS_INVALIDOS} si falta el item o la cantidad
-     *         no es un entero positivo; 500 {@code ERROR_REGISTRO_DONACION} si el
-     *         registro falla
+     * @return 200 con el {@code DonacionResultadoDto} (item acreditado, cantidad
+     *         aceptada y ofrecida); 404 {@code CENTRO_ACOPIO_NO_ENCONTRADO} si no
+     *         existe el centro; 404 {@code ITEM_INVENTARIO_NO_ENCONTRADO} si el
+     *         item no existe en ese centro; 409 {@code NECESIDAD_CUBIERTA} si ya
+     *         no falta nada; 400 {@code DATOS_INVALIDOS} si falta el item o la
+     *         cantidad no es un entero positivo; 500
+     *         {@code ERROR_REGISTRO_DONACION} si el registro falla
      */
     @PostMapping("/{id}/inventario/donacion")
     @Operation(summary = "Registrar la donacion de un insumo")
@@ -119,14 +137,17 @@ public class InventarioController {
             if (request.cantidad() == null) {
                 throw new IllegalArgumentException("La cantidad es obligatoria.");
             }
-            ItemInventario acreditado = registrarDonacionUseCase.donar(id, request.itemId(), request.cantidad());
-            return ResponseEntity.ok(ItemInventarioDto.fromDomain(acreditado));
+            DonacionAceptada aceptada = registrarDonacionUseCase.donar(id, request.itemId(), request.cantidad());
+            return ResponseEntity.ok(DonacionResultadoDto.fromDomain(aceptada));
         } catch (CentroAcopioNoEncontradoException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ErrorResponse.of("CENTRO_ACOPIO_NO_ENCONTRADO", MENSAJE_CENTRO_NO_ENCONTRADO));
         } catch (ItemInventarioNoEncontradoException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ErrorResponse.of("ITEM_INVENTARIO_NO_ENCONTRADO", MENSAJE_ITEM_NO_ENCONTRADO));
+        } catch (NecesidadCubiertaException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ErrorResponse.of("NECESIDAD_CUBIERTA", MENSAJE_NECESIDAD_CUBIERTA));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest()
                     .body(ErrorResponse.of("DATOS_INVALIDOS", MENSAJE_DATOS_INVALIDOS));
@@ -157,6 +178,10 @@ public class InventarioController {
     @PostMapping("/{id}/inventario/despacho")
     @Operation(summary = "Despachar un insumo con descuento atomico (C1)")
     public ResponseEntity<Object> despachar(@PathVariable UUID id, @RequestBody DespachoRequest request) {
+        if (!puedeRetirarDe(id)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(ErrorResponse.of("NO_ES_DUENO_DEL_CENTRO", MENSAJE_NO_ES_DUENO));
+        }
         try {
             if (request == null || request.itemId() == null) {
                 throw new IllegalArgumentException("El insumo es obligatorio.");
@@ -182,5 +207,24 @@ public class InventarioController {
             return ResponseEntity.internalServerError()
                     .body(ErrorResponse.of("ERROR_DESPACHO", MENSAJE_ERROR_DESPACHO));
         }
+    }
+
+    /**
+     * Regla del retiro: los administradores de plataforma y de acopio retiran
+     * de cualquier centro; el administrador de centro de ayuda solo del suyo.
+     * La cadena de seguridad ya dejó pasar únicamente a esos tres roles.
+     */
+    private boolean puedeRetirarDe(UUID centroId) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        boolean administrador = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(rol -> rol.equals("ROLE_ADMIN_PLATAFORMA") || rol.equals("ROLE_ADMIN_ACOPIO"));
+        if (administrador) {
+            return true;
+        }
+        Usuario usuario = (Usuario) authentication.getPrincipal();
+        return centroPropioPort.buscarPorAdmin(usuario.getId())
+                .map(centro -> centro.id().equals(centroId))
+                .orElse(false);
     }
 }

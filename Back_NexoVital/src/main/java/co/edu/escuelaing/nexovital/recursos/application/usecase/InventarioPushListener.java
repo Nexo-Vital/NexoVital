@@ -48,4 +48,13 @@ public class InventarioPushListener {
     public void alDespacharStock(StockDespachadoEvento evento) {
         pushPort.publicar(DESTINO_SUMINISTROS, evento.item());
     }
+
+    /**
+     * Un insumo recién declarado por el administrador del centro viaja por el
+     * mismo canal: los clientes lo agregan al inventario del centro por UPSERT.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void alRegistrarItem(ItemInventarioRegistradoEvento evento) {
+        pushPort.publicar(DESTINO_SUMINISTROS, evento.item());
+    }
 }

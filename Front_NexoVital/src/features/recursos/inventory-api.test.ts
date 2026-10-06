@@ -134,17 +134,58 @@ describe('registrarDonacion', () => {
   });
 
   it('POSTs the exact donation body and returns the credited item', async () => {
-    const credited = { ...DTO, disponible: 52, semaforo: 'VERDE' };
+    const credited = {
+      ...DTO,
+      disponible: 52,
+      semaforo: 'VERDE',
+      cantidadAceptada: 40,
+      cantidadOfrecida: 40,
+    };
     fetchMock.mockResolvedValue(mockResponse(200, credited));
 
-    await expect(registrarDonacion(DTO.centroAcopioId, DTO.id, 40)).resolves.toEqual(
-      expect.objectContaining({ disponible: 52, semaforo: 'GREEN' }),
-    );
+    await expect(registrarDonacion(DTO.centroAcopioId, DTO.id, 40)).resolves.toEqual({
+      item: expect.objectContaining({ disponible: 52, semaforo: 'GREEN' }),
+      aceptada: 40,
+      ofrecida: 40,
+    });
 
     const [path, options] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(path).toBe(`/api/v1/centros-acopio/${DTO.centroAcopioId}/inventario/donacion`);
     expect(options.method).toBe('POST');
     expect(JSON.parse(options.body as string)).toEqual({ itemId: DTO.id, cantidad: 40 });
+  });
+
+  it('reports the accepted quantity when the server caps the donation to the gap', async () => {
+    fetchMock.mockResolvedValue(
+      mockResponse(200, {
+        ...DTO,
+        disponible: 100,
+        requerido: 100,
+        semaforo: 'COMPLETO',
+        cantidadAceptada: 4,
+        cantidadOfrecida: 6,
+      }),
+    );
+
+    await expect(registrarDonacion(DTO.centroAcopioId, DTO.id, 6)).resolves.toMatchObject({
+      aceptada: 4,
+      ofrecida: 6,
+    });
+  });
+
+  it('bubbles the 409 NECESIDAD_CUBIERTA of the donor who lost the race', async () => {
+    fetchMock.mockResolvedValue(
+      mockResponse(409, {
+        codigo: 'NECESIDAD_CUBIERTA',
+        mensaje: 'Otro donante cubrió esta necesidad.',
+      }),
+    );
+
+    await expect(registrarDonacion(DTO.centroAcopioId, DTO.id, 10)).rejects.toMatchObject({
+      status: 409,
+      codigo: 'NECESIDAD_CUBIERTA',
+      message: 'Otro donante cubrió esta necesidad.',
+    });
   });
 
   it('rejects an unexpected response shape instead of a half item', async () => {

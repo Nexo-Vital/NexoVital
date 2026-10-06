@@ -42,11 +42,25 @@ public class OrganizacionJpaEntity {
     @Column(nullable = false)
     private double lng;
 
+    /**
+     * Usuario que administra el centro. Nulo en los centros sin administrador;
+     * único, porque un administrador tiene a lo sumo un centro. Varias filas
+     * con {@code NULL} conviven sin chocar con la restricción.
+     */
+    @Column(name = "admin_id", nullable = true, unique = true)
+    private UUID adminId;
+
     protected OrganizacionJpaEntity() {
         // Requerido por JPA.
     }
 
     public OrganizacionJpaEntity(UUID id, String nombre, TipoOrganizacion tipo, String zonaId, double lat, double lng) {
+        this(id, nombre, tipo, zonaId, lat, lng, null);
+    }
+
+    public OrganizacionJpaEntity(UUID id, String nombre, TipoOrganizacion tipo, String zonaId, double lat, double lng,
+                                 UUID adminId) {
+        this.adminId = adminId;
         this.id = id;
         this.nombre = nombre;
         this.tipo = tipo;
@@ -77,5 +91,9 @@ public class OrganizacionJpaEntity {
 
     public double getLng() {
         return lng;
+    }
+
+    public UUID getAdminId() {
+        return adminId;
     }
 }

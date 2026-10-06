@@ -22,8 +22,8 @@ describe('role destinations', () => {
     expect(Object.keys(ROLE_LABEL).sort()).toEqual([...ROLES].sort());
   });
 
-  it('declares no screen for the three administrative roles', () => {
-    const admins: RolUsuario[] = ['ADMIN_ACOPIO', 'ADMIN_CENTRO_AYUDA', 'ADMIN_PLATAFORMA'];
+  it('declares no screen for the platform and supply-center administrators', () => {
+    const admins: RolUsuario[] = ['ADMIN_ACOPIO', 'ADMIN_PLATAFORMA'];
     for (const role of admins) {
       expect(ROLE_HOME[role]).toBeNull();
       expect(resolveRoleHome(role)).toBeNull();
@@ -35,6 +35,12 @@ describe('role destinations', () => {
     expect(ROLE_HOME.CIUDADANO).toBe('CITIZEN_MAP');
     expect(resolveRoleHome('CIUDADANO')).toBe('CITIZEN_MAP');
     expect(hasRoleHome('CIUDADANO')).toBe(true);
+  });
+
+  it('sends the help-center administrator to their own variant of the map', () => {
+    expect(ROLE_HOME.ADMIN_CENTRO_AYUDA).toBe('CENTER_ADMIN_MAP');
+    expect(resolveRoleHome('ADMIN_CENTRO_AYUDA')).toBe('CENTER_ADMIN_MAP');
+    expect(hasRoleHome('ADMIN_CENTRO_AYUDA')).toBe(true);
   });
 
   it('treats a missing or unknown role as having no destination', () => {

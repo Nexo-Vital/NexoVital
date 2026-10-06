@@ -60,6 +60,10 @@ class DespachoHttpTest extends LoginTestBase {
 
     private static final String CIUDADANO = "ciudadano@nexovital.co";
     private static final String CIUDADANO_PASSWORD = "ciudadano123";
+    private static final String ADMIN = "admin@nexovital.co";
+    private static final String ADMIN_PASSWORD = "admin123";
+    private static final String RANGEL = "rangel@nexovital.co";
+    private static final String RANGEL_PASSWORD = "rangel123";
 
     /** Prefix of the items created only by this test, removed afterwards. */
     private static final String PREFIJO_PRUEBA = "Prueba DESP ";
@@ -112,7 +116,7 @@ class DespachoHttpTest extends LoginTestBase {
     @Test
     @DisplayName("C1 HTTP: 3 despachos de 1 sobre stock 3 dan 200; el cuarto da 409 STOCK_INSUFICIENTE")
     void invarianteC1_Stock3_TresDespachos200YElCuarto409() throws Exception {
-        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+        String token = tokenDe(ADMIN, ADMIN_PASSWORD);
 
         for (int i = 0; i < DISPONIBLE_INICIAL; i++) {
             mockMvc.perform(post("/api/v1/centros-acopio/{id}/inventario/despacho", centroId)
@@ -158,7 +162,7 @@ class DespachoHttpTest extends LoginTestBase {
     @Test
     @DisplayName("El despacho publica el ItemInventarioDto actualizado en /topic/suministros (post-commit)")
     void publicaElSemaforoEnElTopicoDeSuministros() throws Exception {
-        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+        String token = tokenDe(ADMIN, ADMIN_PASSWORD);
 
         mockMvc.perform(post("/api/v1/centros-acopio/{id}/inventario/despacho", centroId)
                         .header("Authorization", "Bearer " + token)
@@ -179,13 +183,50 @@ class DespachoHttpTest extends LoginTestBase {
     }
 
     // -----------------------------------------------------------------------
+    // Quién puede retirar: administradores; el de centro de ayuda solo en el suyo
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Retiro con rol ciudadano: 403 y el stock no cambia")
+    void ciudadanoNoPuedeRetirar() throws Exception {
+        mockMvc.perform(post("/api/v1/centros-acopio/{id}/inventario/despacho", centroId)
+                        .header("Authorization", "Bearer " + tokenDe(CIUDADANO, CIUDADANO_PASSWORD))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "itemId", itemId.toString(),
+                                "cantidad", 1))))
+                .andExpect(status().isForbidden());
+
+        assertEquals(DISPONIBLE_INICIAL,
+                itemInventarioJpaRepository.findById(itemId).orElseThrow().getDisponible(),
+                "un 403 no debe tocar el stock");
+    }
+
+    @Test
+    @DisplayName("Retiro por un administrador de centro de ayuda sobre un centro que NO es suyo: 403")
+    void adminDeCentroNoPuedeRetirarDeCentroAjeno() throws Exception {
+        mockMvc.perform(post("/api/v1/centros-acopio/{id}/inventario/despacho", centroId)
+                        .header("Authorization", "Bearer " + tokenDe(RANGEL, RANGEL_PASSWORD))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "itemId", itemId.toString(),
+                                "cantidad", 1))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("NO_ES_DUENO_DEL_CENTRO"));
+
+        assertEquals(DISPONIBLE_INICIAL,
+                itemInventarioJpaRepository.findById(itemId).orElseThrow().getDisponible(),
+                "un 403 no debe tocar el stock");
+    }
+
+    // -----------------------------------------------------------------------
     // 404 for an unknown item; 401 without a token; 400 for an invalid quantity
     // -----------------------------------------------------------------------
 
     @Test
     @DisplayName("POST despacho a un item inexistente: 404 ITEM_INVENTARIO_NO_ENCONTRADO")
     void itemInexistenteDevuelve404() throws Exception {
-        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+        String token = tokenDe(ADMIN, ADMIN_PASSWORD);
 
         mockMvc.perform(post("/api/v1/centros-acopio/{id}/inventario/despacho", centroId)
                         .header("Authorization", "Bearer " + token)
@@ -212,7 +253,7 @@ class DespachoHttpTest extends LoginTestBase {
     @Test
     @DisplayName("POST despacho con cantidad 0 o nula: 400 DATOS_INVALIDOS")
     void cantidadInvalidaDevuelve400() throws Exception {
-        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+        String token = tokenDe(ADMIN, ADMIN_PASSWORD);
 
         mockMvc.perform(post("/api/v1/centros-acopio/{id}/inventario/despacho", centroId)
                         .header("Authorization", "Bearer " + token)

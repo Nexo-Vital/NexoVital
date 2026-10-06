@@ -44,6 +44,20 @@ public interface InventarioRepository {
     boolean acreditar(UUID centroAcopioId, UUID itemId, int cantidad);
 
     /**
+     * Atomic bounded credit: ONE {@code @Modifying} JPQL update conditioned to
+     * {@code requerido - disponible >= :cantidad}. It never loads the entity, so
+     * two concurrent donors can never push the stock over the requirement.
+     *
+     * @param centroAcopioId id of the center that owns the item
+     * @param itemId         id of the item
+     * @param cantidad       quantity to add; must be {@code >= 1}
+     * @return affected rows: 1 when the quantity still fitted, 0 when it no
+     *         longer fitted (someone else filled the need) or the item is not
+     *         in that center
+     */
+    int acreditarSiCabe(UUID centroAcopioId, UUID itemId, int cantidad);
+
+    /**
      * Atomic dispatch (CAS) of the finite stock C1: ONE {@code @Modifying} JPQL
      * update conditioned to {@code disponible >= :cantidad}. It never loads the
      * entity, so the conditional {@code WHERE} makes over-allocation impossible
@@ -57,4 +71,21 @@ public interface InventarioRepository {
      *         no longer covered the quantity or the item is not in that center
      */
     int transicionAtomicaDespacho(UUID centroAcopioId, UUID itemId, int cantidad);
+
+    /**
+     * Inserts a NEW item. It is only used when an administrator declares an
+     * item; stock changes afterwards go through {@link #acreditar} and
+     * {@link #transicionAtomicaDespacho}, never through a save.
+     *
+     * @param item the item to insert, with its id already assigned
+     * @return the persisted item
+     */
+    ItemInventario guardar(ItemInventario item);
+
+    /**
+     * @param centroAcopioId id of the center
+     * @param nombre         item name, compared ignoring case
+     * @return {@code true} when the center already declares an item with that name
+     */
+    boolean existePorNombre(UUID centroAcopioId, String nombre);
 }

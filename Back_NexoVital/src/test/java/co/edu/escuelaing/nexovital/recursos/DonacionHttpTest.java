@@ -155,6 +155,57 @@ class DonacionHttpTest extends LoginTestBase {
     }
 
     // -----------------------------------------------------------------------
+    // La donación se acota a lo que falta; cubierta la necesidad, se rechaza
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Donar más de lo que falta: 200, se acepta solo lo que completa la necesidad")
+    void t1b_donacionSeAcotaALoQueFalta() throws Exception {
+        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+        int faltante = REQUERIDO - DISPONIBLE_INICIAL;
+
+        mockMvc.perform(post("/api/v1/centros-acopio/{id}/inventario/donacion", centroId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "itemId", itemId.toString(),
+                                "cantidad", faltante + 50))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.disponible").value(REQUERIDO))
+                .andExpect(jsonPath("$.semaforo").value("COMPLETO"))
+                .andExpect(jsonPath("$.cantidadAceptada").value(faltante))
+                .andExpect(jsonPath("$.cantidadOfrecida").value(faltante + 50));
+
+        assertEquals(REQUERIDO,
+                itemInventarioJpaRepository.findById(itemId).orElseThrow().getDisponible(),
+                "el stock nunca pasa del requerido");
+    }
+
+    @Test
+    @DisplayName("Donar a una necesidad ya cubierta: 409 NECESIDAD_CUBIERTA y el stock no cambia")
+    void t1c_necesidadCubiertaDevuelve409() throws Exception {
+        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+        itemInventarioJpaRepository.findById(itemId).ifPresent(entidad -> {
+            itemInventarioJpaRepository.save(new ItemInventarioJpaEntity(
+                    entidad.getId(), entidad.getCentroAcopioId(), entidad.getNombre(),
+                    REQUERIDO, REQUERIDO, entidad.getUnidad(), entidad.getUnitDetail()));
+        });
+
+        mockMvc.perform(post("/api/v1/centros-acopio/{id}/inventario/donacion", centroId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "itemId", itemId.toString(),
+                                "cantidad", 1))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("NECESIDAD_CUBIERTA"));
+
+        assertEquals(REQUERIDO,
+                itemInventarioJpaRepository.findById(itemId).orElseThrow().getDisponible(),
+                "un 409 no debe tocar el stock");
+    }
+
+    // -----------------------------------------------------------------------
     // Any authenticated role may donate, not only the citizen
     // -----------------------------------------------------------------------
 

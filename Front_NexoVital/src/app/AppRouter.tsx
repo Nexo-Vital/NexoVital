@@ -38,6 +38,15 @@ export const DRIVER_NAV: AppFrameNavItem[] = [
 ];
 
 /**
+ * Sidebar navigation for the help-center administrator. Their only screen is
+ * the map, where "Administrar mi centro" lives as a role action, so the sidebar
+ * carries that single entry instead of inert placeholders.
+ */
+export const CENTER_ADMIN_NAV: AppFrameNavItem[] = [
+  { key: 'map', label: 'Mapa', icon: MapIcon, to: '/' },
+];
+
+/**
  * Maps the current route to the sidebar key it belongs to. The two driver
  * sub-routes have their own item; every other route is the role home (the map),
  * which is where both shells land.
@@ -75,8 +84,8 @@ function toBellNotification(alert: DriverAlert): AppFrameNotification {
 }
 
 /**
- * Picks the chrome for the signed-in role. The citizen and the driver get the
- * v2 AppFrame; a role with no home renders no chrome at all and is sent back to
+ * Picks the chrome for the signed-in role. The citizen, the driver and the
+ * help-center administrator get the v2 AppFrame; a role with no home renders no chrome at all and is sent back to
  * the login screen. The driver's topbar carries its unit id as the role suffix.
  */
 function RoleChrome() {
@@ -95,6 +104,9 @@ function RoleChrome() {
   const home = resolveRoleHome(role);
   if (home === 'CITIZEN_MAP') {
     return <AppFrame nav={CITIZEN_NAV} activeKey={activeKey} />;
+  }
+  if (home === 'CENTER_ADMIN_MAP') {
+    return <AppFrame nav={CENTER_ADMIN_NAV} activeKey={activeKey} />;
   }
   if (home === 'DRIVER_CONSOLE') {
     return (
@@ -126,12 +138,16 @@ export function RoleHome() {
       return <DriverConsolePage />;
     case 'CITIZEN_MAP':
       return <CitizenMapPage />;
+    case 'CENTER_ADMIN_MAP':
+      // The citizen map with one different action: the administrator manages
+      // their own center instead of donating supplies (EP-03.F1.US1).
+      return <CitizenMapPage centerAdmin />;
     default:
       return <Navigate to="/login" replace />;
   }
 }
 
-/** Route table for this unit: login + the citizen and driver screens. */
+/** Route table for this unit: login + the citizen, driver and center-administrator screens. */
 export function AppRouter() {
   return (
     <Routes>

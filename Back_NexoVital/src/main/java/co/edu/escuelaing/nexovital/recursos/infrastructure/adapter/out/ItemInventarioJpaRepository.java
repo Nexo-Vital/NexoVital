@@ -19,6 +19,8 @@ public interface ItemInventarioJpaRepository extends JpaRepository<ItemInventari
 
     Optional<ItemInventarioJpaEntity> findByIdAndCentroAcopioId(UUID id, UUID centroAcopioId);
 
+    boolean existsByCentroAcopioIdAndNombreIgnoreCase(UUID centroAcopioId, String nombre);
+
     /**
      * Crédito atómico: UNA sola sentencia {@code UPDATE}, sin leer la entidad.
      * Dos donaciones concurrentes no pueden perder una actualización porque la
@@ -37,6 +39,23 @@ public interface ItemInventarioJpaRepository extends JpaRepository<ItemInventari
     int acreditar(@Param("centroAcopioId") UUID centroAcopioId,
                   @Param("itemId") UUID itemId,
                   @Param("cantidad") int cantidad);
+
+    /**
+     * Crédito acotado: UNA sola sentencia {@code UPDATE} condicionada a que la
+     * cantidad todavía quepa en lo que falta ({@code requerido - disponible}).
+     * Dos donantes concurrentes jamás pueden pasar el requerido: el
+     * {@code WHERE} hace el check-and-set atómico.
+     *
+     * @return 1 si la cantidad cabía y se acreditó, 0 si ya no cabía o el item
+     *         no está en ese centro
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE ItemInventarioJpaEntity i SET i.disponible = i.disponible + :cantidad "
+            + "WHERE i.id = :itemId AND i.centroAcopioId = :centroAcopioId "
+            + "AND i.requerido - i.disponible >= :cantidad")
+    int acreditarSiCabe(@Param("centroAcopioId") UUID centroAcopioId,
+                        @Param("itemId") UUID itemId,
+                        @Param("cantidad") int cantidad);
 
     /**
      * CAS real del stock finito C1: UNA sola {@code UPDATE} condicionada a que

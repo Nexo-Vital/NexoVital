@@ -104,20 +104,30 @@ export async function fetchInventario(centroId: string): Promise<InventarioItem[
   return dtos.map(fromWireInventario).filter((item): item is InventarioItem => item !== null);
 }
 
+/** Resultado de una donación: el item acreditado y cuánto entró de lo ofrecido. */
+export interface DonacionResultado {
+  item: InventarioItem;
+  /** Unidades que el servidor aceptó (acotadas a lo que faltaba). */
+  aceptada: number;
+  /** Unidades que el donante ofreció. */
+  ofrecida: number;
+}
+
 /**
- * Registra una donación: crédito inmediato, cantidad elegida por el usuario, sin
- * tope y sin estado pendiente (EP-03.F3). El cuerpo lleva SOLO `{itemId,
- * cantidad}`; el servidor asigna el resto y responde 200 con el
- * `ItemInventarioDto` acreditado.
+ * Registra una donación. El servidor la acota a lo que todavía falta
+ * (`requerido - disponible`): si el donante ofrece más, solo entra lo que
+ * completa la necesidad, y si otro donante ya la cubrió responde 409
+ * `NECESIDAD_CUBIERTA`. El cuerpo lleva SOLO `{itemId, cantidad}`; la respuesta
+ * 200 es el item acreditado más `cantidadAceptada` y `cantidadOfrecida`.
  *
  * `ApiError` no se captura a propósito: burbujea para que quien llama muestre el
- * `mensaje` del backend (400 DATOS_INVALIDOS, 401 NO_AUTENTICADO, 404 ...).
+ * `mensaje` del backend (400 DATOS_INVALIDOS, 409 NECESIDAD_CUBIERTA, ...).
  */
 export async function registrarDonacion(
   centroId: string,
   itemId: string,
   cantidad: number,
-): Promise<InventarioItem> {
+): Promise<DonacionResultado> {
   const response = await apiFetch<unknown>(`/centros-acopio/${centroId}/inventario/donacion`, {
     method: 'POST',
     body: JSON.stringify({ itemId, cantidad }),
@@ -127,5 +137,14 @@ export async function registrarDonacion(
   if (!item) {
     throw new Error('El servidor devolvió un insumo con una forma inesperada.');
   }
-  return item;
+  const wire = isRecord(response) ? response : {};
+  const aceptada =
+    typeof wire.cantidadAceptada === 'number' && wire.cantidadAceptada >= 0
+      ? wire.cantidadAceptada
+      : cantidad;
+  const ofrecida =
+    typeof wire.cantidadOfrecida === 'number' && wire.cantidadOfrecida >= 0
+      ? wire.cantidadOfrecida
+      : cantidad;
+  return { item, aceptada, ofrecida };
 }

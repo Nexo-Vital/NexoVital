@@ -12,7 +12,9 @@ vi.mock('@/pages/DriverConsolePage', () => ({
   default: () => <div data-testid="driver-console" />,
 }));
 vi.mock('@/pages/CitizenMapPage', () => ({
-  default: () => <div data-testid="citizen-map" />,
+  default: ({ centerAdmin = false }: { centerAdmin?: boolean }) => (
+    <div data-testid="citizen-map" data-center-admin={String(centerAdmin)} />
+  ),
 }));
 vi.mock('@/pages/LoginPage', () => ({
   default: () => <div data-testid="login-screen" />,
@@ -62,7 +64,7 @@ describe('RoleHome', () => {
     useSessionStore.setState({ user: null, role: null, token: null });
   });
 
-  it.each(['ADMIN_PLATAFORMA', 'ADMIN_CENTRO_AYUDA', 'ADMIN_ACOPIO'] as const)(
+  it.each(['ADMIN_PLATAFORMA', 'ADMIN_ACOPIO'] as const)(
     'sends %s to the login screen because it has no home',
     (role) => {
       signInAs(role);
@@ -86,7 +88,16 @@ describe('RoleHome', () => {
     signInAs('CIUDADANO');
     renderHome();
 
-    expect(screen.getByTestId('citizen-map')).toBeInTheDocument();
+    expect(screen.getByTestId('citizen-map')).toHaveAttribute('data-center-admin', 'false');
+    expect(screen.queryByTestId('driver-console')).not.toBeInTheDocument();
+  });
+
+  it('routes ADMIN_CENTRO_AYUDA to the map in its center-administrator variant', () => {
+    signInAs('ADMIN_CENTRO_AYUDA');
+    renderHome();
+
+    expect(screen.getByTestId('citizen-map')).toHaveAttribute('data-center-admin', 'true');
+    expect(screen.queryByTestId('login-screen')).not.toBeInTheDocument();
     expect(screen.queryByTestId('driver-console')).not.toBeInTheDocument();
   });
 });
@@ -117,8 +128,17 @@ describe('AppRouter shell selection', () => {
     expect(screen.queryByTestId('login-screen')).not.toBeInTheDocument();
   });
 
-  it('sends a role without home to the login screen instead of rendering a chrome', () => {
+  it('gives the help-center administrator the v2 frame', () => {
     signInAs('ADMIN_CENTRO_AYUDA');
+    renderApp();
+
+    expect(screen.getAllByText('NexoVital').length).toBeGreaterThan(0);
+    expect(screen.queryByTestId('login-screen')).not.toBeInTheDocument();
+    expect(screen.getByText('Administrador de centro de ayuda')).toBeInTheDocument();
+  });
+
+  it('sends a role without home to the login screen instead of rendering a chrome', () => {
+    signInAs('ADMIN_ACOPIO');
     renderApp();
 
     expect(screen.getByTestId('login-screen')).toBeInTheDocument();

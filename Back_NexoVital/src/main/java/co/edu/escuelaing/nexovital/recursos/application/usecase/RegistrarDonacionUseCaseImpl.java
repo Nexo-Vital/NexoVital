@@ -2,6 +2,8 @@ package co.edu.escuelaing.nexovital.recursos.application.usecase;
 
 import co.edu.escuelaing.nexovital.recursos.domain.exception.CentroAcopioNoEncontradoException;
 import co.edu.escuelaing.nexovital.recursos.domain.exception.ItemInventarioNoEncontradoException;
+import co.edu.escuelaing.nexovital.recursos.domain.exception.NecesidadCubiertaException;
+import co.edu.escuelaing.nexovital.recursos.domain.model.DonacionAceptada;
 import co.edu.escuelaing.nexovital.recursos.domain.model.ItemInventario;
 import co.edu.escuelaing.nexovital.recursos.domain.port.in.RegistrarDonacionUseCase;
 import co.edu.escuelaing.nexovital.recursos.domain.port.out.CentroAcopioQueryPort;
@@ -14,26 +16,30 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.UUID;
 
 /**
- * Registra una donación: valida la cantidad, confirma que el centro y el item
- * existan, acredita el stock de forma atómica en la base y publica un evento que
- * el listener post-commit entrega al {@code PushPort}.
+ * Registers a donation capped to what the center still needs.
  *
- * <p>La transacción envuelve solo la persistencia. El push va DESPUÉS del commit
- * (regla de oro del contrato): el evento se consume con
- * {@code @TransactionalEventListener(AFTER_COMMIT)} en
- * {@link InventarioPushListener}.
+ * <p>The cap is enforced by the database, not by Java: the credit is ONE
+ * conditional statement
+ * ({@link InventarioRepository#acreditarSiCabe}: {@code SET disponible =
+ * disponible + :a WHERE requerido - disponible >= :a}). Reading the gap first is
+ * only a proposal of how much to take ({@code a = min(cantidad, faltante)}); if
+ * another donor filled part of the need in between, the statement affects 0 rows
+ * and the gap is read again. Each failed attempt means somebody else made
+ * progress, so the loop ends: either this donor credits what fits or finds the
+ * need covered and gets {@link NecesidadCubiertaException}.
  *
- * <p>El crédito NO se calcula en Java para escribirlo: se aplica con una sola
- * sentencia SQL ({@link InventarioRepository#acreditar}), de modo que dos
- * donaciones concurrentes no pierden una actualización. El valor devuelto y el
- * payload del evento se releen de la base DESPUÉS del crédito atómico
- * ({@link InventarioRepository#buscar}); así la base es la única fuente de
- * verdad, también bajo concurrencia, y el evento publica el stock real y no un
- * cálculo en Java. El evento lleva el {@code ItemInventarioDto} ya proyectado,
- * la misma forma que el módulo sirve por REST.
+ * <p>Two donors offering 10 to a need of 10: one credits 10, the other finds a
+ * gap of 0 and is rejected. Two donors offering 6 to a need of 10: one credits
+ * 6, the other only the 4 that complete it.
+ *
+ * <p>The transaction wraps only the persistence; the realtime push goes after
+ * the commit through {@link InventarioPushListener}.
  */
 @Service
 public class RegistrarDonacionUseCaseImpl implements RegistrarDonacionUseCase {
+
+    /** Safety net; every retry means another donor progressed, so it is never reached in practice. */
+    private static final int INTENTOS_MAXIMOS = 100;
 
     private final InventarioRepository inventarioRepository;
     private final CentroAcopioQueryPort centroAcopioQueryPort;
@@ -49,7 +55,7 @@ public class RegistrarDonacionUseCaseImpl implements RegistrarDonacionUseCase {
 
     @Override
     @Transactional
-    public ItemInventario donar(UUID centroAcopioId, UUID itemId, int cantidad) {
+    public DonacionAceptada donar(UUID centroAcopioId, UUID itemId, int cantidad) {
         if (cantidad < 1) {
             throw new IllegalArgumentException("La cantidad a donar debe ser un entero positivo.");
         }
@@ -57,19 +63,26 @@ public class RegistrarDonacionUseCaseImpl implements RegistrarDonacionUseCase {
             throw new CentroAcopioNoEncontradoException(centroAcopioId);
         }
 
-        // Crédito atómico en la base: UNA sentencia, nunca read-modify-write.
-        if (!inventarioRepository.acreditar(centroAcopioId, itemId, cantidad)) {
-            throw new ItemInventarioNoEncontradoException(centroAcopioId, itemId);
-        }
+        for (int intento = 0; intento < INTENTOS_MAXIMOS; intento++) {
+            ItemInventario actual = inventarioRepository.buscar(centroAcopioId, itemId)
+                    .orElseThrow(() -> new ItemInventarioNoEncontradoException(centroAcopioId, itemId));
+            int faltante = actual.getRequerido() - actual.getDisponible();
+            if (faltante <= 0) {
+                throw new NecesidadCubiertaException(centroAcopioId, itemId, actual.getNombre());
+            }
+            int aceptada = Math.min(cantidad, faltante);
 
-        // Fuente de verdad: se RELEE el item después del crédito. La entidad
-        // cacheada se descartó (`clearAutomatically`), así que esta lectura ve el
-        // stock que la base tiene ahora y no un cálculo en Java. Bajo dos
-        // donaciones concurrentes, cada transacción publica el estado que sí
-        // commiteó, nunca un valor que la base no sostiene.
-        ItemInventario acreditado = inventarioRepository.buscar(centroAcopioId, itemId)
-                .orElseThrow(() -> new ItemInventarioNoEncontradoException(centroAcopioId, itemId));
-        eventPublisher.publishEvent(new DonacionRegistradaEvento(ItemInventarioDto.fromDomain(acreditado)));
-        return acreditado;
+            // Bounded credit: ONE conditional statement. 0 rows = someone else
+            // filled part of the need after our read; read the gap again.
+            if (inventarioRepository.acreditarSiCabe(centroAcopioId, itemId, aceptada) == 1) {
+                // Source of truth: re-read after the credit (the cached entity
+                // was discarded), so the event carries the stock the database holds.
+                ItemInventario acreditado = inventarioRepository.buscar(centroAcopioId, itemId)
+                        .orElseThrow(() -> new ItemInventarioNoEncontradoException(centroAcopioId, itemId));
+                eventPublisher.publishEvent(new DonacionRegistradaEvento(ItemInventarioDto.fromDomain(acreditado)));
+                return new DonacionAceptada(acreditado, aceptada, cantidad);
+            }
+        }
+        throw new IllegalStateException("No fue posible acreditar la donación tras " + INTENTOS_MAXIMOS + " intentos");
     }
 }

@@ -76,8 +76,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import({TestClockConfig.class, PushPortDePruebaConfig.class})
 class ConfirmacionAsignacionTest extends LoginTestBase {
 
-    private static final String CIUDADANO = "ciudadano@nexovital.co";
-    private static final String CIUDADANO_PASSWORD = "ciudadano123";
+    private static final String ADMIN = "admin@nexovital.co";
+    private static final String ADMIN_PASSWORD = "admin123";
 
     /** Prefix of the items created only by this test, removed afterwards. */
     private static final String PREFIJO_PRUEBA = "Prueba US2-CONF ";
@@ -132,7 +132,7 @@ class ConfirmacionAsignacionTest extends LoginTestBase {
     @DisplayName("US2 Escenario 1: un único solicitante sobre 1 unidad confirma la asignación y el inventario queda en 0")
     void escenario1_unicoSolicitanteObtieneElRecurso() throws Exception {
         UUID itemId = sembrarItem(1);
-        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+        String token = tokenDe(ADMIN, ADMIN_PASSWORD);
 
         mockMvc.perform(despachoDeUnaUnidad(itemId, token))
                 .andExpect(status().isOk())
@@ -187,7 +187,7 @@ class ConfirmacionAsignacionTest extends LoginTestBase {
     @DisplayName("US2 Escenario 3: 0 unidades disponibles — la solicitud se rechaza de inmediato con 409 STOCK_INSUFICIENTE")
     void escenario3_recursoSinStockDisponible() throws Exception {
         UUID itemId = sembrarItem(0);
-        String token = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
+        String token = tokenDe(ADMIN, ADMIN_PASSWORD);
 
         // Lo que la API devuelve REALMENTE ante un rechazo. El AC lo redacta
         // como un mensaje de "recurso no disponible"; el endpoint responde el
