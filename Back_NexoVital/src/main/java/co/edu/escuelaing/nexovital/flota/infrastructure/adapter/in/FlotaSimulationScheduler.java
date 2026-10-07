@@ -16,14 +16,26 @@ import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * Demo driver of live fleet telemetry (EP-04.F1.US1, D-T4): every cycle it
- * nudges each {@code DISPONIBLE} unit a few tens of metres so the map shows
- * movement instead of a static photo.
+ * Simulated position feed of the fleet (EP-04.F1.US1, design D2/D3): every
+ * cycle (5 s by default) it nudges each ACTIVE unit a few tens of metres, so the
+ * map shows a fleet that moves and every unit keeps reporting.
  *
- * <p><b>Off by default.</b> {@code @ConditionalOnProperty(
- * nexovital.flota.simulacion.enabled=true)} makes the bean exist only with an
- * explicit opt-in; a deployment that inherits the local configuration never
- * starts it.
+ * <p><b>Which units.</b> Every unit except the ones in {@code MANTENIMIENTO},
+ * with a driver assigned. A unit in a mission moves too: position is data, not
+ * a state.
+ *
+ * <p><b>The device wins (D3).</b> A unit whose last report came from a real
+ * device is skipped: the driver is reporting it, and two sources would make it
+ * jump. The filter here only saves work; the rule itself is enforced by the
+ * conditional UPDATE the use case runs for a simulated report, so a device that
+ * reports between this read and the write is never overwritten. A unit owned by
+ * a device that stops reporting is therefore NOT rescued by the simulator: it
+ * loses its signal, which is exactly the signal-loss scenario.
+ *
+ * <p><b>On by property.</b> {@code @ConditionalOnProperty(
+ * nexovital.flota.simulacion.enabled=true)} makes the bean exist only when the
+ * property is {@code true}. {@code application.properties} turns it on for
+ * development and the {@code test} profile turns it off.
  *
  * <p><b>Never in {@code prod}.</b> {@code @Profile("!prod")} excludes it even if
  * the property is forced to {@code true}, the same double barrier the data
@@ -56,18 +68,19 @@ public class FlotaSimulationScheduler {
 
     @Scheduled(
             initialDelayString = "${nexovital.flota.simulacion.delay-inicial-ms:5000}",
-            fixedDelayString = "${nexovital.flota.simulacion.intervalo-ms:3000}")
+            fixedDelayString = "${nexovital.flota.simulacion.intervalo-ms:5000}")
     public void simularMovimiento() {
-        List<Ambulancia> disponibles = flotaQueryPort.consultarFlota().stream()
-                .filter(unidad -> unidad.getEstado() == EstadoAmbulancia.DISPONIBLE)
+        List<Ambulancia> simulables = flotaQueryPort.consultarFlota().stream()
+                // A unit under maintenance is not active: it does not move.
+                .filter(unidad -> unidad.getEstado() != EstadoAmbulancia.MANTENIMIENTO)
+                // A unit with no driver has no actor to report as: skip it instead
+                // of inventing one. The ownership check would refuse it anyway.
+                .filter(unidad -> unidad.getConductorId() != null)
+                // A real device is reporting this unit: the simulator steps aside.
+                .filter(unidad -> unidad.getFuentePosicion() != FuentePosicion.DEVICE)
                 .toList();
 
-        for (Ambulancia unidad : disponibles) {
-            // A unit with no driver has no actor to report as: skip it instead of
-            // inventing one. The ownership check would refuse it anyway.
-            if (unidad.getConductorId() == null) {
-                continue;
-            }
+        for (Ambulancia unidad : simulables) {
             try {
                 double rumbo = ThreadLocalRandom.current().nextDouble(0.0d, 360.0d);
                 double radianes = Math.toRadians(rumbo);
@@ -77,8 +90,7 @@ public class FlotaSimulationScheduler {
                         unidad.getId(), unidad.getConductorId(),
                         nuevaLat, nuevaLng, (int) Math.round(rumbo), FuentePosicion.SIMULADA);
             } catch (RuntimeException e) {
-                // One unit failing (e.g. claimed by a mission mid-cycle) must not
-                // abort the rest: retry on the next cycle.
+                // One unit failing must not abort the rest: retry on the next cycle.
                 LOG.warn("Fallo al simular el movimiento de la ambulancia {}", unidad.getId(), e);
             }
         }

@@ -11,6 +11,8 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -23,10 +25,20 @@ import java.util.UUID;
  * the position columns only; the domain {@link Ambulancia#actualizarPosicion}
  * keeps the same {@code estado}. A unit in a mission keeps moving.
  *
- * <p><b>Published state is re-read (EP-04.F1.US4).</b> The {@code estado} the
- * event carries is read AFTER the UPDATE, under the row lock, never taken from
- * the pre-write snapshot: a report racing with an accept must not announce a
- * unit as available once it is in a mission.
+ * <p><b>Signal (EP-04.F1.US1, D4).</b> The same UPDATE stamps the report
+ * instant and its source and clears {@code sinSenal}: a unit that reports has
+ * signal again, in the very write that moves it.
+ *
+ * <p><b>The device wins over the simulator (D3).</b> A simulated report is
+ * written with a conditional UPDATE that only applies while no real device owns
+ * the unit. When it affects 0 rows nothing is published: the device position
+ * stands.
+ *
+ * <p><b>Published state is re-read (EP-04.F1.US4).</b> The {@code estado} and
+ * the {@code version} the event carries are read AFTER the UPDATE, under the row
+ * lock, never taken from the pre-write snapshot: a report racing with an accept
+ * must not announce a unit as available once it is in a mission, and the version
+ * is exactly the one this write produced (D6).
  *
  * <p><b>Post-commit push (D-T3).</b> The position event is published inside the
  * transaction and the {@code FlotaPushListener} delivers it only after commit.
@@ -40,11 +52,14 @@ public class ReportarPosicionUseCaseImpl implements ReportarPosicionUseCase {
 
     private final AmbulanciaRepository ambulanciaRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final Clock clock;
 
     public ReportarPosicionUseCaseImpl(AmbulanciaRepository ambulanciaRepository,
-                                       ApplicationEventPublisher eventPublisher) {
+                                       ApplicationEventPublisher eventPublisher,
+                                       Clock clock) {
         this.ambulanciaRepository = ambulanciaRepository;
         this.eventPublisher = eventPublisher;
+        this.clock = clock;
     }
 
     @Override
@@ -67,11 +82,27 @@ public class ReportarPosicionUseCaseImpl implements ReportarPosicionUseCase {
         // which may already be stale (see the re-read below).
         ambulancia.actualizarPosicion(lat, lng);
 
-        // The state stays untouched by construction: the UPDATE only writes
-        // lat/lng (and the version).
-        int filas = ambulanciaRepository.actualizarPosicionAtomica(ambulanciaId, lat, lng);
-        if (filas == 0) {
-            throw new AmbulanciaNoDisponibleException(ambulanciaId);
+        Instant ahora = Instant.now(clock);
+
+        // The state stays untouched by construction: the UPDATE only writes the
+        // position columns, the report instant, its source, sinSenal = false and
+        // the version.
+        int filas;
+        if (fuente == FuentePosicion.SIMULADA) {
+            // Conditional: it does not apply to a unit a real device owns (D3).
+            filas = ambulanciaRepository.actualizarPosicionSimuladaAtomica(
+                    ambulanciaId, lat, lng, ahora);
+            if (filas == 0) {
+                // A device took the unit between the simulator's read and this
+                // write. Nothing was written, so nothing is published.
+                return ambulancia;
+            }
+        } else {
+            filas = ambulanciaRepository.actualizarPosicionAtomica(
+                    ambulanciaId, lat, lng, fuente, ahora);
+            if (filas == 0) {
+                throw new AmbulanciaNoDisponibleException(ambulanciaId);
+            }
         }
 
         // Re-read AFTER the UPDATE (EP-04.F1.US4 / EP-04.F2.US7). The state read
@@ -80,13 +111,14 @@ public class ReportarPosicionUseCaseImpl implements ReportarPosicionUseCase {
         // reach the map saying AVAILABLE *after* the ASSIGNED frame, painting a
         // busy unit as free. From the UPDATE on, this transaction holds the row
         // lock, so a concurrent state transition either committed before (and is
-        // visible here) or waits until this commit: the state read now is the one
-        // the row has when this report commits.
+        // visible here) or waits until this commit: the state and the version
+        // read now are the ones the row has when this report commits.
         Ambulancia persistida = ambulanciaRepository.buscarPorId(ambulanciaId)
                 .orElseThrow(() -> new AmbulanciaNoDisponibleException(ambulanciaId));
 
         eventPublisher.publishEvent(new PosicionActualizadaEvent(
-                ambulanciaId, lat, lng, persistida.getEstado(), heading, fuente));
+                ambulanciaId, lat, lng, persistida.getEstado(), heading, fuente,
+                false, ahora, persistida.getVersion()));
 
         return persistida;
     }
