@@ -3,9 +3,11 @@ package co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudEnCursoException;
 import co.edu.escuelaing.nexovital.flota.domain.model.Ambulancia;
 import co.edu.escuelaing.nexovital.flota.domain.model.SolicitudAmbulancia;
+import co.edu.escuelaing.nexovital.flota.domain.port.in.DeclararDisponibilidadUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.GestionarConexionUnidadUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.ListarSolicitudesPendientesDeMiAmbulanciaUseCase;
 import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in.dto.AmbulanciaDto;
+import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in.dto.DisponibilidadRequest;
 import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in.dto.SolicitudAmbulanciaDto;
 import co.edu.escuelaing.nexovital.shared.infrastructure.dto.ErrorResponse;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.Usuario;
@@ -17,6 +19,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -26,10 +29,10 @@ import java.util.UUID;
 
 /**
  * Inbound adapter of the driver's connection to the service (EP-04.F2.US1, D3
- * and D6): connect, disconnect and read the open requests the driver can still
- * answer.
+ * and D6): connect, disconnect, declare the unit available or out of service,
+ * and read the open requests the driver can still answer.
  *
- * <p>The three routes hang from {@code /api/v1/flota/ambulancias/mia}: the unit
+ * <p>The four routes hang from {@code /api/v1/flota/ambulancias/mia}: the unit
  * is always resolved from the authenticated driver, exactly as
  * {@code GET .../mia} does, so the client never sends a unit id it could forge.
  * A driver with no unit mirrors that read: 200 with JSON {@code null}.
@@ -48,14 +51,23 @@ public class ConexionFlotaController {
             "No fue posible cambiar la conexión de tu ambulancia.";
     private static final String MENSAJE_ERROR_PENDIENTES =
             "No fue posible consultar las solicitudes pendientes de tu ambulancia.";
+    private static final String MENSAJE_SERVICIO_EN_CURSO =
+            "Finaliza el servicio en curso para poder cambiar tu estado.";
+    private static final String MENSAJE_DATOS_DISPONIBILIDAD =
+            "Indique si la ambulancia queda disponible o fuera de servicio.";
+    private static final String MENSAJE_ERROR_DISPONIBILIDAD =
+            "No fue posible cambiar el estado de tu ambulancia.";
 
     private final GestionarConexionUnidadUseCase gestionarConexionUnidadUseCase;
     private final ListarSolicitudesPendientesDeMiAmbulanciaUseCase listarPendientesUseCase;
+    private final DeclararDisponibilidadUseCase declararDisponibilidadUseCase;
 
     public ConexionFlotaController(GestionarConexionUnidadUseCase gestionarConexionUnidadUseCase,
-                                   ListarSolicitudesPendientesDeMiAmbulanciaUseCase listarPendientesUseCase) {
+                                   ListarSolicitudesPendientesDeMiAmbulanciaUseCase listarPendientesUseCase,
+                                   DeclararDisponibilidadUseCase declararDisponibilidadUseCase) {
         this.gestionarConexionUnidadUseCase = gestionarConexionUnidadUseCase;
         this.listarPendientesUseCase = listarPendientesUseCase;
+        this.declararDisponibilidadUseCase = declararDisponibilidadUseCase;
     }
 
     /**
@@ -99,6 +111,39 @@ public class ConexionFlotaController {
         } catch (RuntimeException e) {
             return ResponseEntity.internalServerError()
                     .body(ErrorResponse.of("ERROR_CONEXION_FLOTA", MENSAJE_ERROR_CONEXION));
+        }
+    }
+
+    /**
+     * The driver declares their unit available or out of service ("Disponible"
+     * / "Fuera de servicio"). Only an available unit receives a new request. A
+     * unit that is attending a request cannot change it. Repeatable.
+     *
+     * @return 200 with the caller's {@code AmbulanciaDto}, or 200 with JSON
+     *         {@code null} when the caller drives no unit; 409
+     *         {@code SOLICITUD_EN_CURSO} if the unit is attending a request; 400
+     *         {@code DATOS_INVALIDOS} when {@code disponible} is missing; 500
+     *         {@code ERROR_DISPONIBILIDAD_FLOTA} if persistence fails
+     */
+    @PostMapping("/ambulancias/mia/disponibilidad")
+    @Operation(summary = "Declarar la ambulancia del conductor disponible o fuera de servicio")
+    public ResponseEntity<Object> declararDisponibilidad(@RequestBody DisponibilidadRequest request) {
+        try {
+            if (request == null || request.disponible() == null) {
+                throw new IllegalArgumentException("El campo disponible es obligatorio.");
+            }
+            Optional<Ambulancia> unidad = declararDisponibilidadUseCase.declarar(
+                    usuarioAutenticadoId(), request.disponible());
+            return ResponseEntity.ok(unidad.map(AmbulanciaDto::fromDomain).orElse(null));
+        } catch (SolicitudEnCursoException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ErrorResponse.of("SOLICITUD_EN_CURSO", MENSAJE_SERVICIO_EN_CURSO));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest()
+                    .body(ErrorResponse.of("DATOS_INVALIDOS", MENSAJE_DATOS_DISPONIBILIDAD));
+        } catch (RuntimeException e) {
+            return ResponseEntity.internalServerError()
+                    .body(ErrorResponse.of("ERROR_DISPONIBILIDAD_FLOTA", MENSAJE_ERROR_DISPONIBILIDAD));
         }
     }
 

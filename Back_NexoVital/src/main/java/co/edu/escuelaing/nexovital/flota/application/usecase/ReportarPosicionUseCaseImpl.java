@@ -2,6 +2,7 @@ package co.edu.escuelaing.nexovital.flota.application.usecase;
 
 import co.edu.escuelaing.nexovital.flota.domain.enums.FuentePosicion;
 import co.edu.escuelaing.nexovital.flota.domain.event.PosicionActualizadaEvent;
+import co.edu.escuelaing.nexovital.flota.domain.event.SenalRecuperadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.exception.AmbulanciaAjenaException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.AmbulanciaNoDisponibleException;
 import co.edu.escuelaing.nexovital.flota.domain.model.Ambulancia;
@@ -27,7 +28,10 @@ import java.util.UUID;
  *
  * <p><b>Signal (EP-04.F1.US1, D4).</b> The same UPDATE stamps the report
  * instant and its source and clears {@code sinSenal}: a unit that reports has
- * signal again, in the very write that moves it.
+ * signal again, in the very write that moves it. When that write is the one
+ * that brings the signal back, a {@link SenalRecuperadaEvent} is published too:
+ * a unit without signal is not offered new requests, so on recovery it must be
+ * offered the ones that are still open (EP-04.F2.US1).
  *
  * <p><b>The device wins over the simulator (D3).</b> A simulated report is
  * written with a conditional UPDATE that only applies while no real device owns
@@ -119,6 +123,11 @@ public class ReportarPosicionUseCaseImpl implements ReportarPosicionUseCase {
         eventPublisher.publishEvent(new PosicionActualizadaEvent(
                 ambulanciaId, lat, lng, persistida.getEstado(), heading, fuente,
                 false, ahora, persistida.getVersion()));
+        // The snapshot read at the top is the state BEFORE this write: if it had
+        // no signal, this is the report that brings it back.
+        if (ambulancia.isSinSenal()) {
+            eventPublisher.publishEvent(new SenalRecuperadaEvent(ambulanciaId));
+        }
 
         return persistida;
     }

@@ -1,6 +1,7 @@
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useToastStore } from '@/components/ui/toast';
 import { useDriverOnlineStore } from '@/features/conductor/driver-online-store';
 import { useEmergencyStore } from '@/features/emergencias/emergency-store';
 import { useFleetStore } from '@/features/flota/fleet-store';
@@ -123,6 +124,7 @@ describe('DriverConsolePage against the real backend', () => {
   afterEach(() => {
     cleanup();
     useDriverOnlineStore.setState({ online: false });
+    useToastStore.setState({ toasts: [] });
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
     localStorage.clear();
@@ -172,8 +174,13 @@ describe('DriverConsolePage against the real backend', () => {
     );
 
     expect(screen.queryByText('Misión actual')).not.toBeInTheDocument();
+    // The card leaves at once; what remains is the notice saying why.
     const rail = screen.getByRole('complementary', { name: 'Panel del conductor' });
-    expect(within(rail).getByRole('status')).toHaveTextContent(`Tomada por ${OTHER_UNIT}`);
+    expect(within(rail).queryByRole('button', { name: 'Aceptar solicitud' })).toBeNull();
+    expect(within(rail).queryByText(/Tomada por/)).toBeNull();
+    expect(useToastStore.getState().toasts.map((item) => item.message)).toContain(
+      'La solicitud ya fue aceptada por otra ambulancia.',
+    );
   });
 
   /**
@@ -258,7 +265,7 @@ describe('DriverConsolePage against the real backend', () => {
     );
   });
 
-  it('RES-4: a lost CAS is shown honestly and never as a win', async () => {
+  it('RES-4: a lost CAS removes the row at once, with its notice, and is never a win', async () => {
     const user = userEvent.setup();
     const REQUEST_ID = '8b6f2f0e-0000-4000-8000-0000000000c2';
     const row = notifiedRegistryRow(REQUEST_ID);
@@ -279,10 +286,15 @@ describe('DriverConsolePage against the real backend', () => {
     const detail = within(rail).getByTestId('solicitud-detail');
     await user.click(within(detail).getByRole('button', { name: 'Aceptar' }));
 
-    // The server's own message is surfaced; the UI never fabricates a win.
+    // The row does not stay "Pendiente" with live buttons: it leaves the
+    // registry, its detail closes, and one notice says another unit took it.
     await waitFor(() =>
-      expect(within(detail).getByRole('status')).toHaveTextContent('Otra unidad aceptó primero.'),
+      expect(useToastStore.getState().toasts.map((item) => item.message)).toContain(
+        'La solicitud ya fue aceptada por otra ambulancia.',
+      ),
     );
+    await waitFor(() => expect(within(rail).queryByTestId('solicitud-detail')).toBeNull());
+    expect(within(rail).queryByRole('list', { name: 'Lista de solicitudes' })).toBeNull();
     expect(screen.queryByText('Misión actual')).not.toBeInTheDocument();
     expect(screen.queryByText('Te la asignaron')).not.toBeInTheDocument();
   });

@@ -62,6 +62,10 @@ const ICON_PATHS = {
     '<path d="M12 16h.01"/><path d="M12 8v4"/><path d="M15.31 2a2 2 0 0 1 1.41.59l4.69 4.69A2 2 0 0 1 22 8.69v6.62a2 2 0 0 1-.59 1.41l-4.69 4.69a2 2 0 0 1-1.41.59H8.69a2 2 0 0 1-1.41-.59l-4.69-4.69A2 2 0 0 1 2 15.31V8.69a2 2 0 0 1 .59-1.41l4.69-4.69A2 2 0 0 1 8.69 2z"/>',
   info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
   user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  // Power off — the badge of a unit that is out of service: in maintenance, or
+  // with a driver who is disconnected from the service.
+  powerOff:
+    '<path d="M18.36 6.64A9 9 0 0 1 20.77 15"/><path d="M6.16 6.16a9 9 0 1 0 12.68 12.68"/><path d="M12 2v4"/><path d="m2 2 20 20"/>',
   // Cut signal — the badge of a unit that stopped reporting its position.
   wifiOff:
     '<path d="M12 20h.01"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/><path d="M5 12.859a10 10 0 0 1 5.17-2.69"/><path d="M19 12.859a10 10 0 0 0-2.007-1.523"/><path d="M2 8.82a15 15 0 0 1 4.177-2.643"/><path d="M22 8.82a15 15 0 0 0-11.288-3.764"/><path d="m2 2 20 20"/>',
@@ -78,6 +82,7 @@ const AMBULANCE_GLYPH = strokeGlyph(ICON_PATHS.ambulance);
 const CHECK_GLYPH = strokeGlyph(ICON_PATHS.check);
 const CLOCK_GLYPH = strokeGlyph(ICON_PATHS.clock);
 const NO_SIGNAL_GLYPH = strokeGlyph(ICON_PATHS.wifiOff);
+const OUT_OF_SERVICE_GLYPH = strokeGlyph(ICON_PATHS.powerOff);
 const USER_GLYPH = strokeGlyph(ICON_PATHS.user);
 
 /** Centre badge glyph per traffic light: shape and colour, never colour alone. */
@@ -123,9 +128,16 @@ function buildMarkerIcon(html: string, size: number): L.DivIcon {
  *
  * The mockup does not rotate vehicles, so there is no heading transform. The
  * shape and colours come from the `nv-marker--{state}` CSS classes; only the
- * badge icon (check vs clock) is decided here, because AVAILABLE is the free
- * variant and every other state is busy. MAINTENANCE reuses the busy variant
- * (the mockup does not draw it separately).
+ * badge icon is decided here. AVAILABLE is the free variant (check) and every
+ * other state is drawn on the busy circle (clock).
+ *
+ * A unit that is out of service keeps the busy circle (the mockup does not draw
+ * it separately) but carries a power-off badge instead of the clock, so it is
+ * not read as "attending a service". Two things put a unit there: MAINTENANCE,
+ * and a driver who is disconnected from the service (`conectada === false`,
+ * EP-04.F2.US1). A disconnected unit takes the `nv-marker--maintenance` class
+ * whatever its state: an available unit nobody is driving must not be painted
+ * as available.
  *
  * A unit that lost its signal (`sinSenal`, EP-04.F1.US1) stays on the map at
  * its last known position: `nv-marker--nosignal` turns the circle gray and the
@@ -146,14 +158,21 @@ export function ambulanceIcon(
   dim = false,
   label?: string,
 ): L.DivIcon {
-  const stateClass = `nv-marker--${ambulance.estado.toLowerCase()}`;
+  const outOfService = ambulance.estado === 'MAINTENANCE' || ambulance.conectada === false;
+  const stateClass = outOfService
+    ? 'nv-marker--maintenance'
+    : `nv-marker--${ambulance.estado.toLowerCase()}`;
   const selectedClass = selected ? ' nv-marker--selected' : '';
   const simulatedClass = ambulance.source === 'simulated' ? ' nv-marker--sim' : '';
   const notifiedClass = notified ? ' nv-marker--notified' : '';
   const dimClass = dim ? ' nv-marker--dim' : '';
   const noSignal = ambulance.sinSenal === true;
   const signalClass = noSignal ? ' nv-marker--nosignal' : '';
-  const stateBadge = ambulance.estado === 'AVAILABLE' ? CHECK_GLYPH : CLOCK_GLYPH;
+  const stateBadge = outOfService
+    ? OUT_OF_SERVICE_GLYPH
+    : ambulance.estado === 'AVAILABLE'
+      ? CHECK_GLYPH
+      : CLOCK_GLYPH;
   const badge = noSignal ? NO_SIGNAL_GLYPH : stateBadge;
   const html =
     `<div class="nv-marker nv-marker--unit ${stateClass}${signalClass}${selectedClass}${simulatedClass}${notifiedClass}${dimClass}">` +

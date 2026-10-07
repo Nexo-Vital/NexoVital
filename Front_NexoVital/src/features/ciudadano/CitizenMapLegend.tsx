@@ -4,6 +4,7 @@ import {
   Clock,
   Cross,
   OctagonAlert,
+  PowerOff,
   TriangleAlert,
   WifiOff,
 } from 'lucide-react';
@@ -36,12 +37,10 @@ const LEVEL_ICON: Record<CitizenCenterLevel, typeof CircleCheck> = {
 const UNIT_ICON: Record<CitizenUnitStatus, typeof CircleCheck> = {
   free: CircleCheck,
   busy: Clock,
-  // MAINTENANCE maps onto the busy variant on the map, so the swatch matches it.
-  maintenance: Clock,
+  // An out-of-service unit is drawn on the busy circle; the badge icon is what
+  // tells the two apart, here and on the map pin.
+  maintenance: PowerOff,
 };
-
-/** The legend omits the maintenance row: the mockup only draws free/busy. */
-const LEGEND_UNIT_ORDER = CITIZEN_UNIT_ORDER.filter((status) => status !== 'maintenance');
 
 interface CitizenMapLegendProps {
   counts: CitizenCenterCounts;
@@ -55,8 +54,12 @@ interface CitizenMapLegendProps {
  * so the legend cannot drift from the map.
  *
  * A unit without signal is drawn gray on the map whatever its state, so it is
- * counted in its own "Sin señal" row and NOT in free/busy: each row counts the
- * pins of that colour.
+ * counted in its own "Sin señal" row and NOT in the other three: each row counts
+ * the pins drawn that way.
+ *
+ * "Fuera de servicio" counts the units that cannot take a request for a reason
+ * other than being busy: a disconnected driver (EP-04.F2.US1) or maintenance.
+ * The four rows always add up to the fleet.
  *
  * The card collapses to a single pill so it does not cover the map on a phone:
  * the toggle header is the only interactive part (the rest stays pointer-transparent).
@@ -153,7 +156,7 @@ export function CitizenMapLegend({ counts, units }: CitizenMapLegendProps) {
             Ambulancias
           </h4>
           <ul className="flex list-none flex-col gap-1.5 p-0">
-            {LEGEND_UNIT_ORDER.map((status) => {
+            {CITIZEN_UNIT_ORDER.map((status) => {
               const meta = CITIZEN_UNIT_META[status];
               const Icon = UNIT_ICON[status];
               return (

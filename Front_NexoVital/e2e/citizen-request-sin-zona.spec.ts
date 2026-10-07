@@ -61,14 +61,47 @@ async function login(page: Page, account: { email: string; password: string }): 
 }
 
 /**
- * Connects the driver to the service. The console starts DISCONNECTED on every
- * load (the connection state is in memory only) and surfaces no request while it
- * is: a driver has to press "Conectarse" before an offer can reach the inbox.
+ * Leaves the driver connected to the service, whatever state the unit is in.
+ *
+ * The connection is DATA of the unit on the server (EP-04.F2.US1): the console
+ * shows what the server holds and surfaces no request while disconnected. A unit
+ * is born connected, and it is disconnected when its driver's last realtime
+ * session ends, which is what closing the page of an earlier scenario does. So
+ * the same driver can open the console already connected or disconnected.
+ *
+ * The buttons stay disabled until the console has read its unit, so the helper
+ * waits for one of the two settled states before deciding, and presses
+ * "Conectarse" only when the unit is disconnected.
  */
 async function goOnline(page: Page): Promise<void> {
   const unit = page.getByRole('region', { name: 'Tu ambulancia' });
-  await unit.getByRole('button', { name: 'Conectarse', exact: true }).click();
-  await expect(unit.getByText('En línea', { exact: true })).toBeVisible({ timeout: 10_000 });
+  const connected = unit.getByText('En línea', { exact: true });
+  const connect = unit.getByRole('button', { name: 'Conectarse', exact: true });
+  await expect(async () => {
+    if (await connected.isVisible()) {
+      return;
+    }
+    await expect(connect).toBeEnabled({ timeout: 500 });
+  }).toPass({ timeout: 15_000 });
+  if (!(await connected.isVisible())) {
+    await connect.click();
+  }
+  await expect(connected).toBeVisible({ timeout: 10_000 });
+  // A request only reaches a unit that is connected AND has signal. A driver of
+  // an earlier scenario left its unit without signal, and it recovers it with
+  // the first position report after connecting. Wait until the SERVER says the
+  // unit can receive a request, so the next step never races that report.
+  await expect(async () => {
+    const mia = await page.evaluate(async (key) => {
+      const token = sessionStorage.getItem(key);
+      const response = await fetch('/api/v1/flota/ambulancias/mia', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return response.ok ? ((await response.json()) as Record<string, unknown> | null) : null;
+    }, TOKEN_KEY);
+    expect(mia?.conectada).toBe(true);
+    expect(mia?.sinSenal).not.toBe(true);
+  }).toPass({ timeout: 15_000 });
 }
 
 /** Signs in as a driver, waits for the console plus its socket and connects. */

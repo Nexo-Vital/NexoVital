@@ -726,7 +726,9 @@ describe('CitizenMapPage', () => {
   it('does not start a search with no available units and says so', () => {
     renderPage({ ambulancias: [amb('A-09', 'ASSIGNED'), amb('A-15', 'EN_ROUTE')] });
 
-    expect(screen.getByText('No hay ambulancias disponibles en este momento.')).toBeInTheDocument();
+    expect(
+      screen.getByText('No hay ambulancias conectadas y disponibles en este momento.'),
+    ).toBeInTheDocument();
 
     // With no available units the button is disabled with its reason visible, so
     // nothing is clickable and inert (C4).
@@ -734,7 +736,7 @@ describe('CitizenMapPage', () => {
     expect(requestButton).toBeDisabled();
     expect(requestButton).toHaveAttribute(
       'title',
-      'No hay ambulancias disponibles en este momento.',
+      'No hay ambulancias conectadas y disponibles en este momento.',
     );
 
     fireEvent.click(requestButton);

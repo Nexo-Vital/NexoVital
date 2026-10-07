@@ -3,6 +3,7 @@ import { formatCountdown } from '@/lib/format';
 import { distanceKm } from '@/lib/geo';
 import type { SolicitudBroadcastPayload } from '@/shared/realtime';
 import type { Ambulancia, Ubicacion } from '@/types/domain';
+import { unitCanReceiveRequest } from './citizen-view';
 
 /**
  * Citizen "ask for an ambulance" projection.
@@ -31,7 +32,7 @@ export const CITIZEN_REQUEST_LABEL = 'Solicitud de ambulancia';
 export const CITIZEN_REQUEST_REASONS = {
   noLocation:
     'No pudimos obtener tu ubicación. Activa el GPS del dispositivo o marca el punto de recogida en el mapa.',
-  noUnits: 'No hay ambulancias disponibles en este momento.',
+  noUnits: 'No hay ambulancias conectadas y disponibles en este momento.',
   failed: 'No se pudo enviar la solicitud. Intenta de nuevo.',
 } as const;
 
@@ -73,14 +74,17 @@ export function citizenSceneLabel(
     : `Tu ubicación actual · ${coordinates}`;
 }
 
-/** Total units currently AVAILABLE; drives the "no impossible search" gate. */
+/**
+ * Units a new request would reach right now: available, with a connected driver
+ * and with signal (EP-04.F2.US1). It drives the "no impossible search" gate.
+ */
 export function countAvailableUnits(units: Ambulancia[]): number {
-  return units.filter((unit) => unit.estado === 'AVAILABLE').length;
+  return units.filter(unitCanReceiveRequest).length;
 }
 
-/** Every currently AVAILABLE unit: the dispatch broadcasts to all of them. */
+/** Every unit a new request would reach: the dispatch broadcasts to all of them. */
 export function availableUnits(units: Ambulancia[]): Ambulancia[] {
-  return units.filter((unit) => unit.estado === 'AVAILABLE');
+  return units.filter(unitCanReceiveRequest);
 }
 
 /** Available units nearest to the citizen, nearest first, capped at `limit`. */

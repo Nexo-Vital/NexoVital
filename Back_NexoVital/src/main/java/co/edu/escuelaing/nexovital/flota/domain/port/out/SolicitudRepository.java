@@ -77,4 +77,28 @@ public interface SolicitudRepository {
      * unit was never notified of does not qualify, whatever its state.
      */
     List<SolicitudAmbulancia> listarPendientesNotificadasA(UUID ambulanciaId, Instant ahora);
+
+    /**
+     * Open requests a unit was NOT notified of (EP-04.F2.US1): PENDING, with
+     * the accept window still open at {@code ahora}, and without
+     * {@code ambulanciaId} among the notified units. Oldest first. They are the
+     * requests a unit that has just become eligible can still be offered.
+     */
+    List<SolicitudAmbulancia> listarPendientesNoNotificadasA(UUID ambulanciaId, Instant ahora);
+
+    /**
+     * Adds {@code ambulanciaId} to the notified units of a request, only if the
+     * request is still PENDING, its accept window is still open at
+     * {@code ahora} and the unit is not notified yet. Nothing else changes: the
+     * request keeps its state and its original {@code timeoutEn}.
+     *
+     * <p>It is a versioned write: if the request is accepted, cancelled or
+     * expired concurrently, this write fails with a concurrency exception
+     * instead of touching a request that is no longer open.
+     *
+     * @return the request as it is after the change, or empty when it no longer
+     *         qualified and nothing was written
+     */
+    Optional<SolicitudAmbulancia> incorporarNotificadaSiSigueAbierta(UUID idSolicitud, UUID ambulanciaId,
+                                                                    Instant ahora);
 }

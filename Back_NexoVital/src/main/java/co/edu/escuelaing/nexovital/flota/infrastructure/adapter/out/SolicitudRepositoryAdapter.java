@@ -105,6 +105,42 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
                 .toList();
     }
 
+    @Override
+    public List<SolicitudAmbulancia> listarPendientesNoNotificadasA(UUID ambulanciaId, Instant ahora) {
+        return jpaRepository
+                .buscarPendientesNoNotificadasA(ambulanciaId, EstadoSolicitud.PENDIENTE, ahora).stream()
+                .map(SolicitudRepositoryAdapter::toDomain)
+                .toList();
+    }
+
+    /**
+     * The entity is loaded, the unit is appended to its notified collection and
+     * the change is flushed at once. Changing the collection bumps the row
+     * {@code @Version} with the usual {@code WHERE version = ?} check, and every
+     * state transition of a request bumps that version too: if the request moved
+     * after it was read here, the flush fails with an optimistic-lock exception
+     * and nothing is written. Only the collection is touched; the state and the
+     * deadline are never rewritten.
+     */
+    @Override
+    @Transactional
+    public Optional<SolicitudAmbulancia> incorporarNotificadaSiSigueAbierta(UUID idSolicitud,
+                                                                           UUID ambulanciaId,
+                                                                           Instant ahora) {
+        Optional<SolicitudJpaEntity> encontrada = jpaRepository.findById(idSolicitud);
+        if (encontrada.isEmpty()) {
+            return Optional.empty();
+        }
+        SolicitudJpaEntity entity = encontrada.get();
+        boolean abierta = entity.getEstado() == EstadoSolicitud.PENDIENTE
+                && entity.getTimeoutEn().isAfter(ahora);
+        if (!abierta || entity.getAmbulanciasNotificadas().contains(ambulanciaId)) {
+            return Optional.empty();
+        }
+        entity.getAmbulanciasNotificadas().add(ambulanciaId);
+        return Optional.of(toDomain(jpaRepository.saveAndFlush(entity)));
+    }
+
     private static SolicitudAmbulancia toDomain(SolicitudJpaEntity entity) {
         return SolicitudAmbulancia.restaurar(
                 entity.getId(),

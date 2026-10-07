@@ -2,6 +2,7 @@ import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useToastStore } from '@/components/ui/toast';
 import { useEmergencyStore } from '@/features/emergencias/emergency-store';
+import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
 import {
   DESTINATIONS,
   type SolicitudBroadcastPayload,
@@ -10,10 +11,16 @@ import {
 import { FakeRealtimePort } from '@/test/fake-realtime-port';
 import type { SolicitudAmbulancia } from '@/types/domain';
 import {
+  TAKEN_BY_OTHER_MESSAGE,
   UNIT_UNRESOLVED_REASON,
   UNKNOWN_REQUEST_REASON,
   useSolicitudInbox,
 } from './use-solicitud-inbox';
+
+/** Messages of the notices currently on screen. */
+function toastMessages(): string[] {
+  return useToastStore.getState().toasts.map((item) => item.message);
+}
 
 const BROADCAST: SolicitudBroadcastPayload = {
   type: 'solicitud.broadcast',
@@ -56,6 +63,7 @@ describe('useSolicitudInbox', () => {
     // Both stores live at module scope: clear them so no case leaks into another.
     useToastStore.setState({ toasts: [] });
     useEmergencyStore.setState({ items: [] });
+    useSolicitudesStore.setState({ items: [] });
     vi.unstubAllEnvs();
   });
 
@@ -123,7 +131,7 @@ describe('useSolicitudInbox', () => {
     expect(result.current.mission?.requestId).toBe('REQ-1');
   });
 
-  it('shows who took the request when another unit wins', () => {
+  it('drops the request at once, with its notice, when another unit wins', () => {
     const { port, result } = setup();
 
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
@@ -136,12 +144,15 @@ describe('useSolicitudInbox', () => {
       }),
     );
 
-    expect(result.current.phase).toBe('taken');
-    expect(result.current.outcomeMessage).toBe('Tomada por AMB-09');
+    // Nothing lingers: no "taken" card waiting to be dismissed.
+    expect(result.current.broadcast).toBeNull();
+    expect(result.current.phase).toBe('idle');
+    expect(result.current.outcomeMessage).toBeNull();
     expect(result.current.mission).toBeNull();
+    expect(toastMessages()).toContain(TAKEN_BY_OTHER_MESSAGE);
   });
 
-  it('shows who took the request when a later accept is rejected', () => {
+  it('drops the request at once when a later accept is refused as already taken', () => {
     const { port, result } = setup();
 
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
@@ -155,8 +166,10 @@ describe('useSolicitudInbox', () => {
       }),
     );
 
-    expect(result.current.phase).toBe('taken');
-    expect(result.current.outcomeMessage).toBe('Tomada por AMB-09');
+    expect(result.current.broadcast).toBeNull();
+    expect(result.current.phase).toBe('idle');
+    expect(result.current.outcomeMessage).toBeNull();
+    expect(toastMessages()).toContain(TAKEN_BY_OTHER_MESSAGE);
   });
 
   it('publishes a reject and clears the request', () => {
@@ -560,6 +573,7 @@ describe('useSolicitudInbox against the backend (no demo mode)', () => {
     cleanup();
     useToastStore.setState({ toasts: [] });
     useEmergencyStore.setState({ items: [] });
+    useSolicitudesStore.setState({ items: [] });
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
     localStorage.clear();
@@ -592,7 +606,7 @@ describe('useSolicitudInbox against the backend (no demo mode)', () => {
     expect(result.current.mission?.requestId).toBe(REAL_REQUEST);
   });
 
-  it('shows a lost CAS as taken when the backend answers 409', async () => {
+  it('a lost CAS (409) drops the request at once, with its notice', async () => {
     enableBackend();
     fetchMock.mockResolvedValue(
       mockResponse(409, {
@@ -607,9 +621,58 @@ describe('useSolicitudInbox against the backend (no demo mode)', () => {
       result.current.accept();
     });
 
-    expect(result.current.phase).toBe('rejected');
-    expect(result.current.outcomeMessage).toBe('Solicitud ya asignada a otra ambulancia.');
+    // It does not stay on screen as a refused card with the server's text.
+    expect(result.current.broadcast).toBeNull();
+    expect(result.current.phase).toBe('idle');
+    expect(result.current.outcomeMessage).toBeNull();
     expect(result.current.mission).toBeNull();
+    expect(toastMessages()).toEqual(expect.arrayContaining([TAKEN_BY_OTHER_MESSAGE]));
+    // One notice, even though the loss can be learnt more than once.
+    expect(toastMessages().filter((message) => message === TAKEN_BY_OTHER_MESSAGE)).toHaveLength(1);
+  });
+
+  it('SOLICITUD_NO_ASIGNABLE (the request was already assigned) is the same loss', async () => {
+    enableBackend();
+    fetchMock.mockResolvedValue(
+      mockResponse(409, {
+        codigo: 'SOLICITUD_NO_ASIGNABLE',
+        mensaje: 'La solicitud ya no admite esa transición.',
+      }),
+    );
+    const { port, result } = setupBackend();
+
+    act(() => port.emit(DESTINATIONS.solicitudes, REAL_BROADCAST));
+    await act(async () => {
+      result.current.accept();
+    });
+
+    expect(result.current.broadcast).toBeNull();
+    expect(result.current.phase).toBe('idle');
+    expect(toastMessages()).toContain(TAKEN_BY_OTHER_MESSAGE);
+    // The server's technical text is not what the driver reads.
+    expect(toastMessages()).not.toContain('La solicitud ya no admite esa transición.');
+  });
+
+  it('another refusal (the unit is busy) is NOT announced as taken by another unit', async () => {
+    enableBackend();
+    fetchMock.mockResolvedValue(
+      mockResponse(409, {
+        codigo: 'AMBULANCIA_NO_DISPONIBLE',
+        mensaje: 'No hay ambulancias disponibles para atender la solicitud.',
+      }),
+    );
+    const { port, result } = setupBackend();
+
+    act(() => port.emit(DESTINATIONS.solicitudes, REAL_BROADCAST));
+    await act(async () => {
+      result.current.accept();
+    });
+
+    expect(result.current.phase).toBe('rejected');
+    expect(result.current.outcomeMessage).toBe(
+      'No hay ambulancias disponibles para atender la solicitud.',
+    );
+    expect(toastMessages()).not.toContain(TAKEN_BY_OTHER_MESSAGE);
   });
 
   it('treats ganador=false as a loss even on a 200 response', async () => {
@@ -622,8 +685,10 @@ describe('useSolicitudInbox against the backend (no demo mode)', () => {
       result.current.accept();
     });
 
-    expect(result.current.phase).toBe('taken');
+    expect(result.current.broadcast).toBeNull();
+    expect(result.current.phase).toBe('idle');
     expect(result.current.mission).toBeNull();
+    expect(toastMessages()).toContain(TAKEN_BY_OTHER_MESSAGE);
   });
 
   it('RES-3: respondTo answers a selected registry row by its OWN id through REST', async () => {
@@ -667,12 +732,10 @@ describe('useSolicitudInbox against the backend (no demo mode)', () => {
       result.current.respondTo(notifiedRow(), 'accept');
     });
 
-    expect(result.current.responseOutcome).toEqual({
-      requestId: REAL_REQUEST,
-      phase: 'rejected',
-      message: 'Solicitud ya asignada a otra ambulancia.',
-    });
+    // The row does not keep an outcome on screen: it is gone, with its notice.
+    expect(result.current.responseOutcome).toBeNull();
     expect(result.current.mission).toBeNull();
+    expect(toastMessages()).toContain(TAKEN_BY_OTHER_MESSAGE);
   });
 
   it('rejects through REST and records the rejection', async () => {
@@ -821,9 +884,81 @@ describe('useSolicitudInbox against the backend (no demo mode)', () => {
       }),
     );
 
-    expect(result.current.phase).toBe('taken');
+    expect(result.current.broadcast).toBeNull();
+    expect(result.current.phase).toBe('idle');
     expect(result.current.mission).toBeNull();
-    expect(result.current.outcomeMessage).toBe('Tomada por 8b6f2f0e-0000-4000-8000-0000000000ff');
+    expect(result.current.outcomeMessage).toBeNull();
+    expect(toastMessages()).toContain(TAKEN_BY_OTHER_MESSAGE);
+  });
+
+  it('the backend ASIGNADA frame of another unit drops the card at once', () => {
+    enableBackend();
+    const { port, result } = setupBackend();
+
+    act(() => port.emit(DESTINATIONS.solicitudes, REAL_BROADCAST));
+    // The server tells every notified unit who won (EP-04.F2.US4, C-03).
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, {
+        solicitudId: REAL_REQUEST,
+        emergenciaId: null,
+        zonaId: null,
+        estado: 'ASIGNADA',
+        ambulanciasNotificadas: [],
+        ambulanciaAsignadaId: '8b6f2f0e-0000-4000-8000-0000000000ff',
+        ubicacion: null,
+        llegada: false,
+      }),
+    );
+
+    expect(result.current.broadcast).toBeNull();
+    expect(result.current.phase).toBe('idle');
+    expect(result.current.mission).toBeNull();
+    expect(toastMessages()).toContain(TAKEN_BY_OTHER_MESSAGE);
+  });
+
+  it('that frame also drops a request that was only a registry row', () => {
+    enableBackend();
+    const { port, result } = setupBackend();
+    useSolicitudesStore.getState().upsert(notifiedRow());
+
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, {
+        solicitudId: REAL_REQUEST,
+        emergenciaId: null,
+        zonaId: null,
+        estado: 'ASIGNADA',
+        ambulanciasNotificadas: [],
+        ambulanciaAsignadaId: '8b6f2f0e-0000-4000-8000-0000000000ff',
+        ubicacion: null,
+        llegada: false,
+      }),
+    );
+
+    expect(useSolicitudesStore.getState().items).toEqual([]);
+    expect(result.current.broadcast).toBeNull();
+    expect(toastMessages()).toContain(TAKEN_BY_OTHER_MESSAGE);
+  });
+
+  it('the ASIGNADA frame of THIS unit is never read as a loss', () => {
+    enableBackend();
+    const { port, result } = setupBackend();
+
+    act(() => port.emit(DESTINATIONS.solicitudes, REAL_BROADCAST));
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, {
+        solicitudId: REAL_REQUEST,
+        emergenciaId: null,
+        zonaId: null,
+        estado: 'ASIGNADA',
+        ambulanciasNotificadas: [],
+        ambulanciaAsignadaId: REAL_UNIT,
+        ubicacion: null,
+        llegada: false,
+      }),
+    );
+
+    expect(result.current.mission?.requestId).toBe(REAL_REQUEST);
+    expect(toastMessages()).not.toContain(TAKEN_BY_OTHER_MESSAGE);
   });
 
   it('drops the driver card on the backend CANCELADA wire frame', () => {

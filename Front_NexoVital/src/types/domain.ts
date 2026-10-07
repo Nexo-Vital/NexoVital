@@ -112,6 +112,14 @@ export interface Ambulancia {
   /** ISO instant of the last accepted position report; `null` if it never reported. */
   ultimaPosicionEn?: string | null;
   /**
+   * `false` while the driver is disconnected from the service (EP-04.F2.US1).
+   * Like the signal, it is DATA and not a state: the unit keeps its `estado`.
+   * The server owns it, and only a unit that is available, connected and has
+   * signal receives a new request. Absent means "connected": demo fixtures, the
+   * dev relay and a backend that predates the field do not carry it.
+   */
+  conectada?: boolean;
+  /**
    * Row version the backend stamps on every write of the unit (position, state
    * change, signal loss). `GET /flota/ambulancias` and every `/topic/flota`
    * frame carry it, so a reader can discard a frame older than the one it

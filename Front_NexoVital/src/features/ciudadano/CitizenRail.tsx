@@ -10,6 +10,7 @@ import {
 import { unitPlateLabel } from '@/features/seguimiento/tracking';
 import { cn } from '@/lib/utils';
 import type { CentroAyuda } from '@/types/domain';
+import { CITIZEN_REQUEST_REASONS } from './citizen-request';
 import {
   CENTER_LEVEL_STYLE,
   CITIZEN_LEVEL_META,
@@ -38,9 +39,10 @@ const ACTION_BUTTON_CLASS =
 
 /**
  * The three citizen actions. "Pedir ambulancia" is live and calls the request
- * action, but it is disabled while no unit is available: with zero available
- * units the search could never be answered, so the button must not be clickable
- * and inert. "Donar suministros" opens the donation center PICKER — never a
+ * action, but it is disabled while no unit could receive the request (available,
+ * with a connected driver and with signal, EP-04.F2.US1): with none of them the
+ * search could never be answered, so the button must not be clickable and
+ * inert. "Donar suministros" opens the donation center PICKER — never a
  * pre-chosen center, the citizen selects one (list or map). It is disabled with
  * its reason only when no center declares a scarce requirement, so a back-mode
  * map (empty inventory) never offers a dead end. "Reportar zona afectada" opens
@@ -84,7 +86,7 @@ function CitizenRoleActions({
         type="button"
         onClick={onRequest}
         disabled={noUnitsAvailable}
-        title={noUnitsAvailable ? 'No hay ambulancias disponibles en este momento.' : undefined}
+        title={noUnitsAvailable ? CITIZEN_REQUEST_REASONS.noUnits : undefined}
         className={cn(ACTION_BUTTON_CLASS, 'bg-nv-red-600 text-white')}
       >
         <Ambulance className="size-5" aria-hidden />
@@ -136,7 +138,7 @@ function CitizenRoleActions({
 
       {availableCount === 0 && (
         <p role="status" className="text-critical text-xs">
-          No hay ambulancias disponibles en este momento.
+          {CITIZEN_REQUEST_REASONS.noUnits}
         </p>
       )}
 

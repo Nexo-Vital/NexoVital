@@ -1,5 +1,5 @@
 import { Check } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CitizenSummaryChips } from '@/features/ciudadano/CitizenSummaryChips';
 import { formatCoordinates } from '@/features/ciudadano/citizen-request';
 import {
@@ -9,13 +9,18 @@ import {
 } from '@/features/ciudadano/citizen-view';
 import { DriverRail } from '@/features/conductor/DriverRail';
 import { type DriverAlert, useDriverAlertsStore } from '@/features/conductor/driver-alerts-store';
-import { useDriverOnlineStore } from '@/features/conductor/driver-online-store';
 import { resolveDriverAmbulanceId } from '@/features/conductor/driver-session';
 import { DRIVER_STATUS_META, type DriverStatus } from '@/features/conductor/driver-status';
+import { fetchHistorialSolicitudes } from '@/features/conductor/history-api';
+import { fetchSolicitudesPendientes } from '@/features/conductor/pending-api';
 import {
   canRespondToSolicitud,
   solicitudResponseBlockReason,
 } from '@/features/conductor/solicitud-response';
+import {
+  DISCONNECT_BLOCKED_REASON,
+  useDriverConnection,
+} from '@/features/conductor/use-driver-connection';
 import {
   UNIT_UNRESOLVED_REASON,
   useSolicitudInbox,
@@ -68,6 +73,10 @@ import type {
 
 /** Stable empty list so the map props do not change identity every render. */
 const NO_NOTIFIED_UNITS: readonly string[] = [];
+
+/** Shown on a pending row while this unit is attending another request. */
+const UNIT_BUSY_REASON =
+  'Tu ambulancia está atendiendo un servicio: no puede tomar otra solicitud.';
 
 interface DriverConsolePageProps {
   /** Injectable for tests; defaults to the app realtime port. */
@@ -131,16 +140,12 @@ export default function DriverConsolePage({
   const unitResolved = unitId !== '';
 
   const location = useDeviceLocation();
-  // Connection lives in a store, not page state, so it survives navigation and a
-  // reload starts disconnected. It gates only the offer surface, never the
-  // realtime transport (flota/emergencias keep syncing).
-  const online = useDriverOnlineStore((state) => state.online);
-  const setOnline = useDriverOnlineStore((state) => state.goOnline);
-  const setOffline = useDriverOnlineStore((state) => state.goOffline);
   // The shell writes this when the driver opens a bell notification; the effect
   // below consumes it with the page's own selection/centering logic.
   const focusRequestId = useDriverAlertsStore((state) => state.focusRequestId);
-  const [status, setStatus] = useState<DriverStatus>('OFF_DUTY');
+  // Declared availability where no server owns it (demo mode, or a unit that
+  // does not carry the connection): "Disponible" or "Fuera de servicio".
+  const [localAvailable, setLocalAvailable] = useState(true);
   const [hasCentered, setHasCentered] = useState(false);
   const [selectedSolicitud, setSelectedSolicitud] = useState<SolicitudAmbulancia | null>(null);
   const [mapFocus, setMapFocus] = useState<Ubicacion | null>(null);
@@ -193,6 +198,35 @@ export default function DriverConsolePage({
       });
   }, []);
   useRealtimeReconnect(ambulancias === undefined && !demo ? port : null, reloadFleet);
+  /*
+    The mount read above can leave before the realtime channel is up. That is
+    the normal order after a page reload: the old session is ending, the server
+    disconnects the unit and publishes it, and this page is not subscribed yet,
+    so a snapshot taken a moment too early would show the unit connected and the
+    frame that corrects it would never arrive. The fleet is therefore read once
+    more when the channel connects for the FIRST time after mount. A channel
+    that was already up needs nothing, and later drops belong to
+    `useRealtimeReconnect`.
+  */
+  useEffect(() => {
+    if (!port || demo || ambulancias !== undefined) {
+      return;
+    }
+    let replayed = false;
+    let settled = false;
+    return port.onStateChange((state) => {
+      // `onStateChange` replays the current state on subscribe.
+      if (!replayed) {
+        replayed = true;
+        settled = state === 'CONNECTED';
+        return;
+      }
+      if (!settled && state === 'CONNECTED') {
+        settled = true;
+        reloadFleet();
+      }
+    });
+  }, [port, demo, ambulancias, reloadFleet]);
   // Same rule for emergencies: a zone reported (or closed) while the channel was
   // down is only recovered by reading `GET /emergencias` again. The map and the
   // inventory re-read themselves inside `useMapData` and `useInventario`.
@@ -317,33 +351,220 @@ export default function DriverConsolePage({
     fallback is never reported, see `usePositionReport`). With no unit either,
     `effectivePosition` stays null and the UI keeps its honest "Sin ubicación".
   */
+  /*
+    Connection (EP-04.F2.US1, D3). Against the backend it is DATA of the unit:
+    `online` is the unit's `conectada` as the server last reported it, and the
+    two buttons are REST commands. The server also disconnects the unit when the
+    driver's last realtime session ends (closed tab, reload, logout), so after a
+    reload the console reads its unit and shows what the server holds instead of
+    assuming anything. The unit the server answers a command with is adopted into
+    the fleet store by version, because the same change travels on /topic/flota
+    and either of the two can land first.
+
+    In demo mode there is no backend and the connection stays the local toggle.
+    Either way it gates only the offer surface and the position report, never the
+    realtime transport (flota and emergencias keep syncing).
+  */
+  const adoptServerUnit = useCallback((unidad: Ambulancia) => {
+    useFleetStore.getState().adopt(unidad);
+  }, []);
+  const connection = useDriverConnection(ownUnit, adoptServerUnit);
+  const { online } = connection;
+  // Off demo the unit comes from the server, and so does its connection. Until
+  // it is read there is nothing to connect and the real state is unknown, so the
+  // two buttons wait instead of toggling a state the server is about to replace.
+  const awaitingUnit = !demo && ambulanceId === undefined && ownUnit === null;
+
   const fallbackToUnit = location.position === null && ownUnit !== null;
   const effectivePosition = location.position ?? ownUnit?.ubicacion ?? null;
   const effectiveSimulated = location.simulated || fallbackToUnit;
 
-  const inbox = useSolicitudInbox(port, unitId, effectivePosition, online);
+  /*
+    "Mi estado" (EP-04.F2.US1). Only two of the four states are declared by the
+    driver: "Disponible" and "Fuera de servicio". Against the backend that is
+    the unit's own `estado` (available / out of service), changed with a command,
+    because only an available unit receives a request and the server has to know
+    it. "En ruta" and "En escena" are never chosen: they follow the request the
+    driver accepted (see `status` below), so the state cannot contradict the
+    mission.
 
-  // An open offer owns the rail and the map only while the driver is connected;
-  // disconnected, the mission always wins so an in-progress service is never
-  // orphaned by the toggle.
-  const requestOpen = online && (inbox.phase === 'idle' || inbox.phase === 'submitting');
+    `receiving` is what gates the offer surface: connected AND declared
+    available. Out of service the driver sees no request, exactly as when
+    disconnected; the accepted mission is never gated.
+  */
+  const declaredAvailable = connection.serverManaged
+    ? ownUnit?.estado !== 'MAINTENANCE'
+    : localAvailable;
+  const receiving = online && declaredAvailable;
+
+  const inbox = useSolicitudInbox(port, unitId, effectivePosition, receiving);
+
+  /*
+    Requests the push did not deliver (EP-04.F2.US1, D6). The broker does not
+    replay: after a reload, or after the channel dropped for a moment, the open
+    requests this unit was notified of exist only on the server. They are read
+    again every time the driver IS receiving (connected and available) with a
+    resolved unit — on entering that way, right after "Conectarse" or
+    "Disponible", and when the realtime channel comes back — and each one goes
+    through the same two places a live frame goes: the registry row and the
+    inbox card.
+
+    Only the server-managed connection reads them: demo mode and injected units
+    have no such endpoint. The server answers an empty list for a disconnected
+    or busy unit, so this never surfaces a request the driver cannot take.
+  */
+  const offerPendingRef = useRef(inbox.offerPending);
+  useEffect(() => {
+    offerPendingRef.current = inbox.offerPending;
+  }, [inbox.offerPending]);
+  const [pendingReloads, setPendingReloads] = useState(0);
+  const readsPending = connection.serverManaged && receiving && unitResolved;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `pendingReloads` is the reconnection tick that re-runs this read
+  useEffect(() => {
+    if (!readsPending) {
+      return;
+    }
+    let active = true;
+    fetchSolicitudesPendientes()
+      .then((pendientes) => {
+        if (!active) {
+          return;
+        }
+        for (const pendiente of pendientes) {
+          const held = useSolicitudesStore
+            .getState()
+            .items.find((item) => item.id === pendiente.id);
+          // The REST row carries no type label; keep the one the push gave.
+          useSolicitudesStore
+            .getState()
+            .upsert({ ...pendiente, tipo: held?.tipo ?? pendiente.tipo });
+          offerPendingRef.current(pendiente);
+        }
+      })
+      .catch(() => {
+        // A failed read leaves the inbox as it is; the push keeps working.
+      });
+    return () => {
+      active = false;
+    };
+  }, [readsPending, pendingReloads]);
+  const reloadPending = useCallback(() => {
+    setPendingReloads((count) => count + 1);
+  }, []);
+  useRealtimeReconnect(connection.serverManaged ? port : null, reloadPending);
+
+  /*
+    A mission this unit already holds on the server (EP-04.F2.US1, D6). The
+    mission lives in the inbox's memory, so a reload used to lose it while the
+    unit stayed busy on the server, with no way to finish the service. When the
+    server says the unit is in a mission and the console has none, the unit's own
+    services are read and the one still in service is reopened.
+  */
+  const restoreMissionRef = useRef(inbox.restoreMission);
+  useEffect(() => {
+    restoreMissionRef.current = inbox.restoreMission;
+  }, [inbox.restoreMission]);
+  const missingMission =
+    !demo && unitResolved && ownUnit?.estado === 'ASSIGNED' && inbox.mission === null;
+  useEffect(() => {
+    if (!missingMission) {
+      return;
+    }
+    let active = true;
+    fetchHistorialSolicitudes()
+      .then((servicios) => {
+        if (!active) {
+          return;
+        }
+        const enCurso = servicios.find(
+          (servicio) => servicio.estado === 'ASSIGNED' || servicio.estado === 'CONFIRMED',
+        );
+        if (enCurso) {
+          restoreMissionRef.current(enCurso);
+        }
+      })
+      .catch(() => {
+        // Without the read the console stays as it was; nothing is invented.
+      });
+    return () => {
+      active = false;
+    };
+  }, [missingMission]);
+
+  // An open offer owns the rail and the map only while the driver is receiving
+  // requests; otherwise the mission always wins, so an in-progress service is
+  // never orphaned by the toggle.
+  const requestOpen = receiving && (inbox.phase === 'idle' || inbox.phase === 'submitting');
   // `C.d4`: an open mission owns the rail and the map, unless a new request is
   // actually waiting for an answer (phase idle/submitting).
   const missionActive = inbox.mission !== null && !requestOpen;
+
+  // The four driver states, DERIVED and never stored. A mission decides it
+  // first: accepted is "En ruta", arrival declared is "En escena". Without a
+  // mission the driver is "Disponible" only while receiving; disconnected or out
+  // of service reads "Fuera de servicio".
+  const status: DriverStatus =
+    inbox.mission !== null
+      ? inbox.missionPhase === 'en_route'
+        ? 'EN_ROUTE'
+        : 'ON_SCENE'
+      : receiving
+        ? 'AVAILABLE'
+        : 'OFF_DUTY';
 
   // The selected row is actionable by the SERVER's own rule — still PENDING and
   // notified to this unit (`canRespondToSolicitud`) — regardless of which
   // request arrived first or whether it is the inbox's open broadcast. The
   // accept/reject actions send `ambulanciaId`, so an unresolved unit keeps them
   // disabled (FIX B) with its honest reason instead of firing an empty id.
+  //
+  // A unit that is attending a request cannot take another one (EP-04.F2.US1):
+  // the server refuses the accept of a busy unit, so the row says so instead of
+  // offering a button that can only fail.
+  const unitBusy = inbox.mission !== null;
+  // For the same reason the registry stops listing the requests that are still
+  // waiting for an answer while the unit is busy: they are not for this unit
+  // anymore.
+  //
+  // And a request ANOTHER unit took is not this driver's business either: off
+  // demo it leaves the registry the moment the server says so, instead of
+  // staying as a "taken" row. The unit's own services stay. Demo mode keeps its
+  // fixture registry as it was.
+  const visibleSolicitudes = useMemo(
+    () =>
+      solicitudesRegistry.filter((solicitud) => {
+        if (solicitud.estado === 'PENDING') {
+          return !unitBusy;
+        }
+        if (demo || !unitResolved) {
+          return true;
+        }
+        return (
+          typeof solicitud.ambulanciaAsignadaId !== 'string' ||
+          solicitud.ambulanciaAsignadaId === unitId
+        );
+      }),
+    [unitBusy, solicitudesRegistry, demo, unitResolved, unitId],
+  );
+  // A row that left the registry cannot keep its detail open: the request it
+  // describes is gone for this driver.
+  useEffect(() => {
+    if (
+      selectedSolicitud !== null &&
+      !visibleSolicitudes.some((solicitud) => solicitud.id === selectedSolicitud.id)
+    ) {
+      setSelectedSolicitud(null);
+    }
+  }, [selectedSolicitud, visibleSolicitudes]);
   const selectedCanRespond =
-    selectedSolicitud !== null && canRespondToSolicitud(selectedSolicitud, unitId);
+    selectedSolicitud !== null && !unitBusy && canRespondToSolicitud(selectedSolicitud, unitId);
   const selectedBlockReason =
     selectedSolicitud === null
       ? null
       : !unitResolved
         ? UNIT_UNRESOLVED_REASON
-        : solicitudResponseBlockReason(selectedSolicitud, unitId);
+        : (solicitudResponseBlockReason(selectedSolicitud, unitId) ??
+          (unitBusy ? UNIT_BUSY_REASON : null));
   // Only the outcome of the row currently selected is shown, so answering one
   // row never paints its result onto another.
   const selectedOutcome =
@@ -518,15 +739,22 @@ export default function DriverConsolePage({
     heading,
   });
 
-  const goOnline = useCallback(() => {
-    setOnline();
-    setStatus((current) => (current === 'OFF_DUTY' ? 'AVAILABLE' : current));
-  }, [setOnline]);
-
-  const goOffline = useCallback(() => {
-    setOffline();
-    setStatus('OFF_DUTY');
-  }, [setOffline]);
+  // "Mi estado" buttons: only the two declared states do anything, and only
+  // while connected and without a mission (the rail disables them otherwise).
+  const declareStatus = useCallback(
+    (value: DriverStatus) => {
+      if (value !== 'AVAILABLE' && value !== 'OFF_DUTY') {
+        return;
+      }
+      const disponible = value === 'AVAILABLE';
+      if (connection.serverManaged) {
+        connection.declareAvailability(disponible);
+        return;
+      }
+      setLocalAvailable(disponible);
+    },
+    [connection.serverManaged, connection.declareAvailability],
+  );
 
   // "Finalizar servicio": against the backend this calls
   // `POST /solicitudes/{id}/finalizar`, which closes the request and releases
@@ -535,11 +763,9 @@ export default function DriverConsolePage({
   // demo it clears immediately and the demo publish effect republishes the unit
   // as AVAILABLE. Either way the rail drops back to the operations map.
   const finishService = useCallback(() => {
-    void inbox.finishService().then((finished) => {
-      if (finished) {
-        setStatus('AVAILABLE');
-      }
-    });
+    // The status follows the mission by itself: once it is gone the driver is
+    // back to "Disponible" (or to what the server holds for the unit).
+    void inbox.finishService();
   }, [inbox.finishService]);
 
   const fleet = useMemo(
@@ -729,9 +955,13 @@ export default function DriverConsolePage({
         units={fleet}
         status={status}
         online={online}
-        onStatusChange={setStatus}
-        onGoOnline={goOnline}
-        onGoOffline={goOffline}
+        onStatusChange={declareStatus}
+        statusLocked={!online || unitBusy}
+        offDuty={online && !declaredAvailable}
+        onGoOnline={connection.connect}
+        onGoOffline={connection.disconnect}
+        connectionPending={connection.pending || awaitingUnit}
+        disconnectBlockedReason={unitBusy ? DISCONNECT_BLOCKED_REASON : null}
         mission={inbox.mission}
         missionDistanceKm={missionActive ? requestDistance : null}
         missionEtaMin={missionActive ? requestEta : null}
@@ -759,7 +989,7 @@ export default function DriverConsolePage({
           onTimeout: inbox.notifyTimeout,
         }}
         centros={centros}
-        solicitudes={solicitudesRegistry}
+        solicitudes={visibleSolicitudes}
         selectedSolicitud={selectedSolicitud}
         selectedCanRespond={selectedCanRespond}
         selectedBlockReason={selectedBlockReason}

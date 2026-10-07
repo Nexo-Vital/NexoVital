@@ -325,8 +325,11 @@ export function centerNeedLabel(centro: CentroAyuda): string {
 
 /**
  * Citizen-facing unit availability. The mockup only knows free/busy; the domain
- * also has MAINTENANCE, so it gets its own honest bucket instead of being
- * mislabelled as "ocupada".
+ * also has units that are out of service, so they get their own honest bucket
+ * instead of being mislabelled as "ocupada". Two things put a unit there: the
+ * MAINTENANCE state, and a driver who is disconnected from the service
+ * (EP-04.F2.US1). Neither can take a request, and to the citizen they mean the
+ * same thing: that ambulance is not working right now.
  */
 export type CitizenUnitStatus = 'free' | 'busy' | 'maintenance';
 
@@ -351,12 +354,13 @@ export const CITIZEN_UNIT_META: Record<CitizenUnitStatus, CitizenUnitMeta> = {
     markerClass: 'bg-nv-navy text-white',
   },
   maintenance: {
-    label: 'En mantenimiento',
+    label: 'Fuera de servicio',
     chipClass: 'bg-nv-sky text-nv-navy',
     /*
-      The marker maps MAINTENANCE onto the busy variant (the mockup draws only
-      free/busy), so the legend swatch reuses that same navy circle instead of
-      claiming a colour the map never draws.
+      The marker draws an out-of-service unit on the busy circle (the mockup
+      draws only free/busy), so the legend swatch reuses that same navy circle
+      instead of claiming a colour the map never draws. What tells it apart from
+      a busy unit is the badge icon, on the map and in the legend alike.
     */
     markerClass: 'bg-nv-navy text-white',
   },
@@ -372,10 +376,44 @@ export function citizenUnitStatus(estado: AmbulanceState): CitizenUnitStatus {
   return 'busy';
 }
 
+/**
+ * `false` while the unit's driver is disconnected from the service
+ * (EP-04.F2.US1). An absent `conectada` means "connected": fixtures, the dev
+ * relay and a backend that predates the field do not carry it.
+ */
+export function unitIsConnected(unit: Pick<Ambulancia, 'conectada'>): boolean {
+  return unit.conectada !== false;
+}
+
+/**
+ * Bucket of a whole UNIT, which is what the citizen sees. It is the state
+ * bucket, except that a disconnected driver takes the unit out of service
+ * whatever its state says: an available unit nobody is driving is not
+ * available to the citizen.
+ */
+export function citizenUnitBucket(
+  unit: Pick<Ambulancia, 'estado' | 'conectada'>,
+): CitizenUnitStatus {
+  return unitIsConnected(unit) ? citizenUnitStatus(unit.estado) : 'maintenance';
+}
+
+/**
+ * The server's rule for who receives a NEW request (EP-04.F2.US1): the unit is
+ * available, its driver is connected and it has signal. The front mirrors it to
+ * count the units a request would reach, so "Pedir ambulancia" is offered only
+ * when the server would notify somebody. The server stays the arbiter: the last
+ * such unit can disconnect between this count and the click.
+ */
+export function unitCanReceiveRequest(
+  unit: Pick<Ambulancia, 'estado' | 'conectada' | 'sinSenal'>,
+): boolean {
+  return unit.estado === 'AVAILABLE' && unitIsConnected(unit) && unit.sinSenal !== true;
+}
+
 export function countUnitsByStatus(units: Ambulancia[]): Record<CitizenUnitStatus, number> {
   const counts: Record<CitizenUnitStatus, number> = { free: 0, busy: 0, maintenance: 0 };
   for (const unit of units) {
-    counts[citizenUnitStatus(unit.estado)] += 1;
+    counts[citizenUnitBucket(unit)] += 1;
   }
   return counts;
 }
@@ -429,7 +467,7 @@ export function nearbyAmbulances(
   return units
     .map((ambulance) => {
       const km = distanceKm(from, ambulance.ubicacion);
-      const status = citizenUnitStatus(ambulance.estado);
+      const status = citizenUnitBucket(ambulance);
       const etaMin = etaMinutes(from, ambulance.ubicacion);
       return {
         ambulance,
@@ -441,7 +479,7 @@ export function nearbyAmbulances(
           : status === 'free'
             ? `${formatDistance(km)} · ${etaMin} min`
             : status === 'maintenance'
-              ? 'En mantenimiento'
+              ? 'Fuera de servicio'
               : 'Atendiendo un servicio',
       };
     })

@@ -106,4 +106,18 @@ public interface SolicitudJpaRepository extends JpaRepository<SolicitudJpaEntity
     List<SolicitudJpaEntity> buscarPendientesNotificadasA(@Param("ambulanciaId") UUID ambulanciaId,
                                                          @Param("estado") EstadoSolicitud estado,
                                                          @Param("ahora") Instant ahora);
+
+    /**
+     * Requests in {@code estado} whose window is still open at {@code ahora} and
+     * that were NOT notified to {@code ambulanciaId} (EP-04.F2.US1), oldest
+     * first. The mirror of {@link #buscarPendientesNotificadasA}: the membership
+     * test runs in the database.
+     */
+    @Query("SELECT s FROM SolicitudJpaEntity s "
+            + "WHERE s.estado = :estado AND s.timeoutEn > :ahora "
+            + "AND :ambulanciaId NOT MEMBER OF s.ambulanciasNotificadas "
+            + "ORDER BY s.solicitadaEn ASC")
+    List<SolicitudJpaEntity> buscarPendientesNoNotificadasA(@Param("ambulanciaId") UUID ambulanciaId,
+                                                           @Param("estado") EstadoSolicitud estado,
+                                                           @Param("ahora") Instant ahora);
 }

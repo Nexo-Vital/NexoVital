@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { toast } from '@/components/ui/toast';
+import { notify, toast } from '@/components/ui/toast';
 import { isUuid } from '@/features/ciudadano/citizen-request';
 import { formatDistance } from '@/features/ciudadano/citizen-view';
 import { useEmergencyStore } from '@/features/emergencias/emergency-store';
+import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
 import { distanceKm, etaMinutes } from '@/lib/geo';
-import { isDemoMode } from '@/services/apiClient';
+import { ApiError, isDemoMode } from '@/services/apiClient';
 import {
   DESTINATIONS,
   fromWireSolicitud,
@@ -44,6 +45,30 @@ export const UNIT_UNRESOLVED_REASON =
  */
 export const UNKNOWN_REQUEST_REASON =
   'Esta solicitud no proviene del servidor. Espera a que llegue una solicitud real e inténtalo de nuevo.';
+
+/**
+ * What the driver reads when another unit took a request this one was offered.
+ * The request leaves the screen at once; this notice is all that remains of it.
+ */
+export const TAKEN_BY_OTHER_MESSAGE = 'La solicitud ya fue aceptada por otra ambulancia.';
+
+/** Heading of that notice. */
+export const TAKEN_BY_OTHER_TITLE = 'Solicitud ya aceptada';
+
+/**
+ * Backend codes of an accept that lost the request to another unit: the lost
+ * CAS itself, and the state check that already found the request assigned.
+ */
+const LOST_ACCEPT_CODES = ['CAS_PERDIDO', 'SOLICITUD_NO_ASIGNABLE'];
+
+function isLostAccept(error: unknown): boolean {
+  return (
+    error instanceof ApiError &&
+    error.status === 409 &&
+    error.codigo !== undefined &&
+    LOST_ACCEPT_CODES.includes(error.codigo)
+  );
+}
 
 /**
  * Mission lifecycle after this unit won the request. The client never sets a
@@ -147,6 +172,22 @@ export interface SolicitudInboxState {
   respondTo: (solicitud: SolicitudAmbulancia, action: 'accept' | 'reject') => void;
   /** Called by the request card when the countdown reaches zero. */
   notifyTimeout: () => void;
+  /**
+   * Surfaces a request the driver can still answer that did NOT come through
+   * the push (EP-04.F2.US1, D6): one read from the server after a reload or a
+   * reconnection. It opens the SAME card a live frame opens, with the server's
+   * own deadline, so the countdown shows the time that is really left. A request
+   * that is already the open offer or the current mission, or whose window is
+   * over, is ignored.
+   */
+  offerPending: (solicitud: SolicitudAmbulancia) => void;
+  /**
+   * Reopens the mission of a request this unit already won (EP-04.F2.US1, D6):
+   * after a reload the mission lives only on the server, so the console reads
+   * it back from the unit's own services. It never overrides a mission that is
+   * already open and raises no "assigned" notice: nothing new happened.
+   */
+  restoreMission: (solicitud: SolicitudAmbulancia) => void;
   /** Declares arrival: publishes `solicitud.llegada` and waits for the relay. */
   declareArrival: () => void;
   /**
@@ -216,9 +257,17 @@ export function useSolicitudInbox(
    * would see their own "Assigned to you" overwritten by "Taken by <self>".
    */
   const wonRequestIdRef = useRef<string | null>(null);
+  /**
+   * Last request announced as taken by another unit. The loss can be learnt
+   * twice (the server's push and the 409 of this unit's own accept), and the
+   * driver must read the notice once.
+   */
+  const announcedTakenRef = useRef<string | null>(null);
+  const onlineRef = useRef(online);
   positionRef.current = currentPosition;
   phaseRef.current = phase;
   missionRef.current = mission;
+  onlineRef.current = online;
 
   const dismiss = useCallback(() => {
     broadcastRef.current = null;
@@ -236,6 +285,43 @@ export function useSolicitudInbox(
     setRequestedAtMs(null);
     acceptingRef.current = false;
     setAccepting(false);
+  }, []);
+
+  /**
+   * Another unit took the request: it leaves this driver's screen AT ONCE.
+   *
+   * Nothing lingers: the open card is cleared without a terminal phase, the
+   * registry row is dropped and so is any inline outcome of that row. What
+   * remains is one notice saying why it is gone. The server decided the winner;
+   * this only stops offering a request that is no longer available.
+   *
+   * It is safe to call more than once for the same request (the push and the
+   * 409 of the driver's own accept can both arrive): the second call finds
+   * nothing to clear and announces nothing. A driver who is not receiving
+   * requests is not told about one they were not looking at.
+   */
+  const lostToAnotherUnit = useCallback((requestId: string) => {
+    if (broadcastRef.current?.requestId === requestId) {
+      broadcastRef.current = null;
+      setBroadcast(null);
+      setDeadlineMs(null);
+      setRequestedAtMs(null);
+      acceptingRef.current = false;
+      setAccepting(false);
+      setPhase('idle');
+      setOutcomeMessage(null);
+    }
+    useSolicitudesStore.getState().remove(requestId);
+    setResponseOutcome((current) => (current?.requestId === requestId ? null : current));
+    if (announcedTakenRef.current === requestId) {
+      return;
+    }
+    announcedTakenRef.current = requestId;
+    if (onlineRef.current) {
+      // Prominent on purpose: the request vanished from the screen, and the
+      // driver has to see why.
+      notify(TAKEN_BY_OTHER_TITLE, TAKEN_BY_OTHER_MESSAGE);
+    }
   }, []);
 
   /**
@@ -322,18 +408,23 @@ export function useSolicitudInbox(
       }
 
       if (payload.type === 'request.taken') {
-        const active = broadcastRef.current;
-        if (active?.requestId !== payload.requestId) {
-          return;
-        }
         if (wonRequestIdRef.current === payload.requestId) {
           return;
         }
+        const active = broadcastRef.current;
+        const onScreen = active?.requestId === payload.requestId;
         if (payload.winner === ambulanceId) {
-          winMission(payload.requestId, active);
-        } else {
-          setPhase('taken');
-          setOutcomeMessage(`Tomada por ${payload.winner}`);
+          if (onScreen && active) {
+            winMission(payload.requestId, active);
+          }
+          return;
+        }
+        // Another unit won. A backend frame is addressed to this user because
+        // this unit was notified of the request, so it is acted on even when the
+        // request is only a registry row. A demo frame reaches every client, so
+        // there only the request on screen reacts.
+        if (onScreen || fromWire) {
+          lostToAnotherUnit(payload.requestId);
         }
         return;
       }
@@ -347,8 +438,7 @@ export function useSolicitudInbox(
         if (wonRequestIdRef.current === payload.requestId) {
           return;
         }
-        setPhase('taken');
-        setOutcomeMessage(`Tomada por ${payload.winner}`);
+        lostToAnotherUnit(payload.requestId);
         return;
       }
 
@@ -424,7 +514,7 @@ export function useSolicitudInbox(
         setMission(next);
       }
     },
-    [ambulanceId, announceArrival, winMission],
+    [ambulanceId, announceArrival, winMission, lostToAnotherUnit],
   );
 
   useEffect(() => {
@@ -517,17 +607,24 @@ export function useSolicitudInbox(
           if (outcome.winner) {
             winMission(active.requestId, broadcast);
           } else {
-            setPhase('taken');
-            setOutcomeMessage('Tomada por otra unidad');
+            lostToAnotherUnit(active.requestId);
           }
         })
         .catch((error: unknown) => {
+          // Lost to another unit: the request leaves the screen at once, with
+          // its notice. Called before the "moved on" check below on purpose: if
+          // the server's push already cleared the card, this is a no-op.
+          if (isLostAccept(error)) {
+            lostToAnotherUnit(active.requestId);
+            return;
+          }
           const broadcast = broadcastRef.current;
           if (broadcast?.requestId !== active.requestId) {
             return;
           }
-          // A 409 is the backend denying or losing the race: show it honestly as
-          // a terminal outcome instead of leaving the card stuck on "Enviando…".
+          // Any other refusal (the unit is busy, the request is unknown...) is
+          // shown as a terminal outcome instead of leaving the card stuck on
+          // "Enviando…".
           setPhase('rejected');
           setOutcomeMessage(error instanceof Error ? error.message : 'No fue posible aceptar');
         })
@@ -549,7 +646,7 @@ export function useSolicitudInbox(
       requestId: active.requestId,
       ambulanceId,
     });
-  }, [port, ambulanceId, winMission]);
+  }, [port, ambulanceId, winMission, lostToAnotherUnit]);
 
   const reject = useCallback(() => {
     const active = broadcastRef.current;
@@ -705,12 +802,18 @@ export function useSolicitudInbox(
             winMission(requestId, source);
             setResponseOutcome({ requestId, phase: 'assigned', message: 'Te la asignaron' });
           } else {
-            setResponseOutcome({ requestId, phase: 'taken', message: 'Tomada por otra unidad' });
+            lostToAnotherUnit(requestId);
           }
         })
         .catch((error: unknown) => {
-          // A 409 is the backend denying or losing the race: show it honestly
-          // instead of leaving the row stuck on "Enviando…".
+          // Lost to another unit: the row leaves the registry at once, with its
+          // notice, instead of staying "Pendiente" with live buttons.
+          if (isLostAccept(error)) {
+            lostToAnotherUnit(requestId);
+            return;
+          }
+          // Any other refusal is shown honestly instead of leaving the row stuck
+          // on "Enviando…".
           setResponseOutcome({
             requestId,
             phase: 'rejected',
@@ -721,7 +824,95 @@ export function useSolicitudInbox(
           respondingRef.current = false;
         });
     },
-    [port, ambulanceId, winMission],
+    [port, ambulanceId, winMission, lostToAnotherUnit],
+  );
+
+  const offerPending = useCallback(
+    (solicitud: SolicitudAmbulancia) => {
+      if (solicitud.estado !== 'PENDING') {
+        return;
+      }
+      // Already on screen, or already ours: surfacing it again would restart the
+      // card (and its sound) for a request the driver is looking at.
+      if (
+        broadcastRef.current?.requestId === solicitud.id ||
+        missionRef.current?.requestId === solicitud.id ||
+        wonRequestIdRef.current === solicitud.id
+      ) {
+        return;
+      }
+      const deadline = Date.parse(solicitud.timeoutEn);
+      if (Number.isFinite(deadline) && deadline <= Date.now()) {
+        return;
+      }
+      const requested = Date.parse(solicitud.solicitadaEn);
+      const emergency =
+        useEmergencyStore.getState().items.find((item) => item.id === solicitud.emergenciaId) ??
+        null;
+      const escena = solicitud.ubicacion ?? emergency?.ubicacion;
+      const frame: SolicitudBroadcastPayload = {
+        type: 'solicitud.broadcast',
+        requestId: solicitud.id,
+        emergenciaId: solicitud.emergenciaId,
+        zonaId: solicitud.zonaId,
+        tipo: solicitud.tipo || emergency?.descripcion || '',
+        ...(emergency?.nivel ? { nivel: emergency.nivel } : {}),
+        ...(escena ? { escena } : {}),
+        timeoutEn: solicitud.timeoutEn,
+        notificadas: solicitud.ambulanciasNotificadas,
+        mode: 'broadcast',
+        notifiedCount: solicitud.ambulanciasNotificadas.length,
+        // The real window length, so the card derives when the request was
+        // raised instead of taking the moment it was read back.
+        ...(Number.isFinite(deadline) && Number.isFinite(requested) && deadline > requested
+          ? { timeoutMs: deadline - requested }
+          : {}),
+      };
+      // The server already filtered by this unit, exactly like a per-user push.
+      applyFrame(frame, true);
+    },
+    [applyFrame],
+  );
+
+  const restoreMission = useCallback(
+    (solicitud: SolicitudAmbulancia) => {
+      if (missionRef.current !== null) {
+        return;
+      }
+      if (solicitud.estado !== 'ASSIGNED' && solicitud.estado !== 'CONFIRMED') {
+        return;
+      }
+      if (!ambulanceId || solicitud.ambulanciaAsignadaId !== ambulanceId) {
+        return;
+      }
+      const emergency =
+        useEmergencyStore.getState().items.find((item) => item.id === solicitud.emergenciaId) ??
+        null;
+      const scene = solicitud.ubicacion ?? emergency?.ubicacion;
+      const from = positionRef.current ?? scene;
+      const requested = Date.parse(solicitud.solicitadaEn);
+      const arrived = solicitud.llegadaEn ? Date.parse(solicitud.llegadaEn) : Number.NaN;
+      const restored: Mission = {
+        requestId: solicitud.id,
+        zonaId: solicitud.zonaId,
+        tipo: solicitud.tipo || emergency?.descripcion || '',
+        ...(emergency?.nivel ? { nivel: emergency.nivel } : {}),
+        ...(scene ? { escena: scene } : {}),
+        etaMinutes: from && scene ? etaMinutes(from, scene) : 0,
+        // The server does not keep the accept instant: the request's own
+        // creation is the closest real one, never an invented "just now".
+        acceptedAt: Number.isFinite(requested) ? requested : Date.now(),
+        arrivedAt: Number.isFinite(arrived) ? arrived : null,
+        confirmedAt: solicitud.estado === 'CONFIRMED' ? Date.now() : null,
+      };
+      wonRequestIdRef.current = solicitud.id;
+      missionRef.current = restored;
+      // Same phase a live win leaves behind: with it the page treats the mission
+      // as the owner of the rail, and not an (absent) open offer.
+      setPhase('assigned');
+      setMission(restored);
+    },
+    [ambulanceId],
   );
 
   const notifyTimeout = useCallback(() => {
@@ -833,6 +1024,8 @@ export function useSolicitudInbox(
     reject,
     respondTo,
     notifyTimeout,
+    offerPending,
+    restoreMission,
     declareArrival,
     finishService,
     dismiss,

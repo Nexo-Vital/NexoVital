@@ -104,9 +104,12 @@ public class AceptarSolicitudUseCaseImpl implements AceptarSolicitudUseCase {
             throw new AmbulanciaNoDisponibleException(ambulanciaId);
         }
 
+        // The notified list travels with the event: every OTHER notified unit is
+        // told at once that the request is taken (SolicitudTomadaPushListener).
+        // It is read from the request as it was broadcast, which never changes.
         eventPublisher.publishEvent(new SolicitudAsignadaEvent(
                 solicitudId, asignada.getEmergenciaId(), asignada.getZonaId(), ambulanciaId,
-                asignada.getSolicitanteId()));
+                asignada.getSolicitanteId(), solicitud.getAmbulanciasNotificadas()));
         eventPublisher.publishEvent(new FlotaActualizadaEvent(ambulanciaId, EstadoAmbulancia.EN_MISION));
 
         return ResultadoAceptarSolicitud.gano(asignada);

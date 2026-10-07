@@ -83,6 +83,12 @@ export interface FleetStatePayload {
   ambulanciaId: string;
   estado: string;
   version?: number | null;
+  /**
+   * Present only on the connection frame (backend `ConexionPushPayload`,
+   * EP-04.F2.US1): the driver connected to the service or disconnected from
+   * it. A plain state frame does not carry it, which means "unchanged".
+   */
+  conectada?: boolean;
 }
 
 /**

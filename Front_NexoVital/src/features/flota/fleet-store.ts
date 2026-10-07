@@ -35,6 +35,13 @@ interface FleetState {
    * exists. This is what makes units created on another client appear here.
    */
   upsert: (unit: Ambulancia) => void;
+  /**
+   * Adopt a unit the server returned from a command (connect, disconnect), with
+   * the same ordering rule as a frame: it is dropped when the store already
+   * holds that unit at a NEWER version. The command's own frame travels on
+   * `/topic/flota` too, and either of the two can land first.
+   */
+  adopt: (unit: Ambulancia) => void;
   remove: (id: string) => void;
   /**
    * Drop the version of every held unit, keeping everything else.
@@ -75,6 +82,7 @@ export const useFleetStore = create<FleetState>((set) => ({
           source: local.source,
           sinSenal: local.sinSenal,
           ultimaPosicionEn: local.ultimaPosicionEn,
+          conectada: local.conectada,
           version: local.version,
         };
       });
@@ -85,6 +93,19 @@ export const useFleetStore = create<FleetState>((set) => ({
       const index = state.units.findIndex((item) => item.id === unit.id);
       if (index === -1) {
         return { units: [...state.units, unit] };
+      }
+      const units = state.units.slice();
+      units[index] = { ...units[index], ...unit };
+      return { units };
+    }),
+  adopt: (unit) =>
+    set((state) => {
+      const index = state.units.findIndex((item) => item.id === unit.id);
+      if (index === -1) {
+        return { units: [...state.units, unit] };
+      }
+      if (isStaleVersion(state.units[index].version, unit.version)) {
+        return state;
       }
       const units = state.units.slice();
       units[index] = { ...units[index], ...unit };

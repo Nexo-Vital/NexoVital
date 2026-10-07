@@ -19,7 +19,15 @@ import {
   Warehouse,
   X,
 } from 'lucide-react';
-import { type ReactNode, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  type ReactNode,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { formatCoordinates } from '@/features/ciudadano/citizen-request';
 import {
   CENTER_LEVEL_STYLE,
@@ -118,8 +126,11 @@ function MyUnitPanel({
   status,
   online,
   onStatusChange,
+  statusLocked,
   onGoOnline,
   onGoOffline,
+  connectionPending,
+  disconnectBlockedReason,
   mission,
   location,
 }: {
@@ -128,8 +139,14 @@ function MyUnitPanel({
   status: DriverStatus;
   online: boolean;
   onStatusChange: (status: DriverStatus) => void;
+  /** Disconnected or attending a request: the declared state cannot change now. */
+  statusLocked: boolean;
   onGoOnline: () => void;
   onGoOffline: () => void;
+  /** A connect/disconnect command is in flight: both buttons wait for the server. */
+  connectionPending: boolean;
+  /** Why the driver cannot disconnect right now; null when they can. */
+  disconnectBlockedReason: string | null;
   mission: Mission | null;
   location: DeviceLocationState;
 }) {
@@ -196,7 +213,9 @@ function MyUnitPanel({
           <button
             type="button"
             onClick={onGoOffline}
-            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-nv-md border-[1.5px] border-nv-line bg-white px-4 font-semibold text-nv-navy text-sm"
+            disabled={connectionPending || disconnectBlockedReason !== null}
+            title={disconnectBlockedReason ?? undefined}
+            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-nv-md border-[1.5px] border-nv-line bg-white px-4 font-semibold text-nv-navy text-sm disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Power className="size-4" aria-hidden />
             Desconectarse
@@ -205,32 +224,59 @@ function MyUnitPanel({
           <button
             type="button"
             onClick={onGoOnline}
-            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-nv-md bg-nv-navy px-4 font-semibold text-sm text-white"
+            disabled={connectionPending}
+            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-nv-md bg-nv-navy px-4 font-semibold text-sm text-white disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Power className="size-4" aria-hidden />
             Conectarse
           </button>
         )}
+        {/* The reason is written out, not only a tooltip: a disabled button with
+            no explanation reads as broken. */}
+        {online && disconnectBlockedReason !== null && (
+          <p className="text-nv-navy-400 text-xs">{disconnectBlockedReason}</p>
+        )}
+        {/* Connected is not enough to receive a request: the server also needs
+            the unit to have signal (EP-04.F2.US1). A connected driver whose
+            unit lost it would wait for requests that can never arrive, so the
+            console says what is missing and how to fix it. */}
+        {online && unit?.sinSenal === true && (
+          <p role="status" className="text-critical text-xs">
+            Tu ambulancia está sin señal y no recibirá solicitudes. Activa tu ubicación o pulsa
+            «Simular posición».
+          </p>
+        )}
       </div>
 
-      {/* The four driver states, as selectable buttons marked with aria-pressed. */}
+      {/*
+        The four driver states, marked with aria-pressed. Only "Disponible" and
+        "Fuera de servicio" are declared by the driver. "En ruta" and "En escena"
+        follow the accepted request (accepting it, declaring the arrival), so
+        they are never pressed by hand: a state the driver could choose freely
+        could contradict the mission, and the server would still send requests.
+        A state that cannot be chosen now is disabled; the current one keeps its
+        full colour so it still reads as the answer.
+      */}
       <fieldset className="flex flex-col gap-1.5">
         <legend className="nv-label text-nv-navy-400">Mi estado</legend>
         <div className="grid grid-cols-2 gap-1.5">
           {DRIVER_STATUS_ORDER.map((value) => {
             const valueMeta = DRIVER_STATUS_META[value];
             const active = status === value;
+            const declarable = value === 'AVAILABLE' || value === 'OFF_DUTY';
+            const disabled = !declarable || statusLocked || connectionPending;
             return (
               <button
                 key={value}
                 type="button"
                 aria-pressed={active}
+                disabled={disabled}
                 onClick={() => onStatusChange(value)}
                 className={cn(
-                  'inline-flex items-center gap-2 rounded-nv-md border-[1.5px] px-3 py-2 text-left font-semibold text-xs',
+                  'inline-flex items-center gap-2 rounded-nv-md border-[1.5px] px-3 py-2 text-left font-semibold text-xs disabled:cursor-not-allowed',
                   active
                     ? 'border-nv-navy bg-nv-navy text-white'
-                    : 'border-nv-line bg-white text-nv-navy',
+                    : 'border-nv-line bg-white text-nv-navy disabled:opacity-60',
                 )}
               >
                 <span
@@ -242,6 +288,7 @@ function MyUnitPanel({
             );
           })}
         </div>
+        <p className="text-nv-navy-400 text-xs"></p>
       </fieldset>
 
       {/*
@@ -801,11 +848,17 @@ function SolicitudesPanel({
   onRejectSelected,
   onViewSelected,
   onCloseSelected,
+  offDuty,
   ...request
 }: RequestPanelProps &
   MissionPanelProps & {
-    /** Whether the driver is connected; disconnected the offer surface is hidden. */
+    /** Whether the driver is receiving requests; otherwise the offer surface is hidden. */
     online: boolean;
+    /**
+     * Connected but declared "Fuera de servicio": the surface is hidden for that
+     * reason, and the empty state says so instead of asking to connect.
+     */
+    offDuty: boolean;
     mission: Mission | null;
     units: readonly Ambulancia[];
     solicitudes: SolicitudAmbulancia[];
@@ -871,9 +924,15 @@ function SolicitudesPanel({
           className="flex flex-col items-center gap-1.5 rounded-nv-md border border-dashed border-nv-line px-4 py-6 text-center"
         >
           <Radio className="size-6 text-nv-teal" aria-hidden />
-          <b className="font-semibold text-sm">Conéctate para recibir solicitudes</b>
+          <b className="font-semibold text-sm">
+            {offDuty
+              ? 'Marca «Disponible» para recibir solicitudes'
+              : 'Conéctate para recibir solicitudes'}
+          </b>
           <span className="text-nv-navy-400 text-xs leading-[18px]">
-            Mientras estés desconectado no verás solicitudes de ambulancia ni podrás aceptarlas.
+            {offDuty
+              ? 'Mientras estés fuera de servicio no verás solicitudes de ambulancia ni podrás aceptarlas.'
+              : 'Mientras estés desconectado no verás solicitudes de ambulancia ni podrás aceptarlas.'}
           </span>
         </div>
       ) : request.broadcast ? (
@@ -1127,8 +1186,16 @@ interface DriverRailProps extends MissionPanelProps {
   online: boolean;
   /** Sets the driver's declared status from the panel buttons. */
   onStatusChange: (status: DriverStatus) => void;
+  /** Disconnected or attending a request: the declared state cannot change now. */
+  statusLocked?: boolean;
+  /** Connected but declared "Fuera de servicio": no request is surfaced. */
+  offDuty?: boolean;
   onGoOnline: () => void;
   onGoOffline: () => void;
+  /** A connect/disconnect command is in flight against the backend. */
+  connectionPending?: boolean;
+  /** Why the driver cannot disconnect right now; null or absent when they can. */
+  disconnectBlockedReason?: string | null;
   /** The assigned mission; while it is open the rail shows the `C.d4` panel. */
   mission: Mission | null;
   /** Device/simulated position state, rendered as the simulation fallback. */
@@ -1169,8 +1236,12 @@ export function DriverRail({
   status,
   online,
   onStatusChange,
+  statusLocked = false,
+  offDuty = false,
   onGoOnline,
   onGoOffline,
+  connectionPending = false,
+  disconnectBlockedReason = null,
   mission,
   missionDistanceKm,
   missionEtaMin,
@@ -1196,6 +1267,11 @@ export function DriverRail({
   onViewSelected,
   onCloseSelected,
 }: DriverRailProps) {
+  // `units` is the REST of the fleet (the self marker stands in for the own unit
+  // on the map), but the notified list of a request includes this unit too. The
+  // own unit is added here so its id resolves to its plate like any other,
+  // instead of being printed as the internal id.
+  const unitsWithOwn = useMemo(() => (unit ? [unit, ...units] : units), [unit, units]);
   return (
     <aside
       aria-label="Panel del conductor"
@@ -1207,15 +1283,19 @@ export function DriverRail({
         status={status}
         online={online}
         onStatusChange={onStatusChange}
+        statusLocked={statusLocked}
         onGoOnline={onGoOnline}
         onGoOffline={onGoOffline}
+        connectionPending={connectionPending}
+        disconnectBlockedReason={disconnectBlockedReason}
         mission={mission}
         location={location}
       />
       <SolicitudesPanel
         {...request}
-        online={online}
-        units={units}
+        online={online && !offDuty}
+        offDuty={online && offDuty}
+        units={unitsWithOwn}
         mission={mission}
         missionDistanceKm={missionDistanceKm}
         missionEtaMin={missionEtaMin}

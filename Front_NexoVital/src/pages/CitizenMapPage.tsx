@@ -25,7 +25,7 @@ import {
 } from '@/features/ciudadano/citizen-request-store';
 import {
   CITIZEN_FALLBACK_POSITION,
-  citizenUnitStatus,
+  citizenUnitBucket,
   countCentersByLevel,
   nearbyAmbulances,
 } from '@/features/ciudadano/citizen-view';
@@ -477,7 +477,7 @@ export default function CitizenMapPage({
   const dimmedIds = useMemo(
     () =>
       searching
-        ? fleet.filter((unit) => citizenUnitStatus(unit.estado) !== 'free').map((unit) => unit.id)
+        ? fleet.filter((unit) => citizenUnitBucket(unit) !== 'free').map((unit) => unit.id)
         : NO_UNIT_IDS,
     [searching, fleet],
   );

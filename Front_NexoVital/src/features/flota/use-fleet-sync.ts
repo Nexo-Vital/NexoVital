@@ -82,6 +82,9 @@ function applyLivePosition(
     typeof payload.ultimaPosicionEn === 'string' || payload.ultimaPosicionEn === null
       ? payload.ultimaPosicionEn
       : undefined;
+  // `conectada` travels on the connection frame only (EP-04.F2.US1): neither a
+  // state change nor a position report changes it, so `undefined` means "keep".
+  const conectada = typeof payload.conectada === 'boolean' ? payload.conectada : undefined;
 
   // A frame with no position can only refresh a unit already known (a state
   // change); with neither a known unit nor a position there is nothing to anchor.
@@ -110,6 +113,7 @@ function applyLivePosition(
       source,
       sinSenal,
       ultimaPosicionEn,
+      ...(conectada === undefined ? {} : { conectada }),
       version,
     });
     return;
@@ -141,6 +145,7 @@ function applyLivePosition(
     source,
     sinSenal: sinSenal ?? existing.sinSenal,
     ultimaPosicionEn: ultimaPosicionEn === undefined ? existing.ultimaPosicionEn : ultimaPosicionEn,
+    ...(conectada === undefined ? {} : { conectada }),
     version: version ?? existing.version,
   });
 }
@@ -154,7 +159,8 @@ function applyLivePosition(
  *     every report, simulated or from a device. The signal-loss notice is one of
  *     them: same shape, `sinSenal: true` and the last known position;
  *   - state-change frames (`ambulanciaId` + `estado`, no position) published by
- *     the backend on every fleet transition (assignment, finish, ...).
+ *     the backend on every fleet transition (assignment, finish, ...). The
+ *     connection frame is one of them: same shape plus `conectada`.
  *
  * The backend frames carry the row `version`, and a frame older than the one the
  * store holds is discarded (EP-04.F1.US1, D6).
