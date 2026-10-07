@@ -69,4 +69,12 @@ public interface SolicitudRepository {
      */
     int transicionAtomicaExpirar(UUID idSolicitud, EstadoSolicitud estadoEsperado,
                                  EstadoSolicitud nuevoEstado, Instant ahora);
+
+    /**
+     * Open requests a unit can still answer (EP-04.F2.US1, D6): PENDING, with
+     * the accept window still open at {@code ahora}, and with
+     * {@code ambulanciaId} among the notified units. Oldest first. A request the
+     * unit was never notified of does not qualify, whatever its state.
+     */
+    List<SolicitudAmbulancia> listarPendientesNotificadasA(UUID ambulanciaId, Instant ahora);
 }

@@ -24,12 +24,23 @@ import java.util.UUID;
  * {@link FlotaPushListener} listens in {@code AFTER_COMMIT} (golden rule:
  * publish POST-COMMIT).
  *
- * <p><b>The broadcast has no zone filter.</b> The event carries the ids of EVERY
- * available unit — the request no longer depends on an affected zone, and the
- * zone is only a map warning. The class of the professor's description ("all
- * ambulances accept and only one wins") is delivered by the CAS on accept, not
- * by narrowing who is notified. The module no longer knows a broker: it only
- * publishes the domain event.
+ * <p><b>Who is notified (EP-04.F2.US1, D5).</b> The event carries the ids of
+ * the CANDIDATES of that instant: every unit that is available, connected and
+ * has signal. A unit in a mission, en route, in maintenance, disconnected or
+ * without signal is never notified. The list is fixed at creation and is never
+ * extended afterwards.
+ *
+ * <p><b>The broadcast has no zone filter.</b> The request no longer depends on
+ * an affected zone, and the zone is only a map warning. The class of the
+ * professor's description ("all ambulances accept and only one wins") is
+ * delivered by the CAS on accept, not by narrowing who is notified. The module
+ * no longer knows a broker: it only publishes the domain event.
+ *
+ * <p><b>No lock on the fleet.</b> A unit that connects or disconnects while the
+ * request is being created does not need one. The list is the snapshot of the
+ * query; a unit that disconnects right after it stays in the list, but it can
+ * neither see the request nor accept it, because the accept re-checks the
+ * connection in its own conditional UPDATE.
  */
 @Service
 public class SolicitarAmbulanciaUseCaseImpl implements SolicitarAmbulanciaUseCase {
@@ -53,14 +64,14 @@ public class SolicitarAmbulanciaUseCaseImpl implements SolicitarAmbulanciaUseCas
     @Transactional
     public SolicitudAmbulancia solicitar(double lat, double lng, UUID emergenciaId, UUID centroAyudaId,
                                          String zonaId, UUID solicitanteId, Instant timeoutEn) {
-        List<Ambulancia> disponibles = ambulanciaRepository.listarDisponibles();
-        if (disponibles.isEmpty()) {
+        List<Ambulancia> candidatas = ambulanciaRepository.listarCandidatasParaSolicitud();
+        if (candidatas.isEmpty()) {
             throw new AmbulanciaNoDisponibleException();
         }
 
         Instant solicitadaEn = Instant.now();
         Instant tope = timeoutEn != null ? timeoutEn : solicitadaEn.plus(timeoutSegundos, ChronoUnit.SECONDS);
-        List<UUID> notificadas = disponibles.stream().map(Ambulancia::getId).toList();
+        List<UUID> notificadas = candidatas.stream().map(Ambulancia::getId).toList();
 
         SolicitudAmbulancia solicitud = SolicitudAmbulancia.solicitar(
                 UUID.randomUUID(), lat, lng, emergenciaId, centroAyudaId, zonaId, solicitadaEn, tope,

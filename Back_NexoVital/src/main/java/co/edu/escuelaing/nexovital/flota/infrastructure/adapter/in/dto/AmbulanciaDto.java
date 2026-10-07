@@ -24,10 +24,15 @@ import java.util.UUID;
  * <p><b>Version.</b> {@code version} is the row version of this snapshot. The
  * frames of {@code /topic/flota} carry the same counter, so a client can tell
  * whether a frame it already received is newer than this read (design D6).
+ *
+ * <p><b>Connection.</b> {@code conectada} is {@code true} while the driver is
+ * connected to the service (EP-04.F2.US1). Only a unit that is available,
+ * connected and has signal receives a new request.
  */
 public record AmbulanciaDto(UUID id, String placa, EstadoAmbulancia estado,
                             UbicacionDto ubicacion, String zona,
-                            boolean sinSenal, Instant ultimaPosicionEn, long version) {
+                            boolean sinSenal, Instant ultimaPosicionEn, long version,
+                            boolean conectada) {
 
     public static AmbulanciaDto fromDomain(Ambulancia ambulancia) {
         return new AmbulanciaDto(
@@ -38,6 +43,7 @@ public record AmbulanciaDto(UUID id, String placa, EstadoAmbulancia estado,
                 ambulancia.getZona(),
                 ambulancia.isSinSenal(),
                 ambulancia.getUltimaPosicionEn(),
-                ambulancia.getVersion());
+                ambulancia.getVersion(),
+                ambulancia.isConectada());
     }
 }

@@ -97,6 +97,14 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
         return jpaRepository.transicionAtomicaExpirar(idSolicitud, estadoEsperado, nuevoEstado, ahora);
     }
 
+    @Override
+    public List<SolicitudAmbulancia> listarPendientesNotificadasA(UUID ambulanciaId, Instant ahora) {
+        return jpaRepository
+                .buscarPendientesNotificadasA(ambulanciaId, EstadoSolicitud.PENDIENTE, ahora).stream()
+                .map(SolicitudRepositoryAdapter::toDomain)
+                .toList();
+    }
+
     private static SolicitudAmbulancia toDomain(SolicitudJpaEntity entity) {
         return SolicitudAmbulancia.restaurar(
                 entity.getId(),

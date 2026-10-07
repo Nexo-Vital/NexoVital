@@ -216,6 +216,19 @@ public class SecurityConfig {
                         // /flota/ambulancias/{id}/posicion would be denied.
                         .requestMatchers(HttpMethod.POST, "/api/v1/flota/ambulancias/*/posicion")
                                 .hasAuthority("ROLE_CONDUCTOR")
+                        // Connection of the caller's OWN unit (EP-04.F2.US1): only a
+                        // driver connects or disconnects, and the server resolves
+                        // the unit from the caller, so no unit id is sent. Declared
+                        // explicitly because the chain is fail-closed.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/flota/ambulancias/mia/conectar")
+                                .hasAuthority("ROLE_CONDUCTOR")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/flota/ambulancias/mia/desconectar")
+                                .hasAuthority("ROLE_CONDUCTOR")
+                        // Open requests the caller's OWN unit can still answer
+                        // (EP-04.F2.US1): only a driver reads them. Declared
+                        // explicitly because the chain is fail-closed.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/flota/ambulancias/mia/solicitudes/pendientes")
+                                .hasAuthority("ROLE_CONDUCTOR")
                         // Request an ambulance (EP-04, broadcast C2): the
                         // citizen raises the request. The help-center
                         // administrator may request one too (same screen as the

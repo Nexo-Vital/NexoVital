@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -107,4 +108,49 @@ public interface AmbulanciaJpaRepository extends JpaRepository<AmbulanciaJpaEnti
     @Query("UPDATE AmbulanciaJpaEntity a SET a.sinSenal = true, a.version = a.version + 1 "
             + "WHERE a.id = :id AND a.sinSenal = false AND a.ultimaPosicionEn < :limite")
     int marcarSinSenalAtomica(@Param("id") UUID id, @Param("limite") Instant limite);
+
+    /**
+     * Candidates of a new request (EP-04.F2.US1, D5): units in {@code estado}
+     * that are connected and have signal. The three conditions are evaluated by
+     * the database in ONE query, so the list is a consistent snapshot of that
+     * instant.
+     */
+    List<AmbulanciaJpaEntity> findByEstadoAndConectadaTrueAndSinSenalFalse(EstadoAmbulancia estado);
+
+    /**
+     * Connects ONE unit, only while it is disconnected. Returns rows affected:
+     * 1 = this caller connected it, 0 = it was already connected. It bumps
+     * {@code @Version}, so the change can be ordered on {@code /topic/flota}.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE AmbulanciaJpaEntity a SET a.conectada = true, a.version = a.version + 1 "
+            + "WHERE a.id = :id AND a.conectada = false")
+    int conectarAtomica(@Param("id") UUID id);
+
+    /**
+     * Disconnects ONE unit, only while it is connected AND not in service. The
+     * state condition lives in the WHERE on purpose: a unit that is attending a
+     * request cannot be disconnected, and an accept that commits at the same
+     * moment competes for the row lock, so "in a mission" and "disconnected"
+     * can never hold together. Returns rows affected: 1 = disconnected, 0 = it
+     * was already disconnected or it is in service.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE AmbulanciaJpaEntity a SET a.conectada = false, a.version = a.version + 1 "
+            + "WHERE a.id = :id AND a.conectada = true AND a.estado NOT IN :estadosEnServicio")
+    int desconectarAtomica(@Param("id") UUID id,
+                           @Param("estadosEnServicio") Collection<EstadoAmbulancia> estadosEnServicio);
+
+    /**
+     * Occupies ONE unit for a mission: the same CAS as
+     * {@link #transicionAtomicaEstado}, with the extra condition that the unit
+     * is connected. Returns rows affected: 1 = this caller occupied it, 0 = it
+     * was no longer in {@code estadoEsperado} or its driver disconnected first.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE AmbulanciaJpaEntity a SET a.estado = :nuevoEstado, a.version = a.version + 1 "
+            + "WHERE a.id = :id AND a.estado = :estadoEsperado AND a.conectada = true")
+    int transicionAtomicaEstadoSiConectada(@Param("id") UUID id,
+                                           @Param("estadoEsperado") EstadoAmbulancia estadoEsperado,
+                                           @Param("nuevoEstado") EstadoAmbulancia nuevoEstado);
 }
