@@ -4,6 +4,7 @@ import co.edu.escuelaing.nexovital.flota.domain.exception.AmbulanciaNoDisponible
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudAjenaException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoAsignableException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoEncontradaException;
+import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudYaAsignadaException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoNotificadaException;
 import co.edu.escuelaing.nexovital.flota.domain.model.ResultadoAceptarSolicitud;
 import co.edu.escuelaing.nexovital.flota.domain.model.SolicitudAmbulancia;
@@ -183,6 +184,11 @@ public class SolicitudController {
     /**
      * First accept wins the CAS (AC2). A loser gets 409.
      *
+     * <p>A notified unit that loses always reads "Solicitud ya asignada a otra
+     * ambulancia.": with {@code CAS_PERDIDO} when it lost inside the conditional
+     * UPDATE, and with {@code SOLICITUD_NO_ASIGNABLE} when it arrived after the
+     * winner committed (EP-04.F2.US4).
+     *
      * @return 200 with {@code ganador=true} and the ASSIGNED request; 409
      *         {@code CAS_PERDIDO} / {@code SOLICITUD_NO_ASIGNABLE} if another
      *         caller won, if the unit was never notified for the request, or if
@@ -211,6 +217,13 @@ public class SolicitudController {
         } catch (SolicitudNoEncontradaException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ErrorResponse.of("SOLICITUD_NO_ENCONTRADA", MENSAJE_SOLICITUD_NO_ENCONTRADA));
+        } catch (SolicitudYaAsignadaException e) {
+            // The accept arrived after another unit won. Same reason the loser
+            // of the CAS reads; the code stays SOLICITUD_NO_ASIGNABLE because
+            // this caller lost to a request that had already moved, not to the
+            // conditional UPDATE. Caught before its supertype on purpose.
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ErrorResponse.of("SOLICITUD_NO_ASIGNABLE", MENSAJE_CAS_PERDIDO));
         } catch (SolicitudNoAsignableException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(ErrorResponse.of("SOLICITUD_NO_ASIGNABLE", MENSAJE_SOLICITUD_NO_ASIGNABLE));

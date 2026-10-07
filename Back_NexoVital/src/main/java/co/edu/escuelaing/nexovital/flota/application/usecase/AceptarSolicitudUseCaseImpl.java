@@ -7,6 +7,7 @@ import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudAsignadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.exception.AmbulanciaNoDisponibleException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoAsignableException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoEncontradaException;
+import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudYaAsignadaException;
 import co.edu.escuelaing.nexovital.flota.domain.model.Ambulancia;
 import co.edu.escuelaing.nexovital.flota.domain.model.ResultadoAceptarSolicitud;
 import co.edu.escuelaing.nexovital.flota.domain.model.SolicitudAmbulancia;
@@ -33,6 +34,11 @@ import java.util.UUID;
  *
  * <p>The winner returns 200; the loser receives 409. No in-memory lock and no
  * client flag decides the winner: the server is the single source of truth.
+ *
+ * <p><b>Every loser reads the same reason (EP-04.F2.US4).</b> A notified unit
+ * that loses is told the request is already assigned, whether it lost inside
+ * the conditional UPDATE (0 rows) or arrived after the winner committed
+ * ({@link SolicitudYaAsignadaException}).
  *
  * <p><b>Only a connected unit accepts (EP-04.F2.US1, D3).</b> The UPDATE that
  * occupies the unit also requires {@code conectada = true}. Accepting and
@@ -62,6 +68,13 @@ public class AceptarSolicitudUseCaseImpl implements AceptarSolicitudUseCase {
                 .orElseThrow(() -> new SolicitudNoEncontradaException(solicitudId));
 
         if (solicitud.getEstado() != EstadoSolicitud.PENDIENTE) {
+            // Too late: another unit already has it. A unit that WAS notified
+            // is told exactly that ("ya asignada"), the same reason the loser
+            // of the CAS gets. Any other closed state (cancelled, expired) and
+            // any unit that was never notified keep the generic refusal.
+            if (yaLaTieneOtraUnidad(solicitud, ambulanciaId)) {
+                throw new SolicitudYaAsignadaException(solicitudId, solicitud.getEstado());
+            }
             throw new SolicitudNoAsignableException(solicitudId, solicitud.getEstado());
         }
 
@@ -113,6 +126,17 @@ public class AceptarSolicitudUseCaseImpl implements AceptarSolicitudUseCase {
         eventPublisher.publishEvent(new FlotaActualizadaEvent(ambulanciaId, EstadoAmbulancia.EN_MISION));
 
         return ResultadoAceptarSolicitud.gano(asignada);
+    }
+
+    /**
+     * True when the request is already assigned to a unit other than the one
+     * that is asking, and the one asking was notified of it.
+     */
+    private static boolean yaLaTieneOtraUnidad(SolicitudAmbulancia solicitud, UUID ambulanciaId) {
+        UUID asignada = solicitud.getAmbulanciaAsignadaId();
+        return asignada != null
+                && !asignada.equals(ambulanciaId)
+                && solicitud.fueNotificada(ambulanciaId);
     }
 
     /**
