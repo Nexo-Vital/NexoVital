@@ -216,7 +216,8 @@ test('sin emergencias: el ciudadano pide y las cinco unidades reciben la notific
     for (const page of driverPages) {
       const card = page.getByRole('region', { name: 'Solicitud de ambulancia' });
       await expect(card).toBeVisible({ timeout: 25_000 });
-      await expect(card.getByText('Sin emergencia asociada')).toBeVisible();
+      // A citizen request points at no emergency: the row is left out.
+      await expect(card.getByText('Emergencia', { exact: true })).toHaveCount(0);
       await expect(card.getByText('4.7280, -74.0780')).toBeVisible();
       await expect(card.getByText(/km/)).toBeVisible();
     }

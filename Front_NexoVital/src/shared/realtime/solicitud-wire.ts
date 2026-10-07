@@ -45,6 +45,11 @@ function readOpcionalId(value: unknown): string | null | undefined {
   return undefined;
 }
 
+/** An ISO timestamp the platform can parse, or undefined when absent/malformed. */
+function readInstante(value: unknown): string | undefined {
+  return typeof value === 'string' && Number.isFinite(Date.parse(value)) ? value : undefined;
+}
+
 /**
  * Validates the backend `flota` request push (`SolicitudPushPayload`) and maps
  * it to `SolicitudWireFrame`. Returns null on a malformed frame (a missing or
@@ -57,6 +62,11 @@ function readOpcionalId(value: unknown): string | null | undefined {
  * `zonaId` are nullable, and the pickup point travels as `ubicacion` on the
  * creation frame. A `null`/absent `ubicacion` is legitimate on the later
  * lifecycle frames.
+ *
+ * <p>`solicitadaEn` and `timeoutEn` are optional: only the frame that offers an
+ * already open request to a unit that has just become available carries them.
+ * A value that is not a readable instant is left out, and the inbox falls back
+ * to its default window, exactly as it does for the creation frame.
  */
 export function fromWireSolicitud(value: unknown): SolicitudWireFrame | null {
   if (!isRecord(value)) {
@@ -72,6 +82,8 @@ export function fromWireSolicitud(value: unknown): SolicitudWireFrame | null {
     ambulanciaAsignadaId,
     llegada,
     ubicacion,
+    solicitadaEn,
+    timeoutEn,
   } = value;
 
   if (typeof solicitudId !== 'string' || solicitudId.length === 0) {
@@ -113,6 +125,8 @@ export function fromWireSolicitud(value: unknown): SolicitudWireFrame | null {
   if (ubicacion !== null && ubicacion !== undefined && readUbicacion(ubicacion) === null) {
     return null;
   }
+  const solicitada = readInstante(solicitadaEn);
+  const vence = readInstante(timeoutEn);
 
   return {
     solicitudId,
@@ -123,6 +137,8 @@ export function fromWireSolicitud(value: unknown): SolicitudWireFrame | null {
     ambulanciaAsignadaId: typeof ambulanciaAsignadaId === 'string' ? ambulanciaAsignadaId : null,
     ubicacion: readUbicacion(ubicacion),
     ...(llegada === true ? { llegada: true } : {}),
+    ...(solicitada ? { solicitadaEn: solicitada } : {}),
+    ...(vence ? { timeoutEn: vence } : {}),
   };
 }
 
@@ -163,6 +179,10 @@ export interface WireSolicitudContext {
  * the context fallback otherwise; `tipo`/`nivel` are filled from the context or
  * left absent. `timeoutEn` is '' when the backend declared no deadline, which
  * the inbox already treats as "no window known" and falls back to its default.
+ * When the frame does declare it (a request offered late, to a unit that became
+ * available while it was still open), the deadline is passed through untouched
+ * and, with `solicitadaEn`, the real window length: the card then counts down
+ * the time the request has left.
  */
 export function solicitudFrameFromWire(
   frame: SolicitudWireFrame,
@@ -178,6 +198,8 @@ export function solicitudFrameFromWire(
   switch (frame.estado) {
     case 'PENDIENTE': {
       const escena = frame.ubicacion ?? context.escena;
+      const deadline = frame.timeoutEn ? Date.parse(frame.timeoutEn) : Number.NaN;
+      const requested = frame.solicitadaEn ? Date.parse(frame.solicitadaEn) : Number.NaN;
       return {
         type: 'solicitud.broadcast',
         requestId: frame.solicitudId,
@@ -186,10 +208,13 @@ export function solicitudFrameFromWire(
         tipo: context.tipo ?? '',
         ...(context.nivel ? { nivel: context.nivel } : {}),
         ...(escena ? { escena } : {}),
-        timeoutEn: '',
+        timeoutEn: frame.timeoutEn ?? '',
         notificadas: frame.ambulanciasNotificadas,
         mode: 'broadcast',
         notifiedCount: frame.ambulanciasNotificadas.length,
+        ...(Number.isFinite(deadline) && Number.isFinite(requested) && deadline > requested
+          ? { timeoutMs: deadline - requested }
+          : {}),
       };
     }
     case 'ASIGNADA':

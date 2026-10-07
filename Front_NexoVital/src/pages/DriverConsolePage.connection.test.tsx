@@ -150,6 +150,13 @@ describe('DriverConsolePage connection off demo mode', () => {
       if (url.endsWith('/mia/solicitudes/pendientes')) {
         return Promise.resolve(mockResponse(200, backend.pendientes));
       }
+      if (url.endsWith('/finalizar')) {
+        // The server closes the request and releases the unit in one operation.
+        backend.unit = { ...backend.unit, estado: 'DISPONIBLE', version: backend.unit.version + 1 };
+        return Promise.resolve(
+          mockResponse(200, wirePending({ estado: 'TOMADA', ambulanciaAsignadaId: REAL_UNIT })),
+        );
+      }
       if (url.endsWith('/mia/solicitudes')) {
         return Promise.resolve(mockResponse(200, backend.historial));
       }
@@ -559,5 +566,104 @@ describe('DriverConsolePage connection off demo mode', () => {
     );
 
     expect(screen.queryByRole('list', { name: 'Lista de solicitudes' })).toBeNull();
+  });
+
+  it('finishing the service brings the request that was opened meanwhile', async () => {
+    const user = userEvent.setup();
+    const LATE = '8b6f2f0e-0000-4000-8000-0000000000e1';
+    backend.unit = wireUnit({ estado: 'EN_MISION' });
+    backend.historial = [
+      wirePending({
+        estado: 'ASIGNADA',
+        ambulanciaAsignadaId: REAL_UNIT,
+        llegadaEn: new Date().toISOString(),
+      }),
+    ];
+    render(<DriverConsolePage port={new FakeRealtimePort()} />);
+    const finish = await screen.findByRole('button', { name: 'Finalizar servicio' });
+    // While the unit was busy the server answered no pending request.
+    const readsBefore = callsTo('/mia/solicitudes/pendientes').length;
+
+    // Another citizen asked while this unit was busy; once the unit is free the
+    // server adds it to that request, which is still open.
+    backend.pendientes = [
+      wirePending({ id: LATE, ambulanciasNotificadas: [OTHER_UNIT, REAL_UNIT] }),
+    ];
+    await user.click(finish);
+
+    const card = await screen.findByRole('region', { name: 'Solicitud de ambulancia' });
+    expect(within(card).getByRole('button', { name: 'Aceptar solicitud' })).toBeEnabled();
+    expect(callsTo('/mia/solicitudes/pendientes').length).toBeGreaterThan(readsBefore);
+    expect(useSolicitudesStore.getState().items.some((item) => item.id === LATE)).toBe(true);
+  });
+
+  it('keeps a late offer that arrives a moment before the mission is closed', async () => {
+    const user = userEvent.setup();
+    const LATE = '8b6f2f0e-0000-4000-8000-0000000000e2';
+    backend.unit = wireUnit({ estado: 'EN_MISION' });
+    backend.historial = [
+      wirePending({
+        estado: 'ASIGNADA',
+        ambulanciaAsignadaId: REAL_UNIT,
+        llegadaEn: new Date().toISOString(),
+      }),
+    ];
+    const port = new FakeRealtimePort();
+    render(<DriverConsolePage port={port} />);
+    const finish = await screen.findByRole('button', { name: 'Finalizar servicio' });
+    const now = Date.now();
+
+    // The server pushes after its commit, so the offer can reach the console
+    // before the answer of "finalizar" does. The pending read finds nothing new.
+    await user.click(finish);
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, {
+        solicitudId: LATE,
+        ubicacion: { lat: 4.75, lng: -74.09 },
+        emergenciaId: null,
+        zonaId: null,
+        estado: 'PENDIENTE',
+        ambulanciasNotificadas: [OTHER_UNIT, REAL_UNIT],
+        ambulanciaAsignadaId: null,
+        llegada: false,
+        solicitadaEn: new Date(now - 30_000).toISOString(),
+        timeoutEn: new Date(now + 30_000).toISOString(),
+      }),
+    );
+
+    const card = await screen.findByRole('region', { name: 'Solicitud de ambulancia' });
+    expect(within(card).getByRole('button', { name: 'Aceptar solicitud' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Finalizar servicio' })).toBeNull();
+  });
+
+  it('a request offered late counts down the time it has left, not a full window', async () => {
+    const port = new FakeRealtimePort();
+    render(<DriverConsolePage port={port} />);
+    await within(unitPanel()).findByText('En línea');
+    const now = Date.now();
+
+    // The frame of `SolicitudAbiertaPushListener`: the request was raised 48 s
+    // ago with a 60 s window, so 12 s are left.
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, {
+        solicitudId: REQUEST,
+        ubicacion: { lat: 4.75, lng: -74.09 },
+        emergenciaId: null,
+        zonaId: null,
+        estado: 'PENDIENTE',
+        ambulanciasNotificadas: [OTHER_UNIT, REAL_UNIT],
+        ambulanciaAsignadaId: null,
+        llegada: false,
+        solicitadaEn: new Date(now - 48_000).toISOString(),
+        timeoutEn: new Date(now + 12_000).toISOString(),
+      }),
+    );
+
+    const card = await screen.findByRole('region', { name: 'Solicitud de ambulancia' });
+    const timer = within(card).getByRole('timer');
+    expect(timer).toHaveTextContent(/^0:1[012]$/);
+    // The registry row keeps the deadline of the request, never an invented one.
+    const row = useSolicitudesStore.getState().items.find((item) => item.id === REQUEST);
+    expect(row?.timeoutEn).toBe(new Date(now + 12_000).toISOString());
   });
 });

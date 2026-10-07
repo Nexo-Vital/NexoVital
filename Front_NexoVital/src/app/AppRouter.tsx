@@ -76,7 +76,7 @@ const LEVEL_LABEL_ES: Record<EmergencyLevel, string> = {
 function toBellNotification(alert: DriverAlert): AppFrameNotification {
   return {
     id: alert.requestId,
-    title: alert.tipo || 'Sin clasificar',
+    title: alert.tipo || 'Solicitud de ambulancia',
     ...(alert.nivel ? { levelLabel: LEVEL_LABEL_ES[alert.nivel] } : {}),
     locationLabel: alert.escena ? formatCoordinates(alert.escena) : 'Sin ubicación',
     ...(Number.isFinite(Date.parse(alert.timeoutEn)) ? { timeoutEn: alert.timeoutEn } : {}),

@@ -60,8 +60,10 @@ import type {
 import { DriverMissionPanel } from './DriverMissionPanel';
 import { DRIVER_STATUS_META, DRIVER_STATUS_ORDER, type DriverStatus } from './driver-status';
 import {
+  isSoundMuted,
   isSoundSupported,
   isSoundUnlocked,
+  setSoundMuted,
   subscribeSoundStatus,
   unlockSound,
 } from './request-sound';
@@ -87,20 +89,25 @@ function RailPanel({ label, children }: { label: string; children: ReactNode }) 
 
 /**
  * Emergency-level chip. A request with no declared level (a citizen request has
- * no triage behind it) reads "Sin clasificar" instead of an invented severity.
- * The colour still comes from the shared `EMERGENCY_LEVEL_META` table.
+ * no triage behind it) shows NO chip: a label that only says what is missing is
+ * noise on a card the driver reads in seconds, and no severity is invented. The
+ * colour comes from the shared `EMERGENCY_LEVEL_META` table.
  */
 function LevelChip({ level, className }: { level?: EmergencyLevel; className?: string }) {
-  const meta = level ? EMERGENCY_LEVEL_META[level] : null;
+  if (!level) {
+    return null;
+  }
+  const meta = EMERGENCY_LEVEL_META[level];
   return (
     <span
       className={cn(
         'shrink-0 rounded-nv-pill border px-2.5 py-1 font-semibold text-xs',
-        meta ? cn(meta.borderClass, meta.textClass) : 'border-idle/40 text-idle',
+        meta.borderClass,
+        meta.textClass,
         className,
       )}
     >
-      {meta ? meta.label : 'Sin clasificar'}
+      {meta.label}
     </span>
   );
 }
@@ -288,7 +295,6 @@ function MyUnitPanel({
             );
           })}
         </div>
-        <p className="text-nv-navy-400 text-xs"></p>
       </fieldset>
 
       {/*
@@ -384,14 +390,16 @@ function unitListLabel(ids: string[], units: readonly Ambulancia[]): string {
 }
 
 /**
- * Discreet sound affordance. Browsers block audio until a user gesture, so this
- * is the one control that unlocks the synthesized ding. It never claims the
- * sound is active when it is not: while locked it offers "Activar sonido", and
+ * Sound control. The sound is ON by default and unlocks itself with the first
+ * click on the page; this control shows the real state and lets the driver
+ * silence it or bring it back. It never claims the sound is active when it is
+ * not: while the browser still blocks the audio it offers "Activar sonido", and
  * a browser without Web Audio says so instead of showing a dead button.
  */
 function SoundToggle() {
   const supported = isSoundSupported();
   const unlocked = useSyncExternalStore(subscribeSoundStatus, isSoundUnlocked, () => false);
+  const muted = useSyncExternalStore(subscribeSoundStatus, isSoundMuted, () => false);
 
   if (!supported) {
     return (
@@ -400,12 +408,35 @@ function SoundToggle() {
       </span>
     );
   }
+  if (muted) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setSoundMuted(false);
+          void unlockSound();
+        }}
+        aria-pressed={false}
+        title="Activar el sonido de las solicitudes"
+        className="inline-flex shrink-0 items-center gap-1.5 rounded-nv-pill border-[1.5px] border-nv-line bg-white px-2.5 py-1 font-semibold text-nv-navy text-xs"
+      >
+        <VolumeX className="size-3.5" aria-hidden />
+        Sonido silenciado
+      </button>
+    );
+  }
   if (unlocked) {
     return (
-      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-nv-pill bg-nv-lime px-2.5 py-1 font-semibold text-nv-navy text-xs">
+      <button
+        type="button"
+        onClick={() => setSoundMuted(true)}
+        aria-pressed={true}
+        title="Silenciar el sonido de las solicitudes"
+        className="inline-flex shrink-0 items-center gap-1.5 rounded-nv-pill bg-nv-lime px-2.5 py-1 font-semibold text-nv-navy text-xs"
+      >
         <Volume2 className="size-3.5" aria-hidden />
         Sonido activado
-      </span>
+      </button>
     );
   }
   return (
@@ -419,6 +450,9 @@ function SoundToggle() {
     </button>
   );
 }
+
+/** DOM id of the open request card, so the pop-up's "Ver solicitud" can reach it. */
+export const REQUEST_CARD_ID = 'solicitud-abierta';
 
 interface RequestCardProps {
   broadcast: SolicitudBroadcastPayload;
@@ -482,6 +516,8 @@ function RequestCard({
   const requestedLabel =
     requestedAtMs !== null ? formatElapsed(new Date(requestedAtMs).toISOString(), now) : '—';
 
+  const emergencyLabel = [broadcast.emergenciaId, broadcast.tipo].filter(Boolean).join(' · ');
+
   const hint =
     broadcast.mode === 'direct'
       ? `Solicitud dirigida solo a tu unidad. Si no respondes en ${windowSeconds} s, deja de mostrarse aquí.`
@@ -491,8 +527,9 @@ function RequestCard({
 
   return (
     <section
+      id={REQUEST_CARD_ID}
       aria-label="Solicitud de ambulancia"
-      className="flex flex-col gap-3.5 rounded-nv-lg border-nv-red-600 border-t-[5px] bg-white p-4 shadow-nv-card"
+      className="flex scroll-mt-4 flex-col gap-3.5 rounded-nv-lg border-nv-red-600 border-t-[5px] bg-white p-4 shadow-nv-card"
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <h3 className="font-semibold text-[17px]">Solicitud de ambulancia</h3>
@@ -509,17 +546,11 @@ function RequestCard({
           ciudadano"). There is no requester name in the request domain — that
           belongs to the citizen data stage — so the key names what the value
           really is: the emergency the request points at, shown with its real
-          type (`EMG-002 · Traffic collision`). The mockup's requester name stays
-          pending until that data stage exists.
+          type (`EMG-002 · Traffic collision`). A citizen request points at no
+          emergency, and then the row is left out: a row that only says what is
+          missing is noise.
         */}
-        <RequestDataRow
-          label="Emergencia"
-          value={
-            [broadcast.emergenciaId, broadcast.tipo].filter(Boolean).join(' · ') ||
-            'Sin emergencia asociada'
-          }
-          icon={User}
-        />
+        {emergencyLabel && <RequestDataRow label="Emergencia" value={emergencyLabel} icon={User} />}
         {/* A citizen request declares no zone, so the coordinates it really
             reported (`escena`) are shown instead of an empty zone slot. A CRUE
             request keeps its declared zone. A backend frame may carry neither,
@@ -732,12 +763,12 @@ function SolicitudDetail({
       </div>
 
       <div>
-        <RequestDataRow
-          label="Emergencia"
-          value={solicitud.emergenciaId || 'Sin emergencia asociada'}
-          icon={User}
-        />
-        <RequestDataRow label="Tipo" value={solicitud.tipo || 'Sin clasificar'} icon={Info} />
+        {/* A citizen request has no emergency and no type behind it: the two
+            rows appear only when there is something to say. */}
+        {solicitud.emergenciaId && (
+          <RequestDataRow label="Emergencia" value={solicitud.emergenciaId} icon={User} />
+        )}
+        {solicitud.tipo && <RequestDataRow label="Tipo" value={solicitud.tipo} icon={Info} />}
         {/* A citizen request declares no zone; its own reported coordinates are
             the honest location, never an invented zone. */}
         <RequestDataRow label="Ubicación" value={solicitudSceneLabel(solicitud)} icon={MapPin} />
@@ -942,7 +973,7 @@ function SolicitudesPanel({
           <Radio className="size-6 text-nv-teal" aria-hidden />
           <b className="font-semibold text-sm">Sin solicitudes por ahora</b>
           <span className="text-nv-navy-400 text-xs leading-[18px]">
-            Cuando alguien cerca pida una ambulancia te avisaremos aquí, con sonido.
+            Cuando alguien pida una ambulancia te avisaremos en pantalla, con sonido.
           </span>
         </div>
       )}

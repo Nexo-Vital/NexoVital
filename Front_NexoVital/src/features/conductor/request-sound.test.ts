@@ -71,6 +71,7 @@ describe('request-sound', () => {
 
   afterEach(() => {
     removeAudio();
+    window.localStorage.clear();
   });
 
   it('reports unsupported and never plays when the environment has no Web Audio', async () => {
@@ -108,6 +109,57 @@ describe('request-sound', () => {
       1174.66,
       expect.any(Number),
     );
+  });
+
+  it('is on by default: the first click on the page unlocks it', async () => {
+    installFakeAudio();
+    const sound = await loadModule();
+    const stop = sound.enableSoundOnFirstGesture();
+    expect(sound.isSoundMuted()).toBe(false);
+    expect(sound.isSoundUnlocked()).toBe(false);
+
+    window.dispatchEvent(new Event('pointerdown'));
+    await vi.waitFor(() => expect(sound.isSoundUnlocked()).toBe(true));
+
+    expect(sound.playRequestDing()).toBe(true);
+    // Once unlocked the listener is gone: a later click resumes nothing.
+    const resumes = created?.resume.mock.calls.length;
+    window.dispatchEvent(new Event('pointerdown'));
+    expect(created?.resume.mock.calls.length).toBe(resumes);
+    stop();
+  });
+
+  it('stops listening for the gesture when the console is left', async () => {
+    installFakeAudio();
+    const sound = await loadModule();
+    const stop = sound.enableSoundOnFirstGesture();
+
+    stop();
+    window.dispatchEvent(new Event('pointerdown'));
+    await Promise.resolve();
+
+    expect(sound.isSoundUnlocked()).toBe(false);
+  });
+
+  it('a silenced sound does not ring, and the choice is remembered', async () => {
+    installFakeAudio();
+    const sound = await loadModule();
+    await sound.unlockSound();
+    const listener = vi.fn();
+    sound.subscribeSoundStatus(listener);
+
+    sound.setSoundMuted(true);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(sound.isSoundMuted()).toBe(true);
+    expect(sound.playRequestDing()).toBe(false);
+    expect(created?.oscillators).toHaveLength(0);
+
+    // A reload reads the choice back.
+    const reloaded = await loadModule();
+    expect(reloaded.isSoundMuted()).toBe(true);
+
+    reloaded.setSoundMuted(false);
+    expect((await loadModule()).isSoundMuted()).toBe(false);
   });
 
   it('notifies subscribers when the unlock state changes', async () => {

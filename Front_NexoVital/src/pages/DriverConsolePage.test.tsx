@@ -549,31 +549,32 @@ describe('DriverConsolePage', () => {
     ).toBeInTheDocument();
   });
 
-  it('shows "Sin clasificar" for a citizen request that declared no severity', () => {
+  it('shows no severity chip and no emergency row for a citizen request', () => {
     const port = new FakeRealtimePort();
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
     connectDriver();
 
-    // A citizen request carries no `nivel`: the driver must never read an
-    // invented severity like "Medium" (C1).
+    // A citizen request carries no `nivel` and points at no emergency. The
+    // driver must never read an invented severity (C1), and a label that only
+    // says what is missing is noise on a card read in seconds.
     const citizenRequest: SolicitudBroadcastPayload = {
       ...BROADCAST,
+      emergenciaId: '',
       zonaId: '',
-      tipo: 'Solicitud de ambulancia',
+      tipo: '',
     };
     delete citizenRequest.nivel;
     act(() => port.emit(DESTINATIONS.solicitudes, citizenRequest));
 
-    const heading = within(driverRail()).getByRole('heading', {
-      name: 'Solicitud de ambulancia',
-    });
-    expect(
-      within(heading.parentElement as HTMLElement).getByText('Sin clasificar'),
-    ).toBeInTheDocument();
-    expect(
-      within(heading.parentElement as HTMLElement).queryByText('Medium'),
-    ).not.toBeInTheDocument();
-    expect(within(heading.parentElement as HTMLElement).queryByText('Low')).not.toBeInTheDocument();
+    const card = within(driverRail()).getByRole('region', { name: 'Solicitud de ambulancia' });
+    expect(within(card).queryByText('Sin clasificar')).not.toBeInTheDocument();
+    expect(within(card).queryByText('Medium')).not.toBeInTheDocument();
+    expect(within(card).queryByText('Low')).not.toBeInTheDocument();
+    expect(within(card).queryByText('Emergencia')).not.toBeInTheDocument();
+    expect(within(card).queryByText(/Sin emergencia/)).not.toBeInTheDocument();
+    // What the request does carry is still there.
+    expect(within(card).getByText('Ubicación')).toBeInTheDocument();
+    expect(within(card).getByText('Distancia')).toBeInTheDocument();
   });
 
   it('shows the reported coordinates when the request declared no zone', () => {
@@ -636,29 +637,171 @@ describe('DriverConsolePage', () => {
     );
   });
 
-  it('U4: raises an ephemeral toast with the distance, without blocking the card', async () => {
-    const user = userEvent.setup();
-    const port = new FakeRealtimePort();
-    render(<DriverConsolePage port={port} ambulanceId="A-07" />);
-    connectDriver();
-    act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+  describe('pop-up of a new request', () => {
+    const popup = () =>
+      screen.queryByRole('alertdialog', { name: 'Nueva solicitud de ambulancia' });
+    /** Accepts and rejects sent to the arbiter; closing the pop-up must send none. */
+    const answersPublished = (port: FakeRealtimePort) =>
+      port.published
+        .map((entry) => (entry.payload as { type?: string }).type)
+        .filter((type) => type === 'solicitud.accept' || type === 'solicitud.reject');
 
-    // No GPS: the toast carries the distance from the unit's own declared
-    // position (RAD-3), never a missing or invented value.
-    const messages = () => useToastStore.getState().toasts.map((item) => item.message);
-    expect(messages()).toContain('Nueva solicitud de ambulancia a 12,8 km');
-    // The request card is still fully there: the toast did not replace it.
-    expect(
-      within(driverRail()).getByRole('heading', { name: 'Solicitud de ambulancia' }),
-    ).toBeInTheDocument();
+    it('shows the distance and the place, without replacing the card', () => {
+      const port = new FakeRealtimePort();
+      render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+      connectDriver();
+      expect(popup()).not.toBeInTheDocument();
 
-    // After simulating, a fresh arrival carries the simulated distance.
-    await user.click(screen.getByRole('button', { name: 'Simular posición' }));
-    act(() => port.emit(DESTINATIONS.solicitudes, { ...BROADCAST, requestId: 'REQ-2' }));
+      act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
 
-    const all = messages();
-    const latest = all[all.length - 1] ?? '';
-    expect(latest).toMatch(/^Nueva solicitud de ambulancia a \d+,\d km$/);
+      const dialog = popup() as HTMLElement;
+      expect(dialog).toBeInTheDocument();
+      // No GPS: the distance is from the unit's own declared position (RAD-3),
+      // never a missing or invented value.
+      expect(within(dialog).getByText(/^12,8 km · \d+ min$/)).toBeInTheDocument();
+      expect(within(dialog).getByText('Kennedy')).toBeInTheDocument();
+      expect(within(dialog).getByRole('timer')).toBeInTheDocument();
+      // The small toast is gone: the pop-up is the notice.
+      expect(useToastStore.getState().toasts).toHaveLength(0);
+      // The card in the panel is still fully there.
+      expect(within(driverRail()).getByRole('button', { name: 'Aceptar solicitud' })).toBeEnabled();
+    });
+
+    it('is not shown while the driver is disconnected', () => {
+      const port = new FakeRealtimePort();
+      render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+
+      act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+
+      expect(popup()).not.toBeInTheDocument();
+    });
+
+    it('accepts the request from the pop-up, and closes when it becomes the mission', async () => {
+      const user = userEvent.setup();
+      const port = new FakeRealtimePort();
+      render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+      connectDriver();
+      act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+
+      await user.click(within(popup() as HTMLElement).getByRole('button', { name: 'Aceptar' }));
+
+      // A bid, exactly like the card's button: the arbiter decides.
+      expect(port.published).toContainEqual({
+        destination: DESTINATIONS.solicitudes,
+        payload: { type: 'solicitud.accept', requestId: 'REQ-1', ambulanceId: 'A-07' },
+      });
+      expect(
+        within(popup() as HTMLElement).getByRole('button', { name: 'Enviando…' }),
+      ).toBeDisabled();
+
+      act(() =>
+        port.emit(DESTINATIONS.solicitudes, {
+          type: 'request.taken',
+          requestId: 'REQ-1',
+          winner: 'A-07',
+        }),
+      );
+      expect(popup()).not.toBeInTheDocument();
+    });
+
+    it('the "X" closes it without rejecting: the request stays in the panel', async () => {
+      const user = userEvent.setup();
+      const port = new FakeRealtimePort();
+      render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+      connectDriver();
+      act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+
+      await user.click(
+        within(popup() as HTMLElement).getByRole('button', { name: 'Cerrar aviso' }),
+      );
+
+      expect(popup()).not.toBeInTheDocument();
+      expect(answersPublished(port)).toEqual([]);
+      expect(within(driverRail()).getByRole('button', { name: 'Aceptar solicitud' })).toBeEnabled();
+    });
+
+    it('keeps showing the first request and counts the ones that arrive after it', () => {
+      const port = new FakeRealtimePort();
+      render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+      connectDriver();
+      act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+      act(() =>
+        port.emit(DESTINATIONS.solicitudes, { ...BROADCAST, requestId: 'REQ-2', zonaId: 'Suba' }),
+      );
+      act(() =>
+        port.emit(DESTINATIONS.solicitudes, { ...BROADCAST, requestId: 'REQ-3', zonaId: 'Usme' }),
+      );
+
+      const dialog = popup() as HTMLElement;
+      expect(within(dialog).getByText('Kennedy')).toBeInTheDocument();
+      expect(within(dialog).queryByText('Suba')).not.toBeInTheDocument();
+      expect(within(dialog).getByText(/Hay 2 solicitudes más en la lista/)).toBeInTheDocument();
+    });
+
+    it('comes back, with the first request, only when one the driver has not seen arrives', async () => {
+      const user = userEvent.setup();
+      const port = new FakeRealtimePort();
+      render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+      connectDriver();
+      act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+      act(() =>
+        port.emit(DESTINATIONS.solicitudes, { ...BROADCAST, requestId: 'REQ-2', zonaId: 'Suba' }),
+      );
+      await user.click(
+        within(popup() as HTMLElement).getByRole('button', { name: 'Cerrar aviso' }),
+      );
+      expect(popup()).not.toBeInTheDocument();
+
+      // The first one is cancelled: the second takes the card, but the driver
+      // already saw it, so the pop-up stays closed.
+      act(() =>
+        port.emit(DESTINATIONS.solicitudes, { type: 'request.cancelled', requestId: 'REQ-1' }),
+      );
+      expect(popup()).not.toBeInTheDocument();
+
+      // A request the driver has not seen: the pop-up is back, in order.
+      act(() =>
+        port.emit(DESTINATIONS.solicitudes, { ...BROADCAST, requestId: 'REQ-3', zonaId: 'Usme' }),
+      );
+      const dialog = popup() as HTMLElement;
+      expect(within(dialog).getByText('Suba')).toBeInTheDocument();
+      expect(within(dialog).getByText(/Hay 1 solicitud más en la lista/)).toBeInTheDocument();
+    });
+
+    it('"Ver solicitud" closes it and centres the map on the pickup point', async () => {
+      const user = userEvent.setup();
+      const port = new FakeRealtimePort();
+      render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+      connectDriver();
+      act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+
+      await user.click(
+        within(popup() as HTMLElement).getByRole('button', { name: 'Ver solicitud' }),
+      );
+
+      expect(popup()).not.toBeInTheDocument();
+      expect(answersPublished(port)).toEqual([]);
+      const map = screen.getByTestId('map-canvas');
+      expect(map).toHaveAttribute('data-focus-lat', '4.628');
+      expect(map).toHaveAttribute('data-focus-lng', '-74.148');
+    });
+
+    it('closes when another unit takes the request', () => {
+      const port = new FakeRealtimePort();
+      render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+      connectDriver();
+      act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+
+      act(() =>
+        port.emit(DESTINATIONS.solicitudes, {
+          type: 'request.taken',
+          requestId: 'REQ-1',
+          winner: 'A-12',
+        }),
+      );
+
+      expect(popup()).not.toBeInTheDocument();
+    });
   });
 
   it('passes the requester pin, the connector and the notified units to the map', async () => {

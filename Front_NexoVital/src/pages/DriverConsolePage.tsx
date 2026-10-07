@@ -7,12 +7,14 @@ import {
   countCentersByLevel,
   formatDistance,
 } from '@/features/ciudadano/citizen-view';
-import { DriverRail } from '@/features/conductor/DriverRail';
+import { DriverRail, REQUEST_CARD_ID } from '@/features/conductor/DriverRail';
 import { type DriverAlert, useDriverAlertsStore } from '@/features/conductor/driver-alerts-store';
 import { resolveDriverAmbulanceId } from '@/features/conductor/driver-session';
 import { DRIVER_STATUS_META, type DriverStatus } from '@/features/conductor/driver-status';
 import { fetchHistorialSolicitudes } from '@/features/conductor/history-api';
 import { fetchSolicitudesPendientes } from '@/features/conductor/pending-api';
+import { RequestPopup } from '@/features/conductor/RequestPopup';
+import { enableSoundOnFirstGesture } from '@/features/conductor/request-sound';
 import {
   canRespondToSolicitud,
   solicitudResponseBlockReason,
@@ -399,13 +401,19 @@ export default function DriverConsolePage({
 
   const inbox = useSolicitudInbox(port, unitId, effectivePosition, receiving);
 
+  // The request sound is on by default. The browser only lets a page play audio
+  // after a user gesture, so the first click or key press on the console (to
+  // connect, for instance) unlocks it; the driver switches nothing on.
+  useEffect(() => enableSoundOnFirstGesture(), []);
+
   /*
     Requests the push did not deliver (EP-04.F2.US1, D6). The broker does not
     replay: after a reload, or after the channel dropped for a moment, the open
     requests this unit was notified of exist only on the server. They are read
     again every time the driver IS receiving (connected and available) with a
     resolved unit — on entering that way, right after "Conectarse" or
-    "Disponible", and when the realtime channel comes back — and each one goes
+    "Disponible", when a mission ends and when the realtime channel comes back
+    — and each one goes
     through the same two places a live frame goes: the registry row and the
     inbox card.
 
@@ -452,6 +460,24 @@ export default function DriverConsolePage({
     setPendingReloads((count) => count + 1);
   }, []);
   useRealtimeReconnect(connection.serverManaged ? port : null, reloadPending);
+  /*
+    A unit that finishes its service becomes available again, and the server
+    then adds it to the requests that are still open (it was busy when they were
+    created, so it was never notified). The server also pushes them, but that
+    frame can reach the console while the mission is still on screen. Reading
+    the pending requests the moment the mission ends makes the result the same
+    whatever the order: the open requests appear, each with the time it has
+    left.
+  */
+  const inMission = inbox.mission !== null;
+  const wasInMissionRef = useRef(inMission);
+  useEffect(() => {
+    const ended = wasInMissionRef.current && !inMission;
+    wasInMissionRef.current = inMission;
+    if (ended) {
+      reloadPending();
+    }
+  }, [inMission, reloadPending]);
 
   /*
     A mission this unit already holds on the server (EP-04.F2.US1, D6). The
@@ -881,6 +907,43 @@ export default function DriverConsolePage({
     [mapScene, effectivePosition, missionActive],
   );
 
+  /*
+    Pop-up of a new request (EP-04.F2.US2). It mirrors the inbox's open offer,
+    which is always the request that was raised first, so it is the same request
+    the card in the panel shows.
+
+    Closing it (the "X" or "Ver solicitud") is not a rejection: it only says the
+    driver has seen every request that is pending at that moment, and those stay
+    in the panel. The pop-up comes back when a request they have NOT seen
+    arrives, and again it shows the first in order, with the count of the rest.
+    Nothing is remembered across a reload: the requests that are still open are
+    announced again.
+  */
+  const pendingOfferIds = useMemo(
+    () => (inbox.broadcast ? [inbox.broadcast.requestId, ...inbox.queuedIds] : []),
+    [inbox.broadcast, inbox.queuedIds],
+  );
+  const [seenOfferIds, setSeenOfferIds] = useState<readonly string[]>([]);
+  const popupOpen =
+    requestOpen &&
+    inbox.broadcast !== null &&
+    pendingOfferIds.some((id) => !seenOfferIds.includes(id));
+  const closeRequestPopup = useCallback(() => {
+    setSeenOfferIds(pendingOfferIds);
+  }, [pendingOfferIds]);
+  // "Ver solicitud": the pop-up closes, the map centres on the pickup point and
+  // the card is brought into view (on a phone the panel is below the map).
+  const viewRequestFromPopup = useCallback(() => {
+    setSeenOfferIds(pendingOfferIds);
+    const scene = inbox.broadcast?.escena;
+    if (scene) {
+      setMapFocus({ lat: scene.lat, lng: scene.lng });
+    }
+    document
+      .getElementById(REQUEST_CARD_ID)
+      ?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+  }, [pendingOfferIds, inbox.broadcast]);
+
   const missionLocation = inbox.mission
     ? inbox.mission.zonaId || (inbox.mission.escena ? formatCoordinates(inbox.mission.escena) : '')
     : '';
@@ -930,10 +993,6 @@ export default function DriverConsolePage({
           onSelectAmbulance={() => undefined}
           onSelectEmergency={() => undefined}
         />
-
-        {/* U4: the arrival notice is now an ephemeral toast raised by the inbox
-            hook at the exact arrival point (bottom-centre, auto-dismissing, never
-            blocking). No second inline banner duplicates it here. */}
 
         {/* Only once the citizen confirmed: the toast never announces a step
             that has not happened (`C.d5`). */}
@@ -1001,6 +1060,24 @@ export default function DriverConsolePage({
         onViewSelected={handleViewSelected}
         onCloseSelected={handleCloseSelected}
       />
+
+      {popupOpen && (
+        <RequestPopup
+          distanceLabel={
+            requestDistance !== null
+              ? `${formatDistance(requestDistance)}${requestEta !== null ? ` · ${requestEta} min` : ''}`
+              : null
+          }
+          locationLabel={sceneLabel}
+          deadlineMs={inbox.deadlineMs}
+          queuedCount={inbox.queuedIds.length}
+          submitting={inbox.phase === 'submitting'}
+          unitResolved={unitResolved}
+          onAccept={inbox.accept}
+          onView={viewRequestFromPopup}
+          onClose={closeRequestPopup}
+        />
+      )}
 
       {/*
         Location permission pop-up, mounted at PAGE level so it does not nest

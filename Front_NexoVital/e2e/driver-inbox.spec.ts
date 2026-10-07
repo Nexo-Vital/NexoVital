@@ -323,29 +323,45 @@ test('EP-04.F2.US3 detalle: el conductor ve el detalle de la solicitud notificad
     //    request no longer carries an emergency or a zone.
     const card = driverPage.getByRole('region', { name: 'Solicitud de ambulancia' });
     await expect(card).toBeVisible({ timeout: 20_000 });
-    await expect(card.getByText('Sin emergencia asociada')).toBeVisible();
+    // The request points at no emergency: the row is left out of the card.
+    await expect(card.getByText('Emergencia', { exact: true })).toHaveCount(0);
     await expect(card.getByText('4.7280, -74.0780')).toBeVisible();
     await expect(card.getByText(/km/)).toBeVisible();
     console.log('[US3-detalle] live card shows the pickup point and the distance');
 
-    // 4. The registry sheet shows the full detail too, opened by tapping the row.
+    // The same request is announced in the middle of the screen (EP-04.F2.US2).
+    // Closing the notice is not a rejection: the request stays in the panel.
+    const popup = driverPage.getByRole('alertdialog', { name: 'Nueva solicitud de ambulancia' });
+    await expect(popup).toBeVisible({ timeout: 10_000 });
+    await popup.getByRole('button', { name: 'Cerrar aviso' }).click();
+    await expect(popup).toBeHidden();
+    await expect(card).toBeVisible();
+
+    // 4. The registry shows the full detail too, opened by tapping the row. The
+    //    row names the request by its short reference (never the whole id), and
+    //    the detail opens inline, below the list.
+    const reference = `#${request.id.replace(/-/g, '').slice(0, 6)}`;
     const registry = driverPage.getByRole('list', { name: 'Lista de solicitudes' });
-    const row = registry.getByRole('button').filter({ hasText: request.id });
+    const row = registry.getByRole('button').filter({ hasText: reference });
     await expect(row).toBeVisible({ timeout: 20_000 });
     await row.click();
+    await expect(row).toHaveAttribute('aria-expanded', 'true');
 
-    const sheet = driverPage.getByRole('dialog', { name: `Solicitud ${request.id}` });
+    const sheet = driverPage.getByTestId('solicitud-detail');
     await expect(sheet).toBeVisible({ timeout: 10_000 });
-    await expect(sheet.getByText('Emergencia', { exact: true })).toBeVisible();
-    await expect(sheet.getByText('Sin emergencia asociada')).toBeVisible();
-    await expect(sheet.getByText('Tipo')).toBeVisible();
-    await expect(sheet.getByText('Ubicación')).toBeVisible();
+    await expect(sheet.getByRole('heading', { name: new RegExp(reference) })).toBeVisible();
+    // No emergency and no type behind a citizen request: those two rows are
+    // left out instead of saying what is missing.
+    await expect(sheet.getByText('Emergencia', { exact: true })).toHaveCount(0);
+    await expect(sheet.getByText('Tipo', { exact: true })).toHaveCount(0);
+    await expect(sheet.getByText('Ubicación', { exact: true })).toBeVisible();
     await expect(sheet.getByText('4.7280, -74.0780')).toBeVisible();
-    await expect(sheet.getByText('Distancia')).toBeVisible();
-    await expect(sheet.getByText('Unidades avisadas')).toBeVisible();
-    await expect(
-      sheet.getByText(String(request.ambulanciasNotificadas.length), { exact: true }),
-    ).toBeVisible();
+    await expect(sheet.getByText('Distancia', { exact: true })).toBeVisible();
+    // The notified units are listed by plate; the request reached at least this
+    // driver's unit, so the row never reads as "nobody was notified".
+    expect(request.ambulanciasNotificadas).toContain(unitId);
+    await expect(sheet.getByText('Unidades avisadas', { exact: true })).toBeVisible();
+    await expect(sheet.getByText('Sin unidades avisadas')).toHaveCount(0);
 
     const evidence = await describeInboxCalls(driverCalls);
     console.log(`[US3-detalle] calls:\n${evidence}`);

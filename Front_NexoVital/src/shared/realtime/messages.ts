@@ -421,9 +421,10 @@ export type EstadoSolicitudWire =
  * `SolicitudPayload` union:
  *
  *   - it has NO `type` discriminant: the lifecycle is in `estado`;
- *   - it carries no request type label and no accept deadline. The front
- *     resolves them from the emergency (`emergenciaId`) when it has it, and
- *     degrades honestly when it does not.
+ *   - it carries no request type label and, on the creation frame, no accept
+ *     deadline. The front resolves them from the emergency (`emergenciaId`)
+ *     when it has it, and degrades honestly when it does not. The one frame
+ *     that does carry the deadline is the late offer (see `timeoutEn` below).
  *
  * `ubicacion` is the request's own pickup point and travels on the creation
  * frame; the later lifecycle frames send it `null`. `emergenciaId` and `zonaId`
@@ -450,4 +451,16 @@ export interface SolicitudWireFrame {
    * into `request.arrived`. Absent on every other frame.
    */
   llegada?: boolean;
+  /**
+   * ISO instant the request was raised. Only on the frame that offers an OPEN
+   * request to a unit that became available after it was created
+   * (`SolicitudAbiertaPushListener`); absent on every other frame.
+   */
+  solicitadaEn?: string;
+  /**
+   * ISO instant the accept window closes. Same frame as `solicitadaEn`: the
+   * request is not new, so the countdown must show the time it really has left
+   * instead of a full window.
+   */
+  timeoutEn?: string;
 }

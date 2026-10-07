@@ -57,6 +57,20 @@ describe('fromWireSolicitud', () => {
     expect(suelta).toMatchObject({ emergenciaId: null, zonaId: null, ubicacion: null });
   });
 
+  it('keeps the two instants of a request that is offered late', () => {
+    const solicitadaEn = '2026-10-07T07:00:00Z';
+    const timeoutEn = '2026-10-07T07:01:00Z';
+    expect(fromWireSolicitud({ ...PENDIENTE, solicitadaEn, timeoutEn })).toMatchObject({
+      solicitadaEn,
+      timeoutEn,
+    });
+    // An instant that cannot be read is left out, never passed through.
+    const sinFechas = fromWireSolicitud({ ...PENDIENTE, solicitadaEn: 'ayer', timeoutEn: 7 });
+    expect(sinFechas).not.toBeNull();
+    expect(sinFechas).not.toHaveProperty('solicitadaEn');
+    expect(sinFechas).not.toHaveProperty('timeoutEn');
+  });
+
   it('accepts a string winner and an absent winner', () => {
     expect(
       fromWireSolicitud({ ...PENDIENTE, estado: 'ASIGNADA', ambulanciaAsignadaId: 'winner' })
@@ -107,6 +121,22 @@ describe('solicitudFrameFromWire', () => {
       mode: 'broadcast',
       notifiedCount: 1,
     });
+  });
+
+  it('a creation frame declares no deadline; a late offer passes its own through', () => {
+    expect(solicitudFrameFromWire(validWire(PENDIENTE), CONTEXT)).toMatchObject({ timeoutEn: '' });
+    expect(solicitudFrameFromWire(validWire(PENDIENTE), CONTEXT)).not.toHaveProperty('timeoutMs');
+
+    const tardia = solicitudFrameFromWire(
+      validWire({
+        ...PENDIENTE,
+        solicitadaEn: '2026-10-07T07:00:00Z',
+        timeoutEn: '2026-10-07T07:01:00Z',
+      }),
+      CONTEXT,
+    );
+    // The deadline is the request's own, and the window is its real length.
+    expect(tardia).toMatchObject({ timeoutEn: '2026-10-07T07:01:00Z', timeoutMs: 60_000 });
   });
 
   it('falls back to the context scene only when the frame carries no pickup point', () => {

@@ -27,8 +27,10 @@ function isRequestFrame(payload: Record<string, unknown>): boolean {
 
 /**
  * Registry row from a backend `flota` frame. The wire carries no request type
- * label or deadline, so `tipo` is resolved from the emergency when the store
- * knows it and `timeoutEn` stays empty rather than being invented.
+ * label, so `tipo` is resolved from the emergency when the store knows it. The
+ * creation frame carries no deadline either, and `timeoutEn` stays empty rather
+ * than being invented; a request offered late brings its own two instants, and
+ * the row keeps them.
  */
 function solicitudFromWire(frame: SolicitudWireFrame): SolicitudAmbulancia {
   const emergency =
@@ -43,8 +45,8 @@ function solicitudFromWire(frame: SolicitudWireFrame): SolicitudAmbulancia {
     zonaId: frame.zonaId ?? '',
     ...(frame.ubicacion ? { ubicacion: frame.ubicacion } : {}),
     tipo: emergency?.descripcion ?? '',
-    solicitadaEn: new Date().toISOString(),
-    timeoutEn: '',
+    solicitadaEn: frame.solicitadaEn ?? new Date().toISOString(),
+    timeoutEn: frame.timeoutEn ?? '',
     ambulanciasNotificadas: frame.ambulanciasNotificadas,
     notifiedCount: frame.ambulanciasNotificadas.length,
     ambulanciaAsignadaId: frame.ambulanciaAsignadaId,

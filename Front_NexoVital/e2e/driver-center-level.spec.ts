@@ -10,36 +10,31 @@ import { expect, test } from '@playwright/test';
  * and never shows CRITICO/ESTABLE. The citizen screen already merged the
  * inventory (EP-03); this locks the same source discipline into the driver.
  *
- * The expected labels are computed from the backend itself (centers + each
- * center's inventory), so the test asserts the UI against the real state instead
- * of a hardcoded seed that another scenario could have moved. The live half
- * drives the real scarcity cycle (over-stock despacho -> persisted alert) and
- * observes the driver rail change with no reload.
+ * The level of a center is its WORST inventory traffic light and nothing else
+ * (`centerLevel`): a shortage alert does not raise it. So the expected labels
+ * are computed from each center's inventory, read from the backend itself, and
+ * the live half moves a real traffic light: a platform administrator withdraws
+ * stock (only administrators may) until one supply is at half of what the
+ * center needs, the driver rail turns to "En alerta" with no reload, and a
+ * donation of the same amount brings the center back to where it was.
  */
 
 const API = 'http://localhost:5173/api/v1';
 const DRIVER = { email: 'conductor1@nexovital.co', password: 'conductor123' };
+/** Seeded platform administrator: the only role that may withdraw from any center. */
+const ADMIN = { email: 'admin@nexovital.co', password: 'admin123' };
 
-/** Extra units over the available stock to force the 409. */
-const EXCESO = 5;
-
-type Semaforo = 'ROJO' | 'AMARILLO' | 'VERDE';
-
-interface AlertaDto {
-  itemId: string;
-  faltante: number;
-}
+type Semaforo = 'ROJO' | 'AMARILLO' | 'VERDE' | 'COMPLETO';
 
 interface CentroDto {
   id: string;
   nombre: string;
   tipo: string;
-  alerta?: AlertaDto | null;
-  alertasActivas?: number;
 }
 
 interface ItemDto {
   id: string;
+  nombre?: string;
   disponible: number;
   requerido: number;
   semaforo: Semaforo;
@@ -49,12 +44,15 @@ const LEVEL_LABEL = {
   critical: 'Crítico',
   alert: 'En alerta',
   stable: 'Estable',
-  none: 'Sin declarar',
+  complete: 'Completo',
 } as const;
 
 /** Signs in through the API and returns the bearer token. */
-async function apiLogin(request: APIRequestContext): Promise<string> {
-  const response = await request.post(`${API}/sesiones`, { data: DRIVER });
+async function apiLogin(
+  request: APIRequestContext,
+  account: { email: string; password: string },
+): Promise<string> {
+  const response = await request.post(`${API}/sesiones`, { data: account });
   expect(response.ok()).toBeTruthy();
   return ((await response.json()) as { token: string }).token;
 }
@@ -82,22 +80,39 @@ async function getInventario(
 }
 
 /**
- * The label the driver rail must show, computed from the backend: worst item
- * traffic light folded with the active alert (the same `centerLevel` rule), with
- * the same precedence CRITICAL > ALERT > STABLE > not-declared.
+ * The label the driver rail must show, computed from the backend: the worst
+ * traffic light of the center's inventory (the same `centerLevel` rule), with
+ * the precedence CRITICAL > ALERT > STABLE > COMPLETE. `null` for a center with
+ * no declared supply, which this test does not assert.
  */
-function expectedLabel(centro: CentroDto, items: ItemDto[]): string {
-  const hasAlert = (centro.alertasActivas ?? 0) > 0 || centro.alerta != null;
+function expectedLabel(items: ItemDto[]): string | null {
+  if (items.length === 0) {
+    return null;
+  }
   if (items.some((item) => item.semaforo === 'ROJO')) {
     return LEVEL_LABEL.critical;
   }
-  if (hasAlert || items.some((item) => item.semaforo === 'AMARILLO')) {
+  if (items.some((item) => item.semaforo === 'AMARILLO')) {
     return LEVEL_LABEL.alert;
   }
   if (items.some((item) => item.semaforo === 'VERDE')) {
     return LEVEL_LABEL.stable;
   }
-  return LEVEL_LABEL.none;
+  return LEVEL_LABEL.complete;
+}
+
+/**
+ * How many units to withdraw so the supply lands at HALF of what the center
+ * needs, which is AMARILLO by the backend rule (35% <= available < 70%). Zero
+ * when the supply cannot be used: no requirement, too small to split, more
+ * stock than required (a donation could not bring it back), or already there.
+ */
+function withdrawalToAmber(item: ItemDto): number {
+  if (item.requerido < 4 || item.disponible > item.requerido) {
+    return 0;
+  }
+  const half = Math.floor(item.requerido / 2);
+  return Math.max(0, item.disponible - half);
 }
 
 /** Signs in through the real form and waits for the driver console + socket. */
@@ -127,40 +142,48 @@ test('los centros del conductor muestran su estado real y reaccionan en vivo', a
 }) => {
   test.setTimeout(90_000);
 
-  const token = await apiLogin(request);
-  const centros = await getCentros(request, token);
+  const token = await apiLogin(request, DRIVER);
+  const adminToken = await apiLogin(request, ADMIN);
+  const centros = (await getCentros(request, token)).filter(
+    (centro) => centro.tipo === 'CENTRO_ACOPIO',
+  );
 
   // Expected state, straight from the backend, for every supply center.
   const expected = new Map<string, string>();
-  for (const centro of centros) {
-    if (centro.tipo !== 'CENTRO_ACOPIO') {
-      continue;
-    }
-    expected.set(
-      centro.nombre,
-      expectedLabel(centro, await getInventario(request, token, centro.id)),
-    );
-  }
-  console.log(`[nivel-conductor] expected=${JSON.stringify(Object.fromEntries(expected))}`);
-
-  // The target for the LIVE half: currently STABLE, with stock to overshoot.
+  // The target for the LIVE half: a center that is NOT in alert or critical now
+  // (so "En alerta" is a real change) with a supply that can be taken to half.
   let target: CentroDto | undefined;
   let targetItem: ItemDto | undefined;
+  let targetLabel = '';
   for (const centro of centros) {
-    if (centro.tipo !== 'CENTRO_ACOPIO' || expected.get(centro.nombre) !== LEVEL_LABEL.stable) {
+    const inventario = await getInventario(request, token, centro.id);
+    const label = expectedLabel(inventario);
+    if (label === null) {
       continue;
     }
-    const inventario = await getInventario(request, token, centro.id);
-    const withStock = inventario.find((entry) => entry.disponible > 0);
-    if (withStock) {
+    expected.set(centro.nombre, label);
+    if (target || (label !== LEVEL_LABEL.stable && label !== LEVEL_LABEL.complete)) {
+      continue;
+    }
+    const candidate = inventario.find((entry) => withdrawalToAmber(entry) > 0);
+    if (candidate) {
       target = centro;
-      targetItem = withStock;
-      break;
+      targetItem = candidate;
+      targetLabel = label;
     }
   }
+  console.log(`[nivel-conductor] expected=${JSON.stringify(Object.fromEntries(expected))}`);
   if (!target || !targetItem) {
-    throw new Error('no STABLE CENTRO_ACOPIO with stock is available to run the live scenario');
+    throw new Error(
+      'no CENTRO_ACOPIO in Estable/Completo with a supply to withdraw is available to run the ' +
+        'live scenario (restart the backend to get the seeded inventory back)',
+    );
   }
+
+  const targetId = target.id;
+  const itemId = targetItem.id;
+  const original = targetItem.disponible;
+  const cantidad = withdrawalToAmber(targetItem);
 
   try {
     await loginAsDriver(page);
@@ -171,53 +194,55 @@ test('los centros del conductor muestran su estado real y reaccionan en vivo', a
     }
     console.log('[nivel-conductor] every rail row matched the backend-computed level');
 
-    // Live: ask for more than exists -> 409 and a persisted alert.
-    const pedido = targetItem.disponible + EXCESO;
-    const despacho = await request.post(`${API}/centros-acopio/${target.id}/inventario/despacho`, {
+    // A driver may not withdraw stock: the server refuses it.
+    const refused = await request.post(`${API}/centros-acopio/${targetId}/inventario/despacho`, {
       headers: auth(token),
-      data: { itemId: targetItem.id, cantidad: pedido },
+      data: { itemId, cantidad },
     });
-    expect(despacho.status()).toBe(409);
-    expect(await despacho.text()).toContain('STOCK_INSUFICIENTE');
-    console.log(`[nivel-conductor] despacho pedido=${pedido} -> 409 STOCK_INSUFICIENTE`);
+    expect(refused.status()).toBe(403);
 
-    // A one-unit donation emits the real inventory event; the center cannot cover
-    // the demand yet, so the alert stays active and the driver rail must change
-    // WITHOUT a reload.
-    const partial = await request.post(`${API}/centros-acopio/${target.id}/inventario/donacion`, {
-      headers: auth(token),
-      data: { itemId: targetItem.id, cantidad: 1 },
+    // Live: the administrator withdraws stock and the supply drops to AMARILLO.
+    const despacho = await request.post(`${API}/centros-acopio/${targetId}/inventario/despacho`, {
+      headers: auth(adminToken),
+      data: { itemId, cantidad },
     });
-    expect(partial.ok()).toBeTruthy();
+    expect(despacho.status()).toBe(200);
+    expect(((await despacho.json()) as ItemDto).semaforo).toBe('AMARILLO');
+    console.log(
+      `[nivel-conductor] despacho ${target.nombre} item=${targetItem.nombre ?? itemId} ` +
+        `cantidad=${cantidad} -> AMARILLO`,
+    );
 
+    // The driver rail changes WITHOUT a reload.
     await expect(centerRow(page, target.nombre)).toContainText(LEVEL_LABEL.alert, {
       timeout: 20_000,
     });
     console.log(`[nivel-conductor] live: ${target.nombre} -> ${LEVEL_LABEL.alert} sin recargar`);
 
-    // Cover the shortfall the BACKEND reports and the row returns to STABLE.
-    const [refreshed] = (await getCentros(request, token)).filter((c) => c.id === target.id);
-    const faltante = refreshed?.alerta?.faltante;
-    expect(faltante).toBeGreaterThan(0);
-    const cobertura = await request.post(`${API}/centros-acopio/${target.id}/inventario/donacion`, {
+    // A donation of the same amount brings the center back to where it was.
+    const cobertura = await request.post(`${API}/centros-acopio/${targetId}/inventario/donacion`, {
       headers: auth(token),
-      data: { itemId: refreshed?.alerta?.itemId ?? targetItem.id, cantidad: faltante },
+      data: { itemId, cantidad },
     });
     expect(cobertura.ok()).toBeTruthy();
 
-    await expect(centerRow(page, target.nombre)).toContainText(LEVEL_LABEL.stable, {
+    await expect(centerRow(page, target.nombre)).toContainText(targetLabel, {
       timeout: 20_000,
     });
-    console.log(`[nivel-conductor] cleanup: ${target.nombre} -> ${LEVEL_LABEL.stable}`);
+    console.log(`[nivel-conductor] cleanup: ${target.nombre} -> ${targetLabel}`);
   } finally {
-    // Safety net: leave no active alert behind if an assertion failed mid-flight.
-    const [leftover] = (await getCentros(request, token)).filter((c) => c.id === target.id);
-    if (leftover?.alerta && leftover.alerta.faltante > 0) {
-      await request.post(`${API}/centros-acopio/${target.id}/inventario/donacion`, {
+    // Safety net: give back whatever is still missing if an assertion failed
+    // mid-flight, so the next scenario finds the inventory as it was.
+    const now = (await getInventario(request, token, targetId)).find(
+      (entry) => entry.id === itemId,
+    );
+    const missing = now ? original - now.disponible : 0;
+    if (missing > 0) {
+      await request.post(`${API}/centros-acopio/${targetId}/inventario/donacion`, {
         headers: auth(token),
-        data: { itemId: leftover.alerta.itemId, cantidad: leftover.alerta.faltante },
+        data: { itemId, cantidad: missing },
       });
-      console.log(`[nivel-conductor] safety cleanup donated faltante=${leftover.alerta.faltante}`);
+      console.log(`[nivel-conductor] safety cleanup donated ${missing}`);
     }
   }
 });

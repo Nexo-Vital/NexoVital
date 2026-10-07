@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { notify, toast } from '@/components/ui/toast';
 import { isUuid } from '@/features/ciudadano/citizen-request';
-import { formatDistance } from '@/features/ciudadano/citizen-view';
 import { useEmergencyStore } from '@/features/emergencias/emergency-store';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
-import { distanceKm, etaMinutes } from '@/lib/geo';
+import { etaMinutes } from '@/lib/geo';
 import { ApiError, isDemoMode } from '@/services/apiClient';
 import {
   DESTINATIONS,
@@ -133,6 +132,14 @@ export interface SolicitudInboxState {
    * within its accept window; the existing countdown owns expiry.
    */
   broadcast: SolicitudBroadcastPayload | null;
+  /**
+   * Ids of the requests that are WAITING behind the open offer, oldest first.
+   * The card (and the pop-up that mirrors it) shows one request at a time, the
+   * one that was raised first; the rest wait here and take its place, in order,
+   * when it is answered, taken by another unit, cancelled or expired. Gated by
+   * the connection exactly like `broadcast`.
+   */
+  queuedIds: string[];
   /** Absolute deadline (epoch ms) of the accept window. */
   deadlineMs: number | null;
   /** Total accept window (ms), used by the countdown chip. */
@@ -201,6 +208,44 @@ export interface SolicitudInboxState {
 }
 
 const DEFAULT_WINDOW_MS = 45_000;
+
+/** A request this unit can still answer, with the two instants its card needs. */
+interface Offer {
+  payload: SolicitudBroadcastPayload;
+  /** Absolute deadline (epoch ms) of the accept window. */
+  deadlineMs: number;
+  /** When the request was raised (epoch ms); the order of the queue. */
+  requestedAtMs: number;
+  /** Whether the frame declared its own deadline, or the default window was used. */
+  declared: boolean;
+}
+
+/**
+ * Reads the two instants of an offer. A frame that declares its deadline (a
+ * request read back from the server, or one offered late) keeps it, and with
+ * the window length gives the real instant it was raised. A creation frame
+ * declares neither: the window starts now.
+ */
+function toOffer(payload: SolicitudBroadcastPayload): Offer {
+  const deadline =
+    typeof payload.timeoutEn === 'string' ? Date.parse(payload.timeoutEn) : Number.NaN;
+  const declared = Number.isFinite(deadline);
+  const now = Date.now();
+  return {
+    payload,
+    deadlineMs: declared ? deadline : now + DEFAULT_WINDOW_MS,
+    requestedAtMs:
+      declared && typeof payload.timeoutMs === 'number' ? deadline - payload.timeoutMs : now,
+    declared,
+  };
+}
+
+/** Oldest request first; two raised at the same instant keep their arrival order. */
+function byRequestedAt(a: Offer, b: Offer): number {
+  return a.requestedAtMs - b.requestedAtMs;
+}
+/** Stable empty list, so a disconnected inbox does not re-render its readers. */
+const NO_QUEUED: string[] = [];
 const TERMINAL_DISMISS_MS = 2600;
 const ASSIGNED_DISMISS_MS = 1600;
 
@@ -214,6 +259,15 @@ const ASSIGNED_DISMISS_MS = 1600;
  * (`POST /api/v1/solicitudes/{id}/accept|reject`), because the backend has no
  * `@MessageMapping` for them; the SERVER's response is adopted as the truth
  * (a win opens the mission, a 409 is shown as a lost/toasted outcome).
+ *
+ * ONE request is offered at a time, in the order they were raised (first in,
+ * first out). A request that arrives while another one is on screen does not
+ * replace it: it waits in a queue and takes the card when the one before it is
+ * answered, taken by another unit, cancelled or expired. So the request the
+ * driver is reading never changes under their hand, and a reload shows the same
+ * one first. The only exception is a request that turns out to be OLDER than
+ * the one on screen (the server offers the open requests in a burst when the
+ * unit becomes available): it goes first, unless the driver already answered.
  *
  * `online` gates ONLY the SURFACED offer: while it is false the transport keeps
  * receiving (and the internal state keeps every frame), so reconnecting
@@ -235,7 +289,12 @@ export function useSolicitudInbox(
   const [outcomeMessage, setOutcomeMessage] = useState<string | null>(null);
   const [responseOutcome, setResponseOutcome] = useState<SolicitudResponseOutcome | null>(null);
   const [mission, setMission] = useState<Mission | null>(null);
+  const [queuedIds, setQueuedIds] = useState<string[]>([]);
 
+  /** The open offer with its instants, so a newer or older arrival can be ordered. */
+  const activeOfferRef = useRef<Offer | null>(null);
+  /** Requests waiting behind the open offer, oldest first. */
+  const queueRef = useRef<Offer[]>([]);
   const broadcastRef = useRef<SolicitudBroadcastPayload | null>(null);
   const phaseRef = useRef<SolicitudPhase>('idle');
   const missionRef = useRef<Mission | null>(null);
@@ -269,17 +328,75 @@ export function useSolicitudInbox(
   missionRef.current = mission;
   onlineRef.current = online;
 
-  const dismiss = useCallback(() => {
+  /** Publishes the queue (kept in a ref for the frame handler) to the render. */
+  const syncQueue = useCallback((next: Offer[]) => {
+    queueRef.current = next;
+    setQueuedIds(next.map((offer) => offer.payload.requestId));
+  }, []);
+
+  /** Puts an offer on the card. It announces nothing: the caller decides that. */
+  const showOffer = useCallback((offer: Offer) => {
+    activeOfferRef.current = offer;
+    broadcastRef.current = offer.payload;
+    wonRequestIdRef.current = null;
+    setBroadcast(offer.payload);
+    setDeadlineMs(offer.deadlineMs);
+    setWindowMs(offer.declared ? Math.max(1000, offer.deadlineMs - Date.now()) : DEFAULT_WINDOW_MS);
+    setRequestedAtMs(offer.requestedAtMs);
+    setPhase('idle');
+    setOutcomeMessage(null);
+  }, []);
+
+  /** Adds a waiting request in its place, oldest first. */
+  const enqueue = useCallback(
+    (offer: Offer) => {
+      syncQueue([...queueRef.current, offer].sort(byRequestedAt));
+    },
+    [syncQueue],
+  );
+
+  /** A request that is no longer available stops waiting. */
+  const dropQueued = useCallback(
+    (requestId: string) => {
+      if (queueRef.current.some((offer) => offer.payload.requestId === requestId)) {
+        syncQueue(queueRef.current.filter((offer) => offer.payload.requestId !== requestId));
+      }
+    },
+    [syncQueue],
+  );
+
+  /**
+   * Frees the card and hands it to the next waiting request, if any. A request
+   * whose window closed while it waited is skipped: it is never offered with no
+   * time left. The next one opens silently; its arrival was already announced.
+   */
+  const releaseSlot = useCallback(() => {
+    activeOfferRef.current = null;
     broadcastRef.current = null;
     setBroadcast(null);
+    setDeadlineMs(null);
     setRequestedAtMs(null);
     acceptingRef.current = false;
     setAccepting(false);
     setPhase('idle');
     setOutcomeMessage(null);
-  }, []);
+    const now = Date.now();
+    const [next, ...rest] = queueRef.current.filter((offer) => offer.deadlineMs > now);
+    syncQueue(rest);
+    if (next) {
+      showOffer(next);
+    }
+  }, [showOffer, syncQueue]);
 
+  const dismiss = releaseSlot;
+
+  /**
+   * The offer became this unit's mission. The card is cleared and nothing takes
+   * its place: a unit in a mission answers no other request, so the ones that
+   * were waiting are dropped. They are read again when the mission ends.
+   */
   const clearActive = useCallback(() => {
+    activeOfferRef.current = null;
     broadcastRef.current = null;
     setBroadcast(null);
     setRequestedAtMs(null);
@@ -300,67 +417,65 @@ export function useSolicitudInbox(
    * nothing to clear and announces nothing. A driver who is not receiving
    * requests is not told about one they were not looking at.
    */
-  const lostToAnotherUnit = useCallback((requestId: string) => {
-    if (broadcastRef.current?.requestId === requestId) {
-      broadcastRef.current = null;
-      setBroadcast(null);
-      setDeadlineMs(null);
-      setRequestedAtMs(null);
-      acceptingRef.current = false;
-      setAccepting(false);
-      setPhase('idle');
-      setOutcomeMessage(null);
-    }
-    useSolicitudesStore.getState().remove(requestId);
-    setResponseOutcome((current) => (current?.requestId === requestId ? null : current));
-    if (announcedTakenRef.current === requestId) {
-      return;
-    }
-    announcedTakenRef.current = requestId;
-    if (onlineRef.current) {
-      // Prominent on purpose: the request vanished from the screen, and the
-      // driver has to see why.
-      notify(TAKEN_BY_OTHER_TITLE, TAKEN_BY_OTHER_MESSAGE);
-    }
-  }, []);
+  const lostToAnotherUnit = useCallback(
+    (requestId: string) => {
+      dropQueued(requestId);
+      if (broadcastRef.current?.requestId === requestId) {
+        releaseSlot();
+      }
+      useSolicitudesStore.getState().remove(requestId);
+      setResponseOutcome((current) => (current?.requestId === requestId ? null : current));
+      if (announcedTakenRef.current === requestId) {
+        return;
+      }
+      announcedTakenRef.current = requestId;
+      if (onlineRef.current) {
+        // Prominent on purpose: the request vanished from the screen, and the
+        // driver has to see why.
+        notify(TAKEN_BY_OTHER_TITLE, TAKEN_BY_OTHER_MESSAGE);
+      }
+    },
+    [dropQueued, releaseSlot],
+  );
 
   /**
    * Opens the mission for a WIN. Shared by the realtime `request.taken` path
    * (demo) and the REST accept path (backend): the server decided the winner in
    * both cases, so the client only adopts it.
    */
-  const winMission = useCallback((requestId: string, source: MissionSource) => {
-    wonRequestIdRef.current = requestId;
-    const scene = source.escena;
-    const from = positionRef.current ?? scene;
-    setPhase('assigned');
-    setOutcomeMessage('Te la asignaron');
-    setMission({
-      requestId,
-      zonaId: source.zonaId,
-      tipo: source.tipo,
-      nivel: source.nivel,
-      ...(scene ? { escena: scene } : {}),
-      // No scene means no honest ETA: 0 rather than an invented figure.
-      etaMinutes: from && scene ? etaMinutes(from, scene) : 0,
-      acceptedAt: Date.now(),
-      arrivedAt: null,
-      confirmedAt: null,
-    });
-  }, []);
+  const winMission = useCallback(
+    (requestId: string, source: MissionSource) => {
+      wonRequestIdRef.current = requestId;
+      // A unit in a mission answers no other request: nothing keeps waiting.
+      syncQueue([]);
+      const scene = source.escena;
+      const from = positionRef.current ?? scene;
+      setPhase('assigned');
+      setOutcomeMessage('Te la asignaron');
+      setMission({
+        requestId,
+        zonaId: source.zonaId,
+        tipo: source.tipo,
+        nivel: source.nivel,
+        ...(scene ? { escena: scene } : {}),
+        // No scene means no honest ETA: 0 rather than an invented figure.
+        etaMinutes: from && scene ? etaMinutes(from, scene) : 0,
+        acceptedAt: Date.now(),
+        arrivedAt: null,
+        confirmedAt: null,
+      });
+    },
+    [syncQueue],
+  );
 
   /**
-   * U4: ephemeral, non-blocking notice the moment a request arrives, at the one
-   * place the request becomes active. It disappears on its own (the toast store
-   * auto-dismisses) and never gates the inbox. The sound is attempted on the same
-   * instant; `playRequestDing` reports `false` while audio is locked, so the UI
-   * (the rail's sound control) is the honest source of that state.
+   * The sound of a request that has just arrived, played once per request (not
+   * when a waiting one takes the card). The visible notice is the pop-up the
+   * console mounts over the map, which mirrors the open offer. `playRequestDing`
+   * reports `false` while the browser still blocks the audio or the driver
+   * silenced it, so the UI is the honest source of that state.
    */
-  const announceArrival = useCallback((active: SolicitudBroadcastPayload) => {
-    const from = positionRef.current;
-    const distance = from && active.escena ? distanceKm(from, active.escena) : null;
-    const suffix = distance !== null ? ` a ${formatDistance(distance)}` : '';
-    toast(`Nueva solicitud de ambulancia${suffix}`);
+  const announceArrival = useCallback(() => {
     playRequestDing();
   }, []);
 
@@ -387,23 +502,48 @@ export function useSolicitudInbox(
         }
         // Normalize to the broadcast shape; `mode`/`targetAmbulanceId` survive
         // so the request card can label the two delivery modes distinctly.
-        const active: SolicitudBroadcastPayload = { ...payload, type: 'solicitud.broadcast' };
-        const deadline =
-          typeof active.timeoutEn === 'string' ? Date.parse(active.timeoutEn) : Number.NaN;
-        const valid = Number.isFinite(deadline);
-        broadcastRef.current = active;
-        wonRequestIdRef.current = null;
-        setBroadcast(active);
-        setDeadlineMs(valid ? deadline : Date.now() + DEFAULT_WINDOW_MS);
-        setWindowMs(valid ? Math.max(1000, deadline - Date.now()) : DEFAULT_WINDOW_MS);
-        // The payload has no explicit request timestamp: derive it from the
-        // deadline minus the window length, or fall back to the receipt instant.
-        setRequestedAtMs(
-          valid && typeof active.timeoutMs === 'number' ? deadline - active.timeoutMs : Date.now(),
-        );
-        setPhase('idle');
-        setOutcomeMessage(null);
-        announceArrival(active);
+        const offer = toOffer({ ...payload, type: 'solicitud.broadcast' });
+        const requestId = offer.payload.requestId;
+        const current = activeOfferRef.current;
+        const currentPhase = phaseRef.current;
+
+        // The same request again (the push and a read from the server can both
+        // deliver it). It is never restarted nor announced twice; a frame that
+        // declares the real deadline only corrects the countdown.
+        if (current?.payload.requestId === requestId && currentPhase !== 'assigned') {
+          if (offer.declared && currentPhase === 'idle') {
+            showOffer(offer);
+          }
+          return;
+        }
+        if (queueRef.current.some((queued) => queued.payload.requestId === requestId)) {
+          if (offer.declared) {
+            syncQueue(
+              queueRef.current
+                .map((queued) => (queued.payload.requestId === requestId ? offer : queued))
+                .sort(byRequestedAt),
+            );
+          }
+          return;
+        }
+
+        // The card is taken (an open offer, or the last word of one that is
+        // about to close): the new request waits its turn, oldest first. Only a
+        // request that is older than an offer the driver has not answered yet
+        // goes ahead of it.
+        if (current && currentPhase !== 'assigned') {
+          if (currentPhase === 'idle' && offer.requestedAtMs < current.requestedAtMs) {
+            enqueue(current);
+            showOffer(offer);
+          } else {
+            enqueue(offer);
+          }
+          announceArrival();
+          return;
+        }
+
+        showOffer(offer);
+        announceArrival();
         return;
       }
 
@@ -458,16 +598,12 @@ export function useSolicitudInbox(
       if (payload.type === 'request.cancelled') {
         // The requester withdrew: remove the request from this inbox so no unit
         // can offer a mission that is no longer being asked for.
+        dropQueued(payload.requestId);
         if (broadcastRef.current?.requestId !== payload.requestId) {
           return;
         }
-        broadcastRef.current = null;
         wonRequestIdRef.current = null;
-        setBroadcast(null);
-        setDeadlineMs(null);
-        setRequestedAtMs(null);
-        setPhase('idle');
-        setOutcomeMessage(null);
+        releaseSlot();
         return;
       }
 
@@ -476,16 +612,12 @@ export function useSolicitudInbox(
         // or TOMADA (the service was finished). Either way this inbox must stop
         // offering a mission nobody is asking for anymore. Only OUR open
         // broadcast reacts; the mission close is driven by finishService.
+        dropQueued(payload.requestId);
         if (broadcastRef.current?.requestId !== payload.requestId) {
           return;
         }
-        broadcastRef.current = null;
         wonRequestIdRef.current = null;
-        setBroadcast(null);
-        setDeadlineMs(null);
-        setRequestedAtMs(null);
-        setPhase('idle');
-        setOutcomeMessage(null);
+        releaseSlot();
         return;
       }
 
@@ -514,7 +646,17 @@ export function useSolicitudInbox(
         setMission(next);
       }
     },
-    [ambulanceId, announceArrival, winMission, lostToAnotherUnit],
+    [
+      ambulanceId,
+      announceArrival,
+      winMission,
+      lostToAnotherUnit,
+      showOffer,
+      enqueue,
+      dropQueued,
+      syncQueue,
+      releaseSlot,
+    ],
   );
 
   useEffect(() => {
@@ -832,10 +974,10 @@ export function useSolicitudInbox(
       if (solicitud.estado !== 'PENDING') {
         return;
       }
-      // Already on screen, or already ours: surfacing it again would restart the
-      // card (and its sound) for a request the driver is looking at.
+      // Already ours: there is nothing left to offer. A request that is on
+      // screen or waiting is NOT restarted by the frame handler; the server's
+      // deadline only corrects its countdown.
       if (
-        broadcastRef.current?.requestId === solicitud.id ||
         missionRef.current?.requestId === solicitud.id ||
         wonRequestIdRef.current === solicitud.id
       ) {
@@ -1011,6 +1153,7 @@ export function useSolicitudInbox(
   return {
     // The offer surface is gated by the connection; the mission below is not.
     broadcast: online ? broadcast : null,
+    queuedIds: online ? queuedIds : NO_QUEUED,
     deadlineMs,
     windowMs,
     requestedAtMs,

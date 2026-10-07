@@ -308,18 +308,223 @@ describe('useSolicitudInbox', () => {
     expect(result.current.phase).toBe('idle');
   });
 
-  it('raises an ephemeral toast at the exact arrival point', () => {
+  it('raises no small toast on arrival: the pop-up of the console is the notice', () => {
     const { port, result } = setup();
 
-    expect(useToastStore.getState().toasts).toHaveLength(0);
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
 
-    // U4: the request became active, so a toast was raised at that instant.
-    const toastMessages = () => useToastStore.getState().toasts.map((item) => item.message);
-    expect(toastMessages()).toHaveLength(1);
-    expect(toastMessages()[0]).toContain('Nueva solicitud de ambulancia');
-    // The inbox is untouched: the toast never blocks or replaces the request.
+    expect(useToastStore.getState().toasts).toHaveLength(0);
     expect(result.current.broadcast?.requestId).toBe('REQ-1');
+  });
+
+  describe('one request at a time, in the order they were raised', () => {
+    const second: SolicitudBroadcastPayload = { ...BROADCAST, requestId: 'REQ-2' };
+    const third: SolicitudBroadcastPayload = { ...BROADCAST, requestId: 'REQ-3' };
+
+    it('keeps the first request on the card when others arrive', () => {
+      const { port, result } = setup();
+
+      act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+      const deadline = result.current.deadlineMs;
+      act(() => port.emit(DESTINATIONS.solicitudes, second));
+      act(() => port.emit(DESTINATIONS.solicitudes, third));
+
+      // The request the driver is reading does not change, nor its countdown.
+      expect(result.current.broadcast?.requestId).toBe('REQ-1');
+      expect(result.current.deadlineMs).toBe(deadline);
+      expect(result.current.queuedIds).toEqual(['REQ-2', 'REQ-3']);
+    });
+
+    it('hands the card to the next one when the first is taken, cancelled or expired', () => {
+      const { port, result } = setup();
+      act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+      act(() => port.emit(DESTINATIONS.solicitudes, second));
+      act(() => port.emit(DESTINATIONS.solicitudes, third));
+
+      act(() =>
+        port.emit(DESTINATIONS.solicitudes, {
+          type: 'request.taken',
+          requestId: 'REQ-1',
+          winner: 'AMB-03',
+        }),
+      );
+      expect(result.current.broadcast?.requestId).toBe('REQ-2');
+      expect(result.current.phase).toBe('idle');
+      expect(result.current.queuedIds).toEqual(['REQ-3']);
+
+      act(() =>
+        port.emit(DESTINATIONS.solicitudes, { type: 'request.cancelled', requestId: 'REQ-2' }),
+      );
+      expect(result.current.broadcast?.requestId).toBe('REQ-3');
+      expect(result.current.queuedIds).toEqual([]);
+
+      act(() =>
+        port.emit(DESTINATIONS.solicitudes, { type: 'request.expired', requestId: 'REQ-3' }),
+      );
+      expect(result.current.broadcast).toBeNull();
+    });
+
+    it('drops a waiting request that stops being available, without touching the card', () => {
+      const { port, result } = setup();
+      act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+      act(() => port.emit(DESTINATIONS.solicitudes, second));
+      act(() => port.emit(DESTINATIONS.solicitudes, third));
+
+      act(() =>
+        port.emit(DESTINATIONS.solicitudes, { type: 'request.cancelled', requestId: 'REQ-2' }),
+      );
+
+      expect(result.current.broadcast?.requestId).toBe('REQ-1');
+      expect(result.current.queuedIds).toEqual(['REQ-3']);
+    });
+
+    it('offers the next one after the driver rejects the first', () => {
+      vi.useFakeTimers();
+      try {
+        const { port, result } = setup();
+        act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+        act(() => port.emit(DESTINATIONS.solicitudes, second));
+
+        act(() => result.current.reject());
+        // The answer stays on the card for a moment; the next one waits.
+        expect(result.current.phase).toBe('rejected');
+        expect(result.current.broadcast?.requestId).toBe('REQ-1');
+
+        act(() => {
+          vi.advanceTimersByTime(3000);
+        });
+        expect(result.current.broadcast?.requestId).toBe('REQ-2');
+        expect(result.current.phase).toBe('idle');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('skips a waiting request whose window closed while it waited', () => {
+      vi.useFakeTimers();
+      try {
+        const { port, result } = setup();
+        const now = Date.now();
+        act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+        act(() =>
+          port.emit(DESTINATIONS.solicitudes, {
+            ...second,
+            timeoutEn: new Date(now + 5_000).toISOString(),
+            timeoutMs: 5_000,
+          }),
+        );
+        act(() => port.emit(DESTINATIONS.solicitudes, third));
+        expect(result.current.queuedIds).toEqual(['REQ-2', 'REQ-3']);
+
+        act(() => {
+          vi.advanceTimersByTime(10_000);
+        });
+        act(() =>
+          port.emit(DESTINATIONS.solicitudes, { type: 'request.cancelled', requestId: 'REQ-1' }),
+        );
+
+        // REQ-2 has no time left: it is never offered.
+        expect(result.current.broadcast?.requestId).toBe('REQ-3');
+        expect(result.current.queuedIds).toEqual([]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('puts a request that is older than the open one first', () => {
+      const { port, result } = setup();
+      const now = Date.now();
+      // Raised 5 s ago.
+      act(() =>
+        port.emit(DESTINATIONS.solicitudes, {
+          ...BROADCAST,
+          timeoutEn: new Date(now + 40_000).toISOString(),
+          timeoutMs: 45_000,
+        }),
+      );
+      // Raised 20 s ago: the server offers it late, in the same burst.
+      act(() =>
+        port.emit(DESTINATIONS.solicitudes, {
+          ...second,
+          timeoutEn: new Date(now + 25_000).toISOString(),
+          timeoutMs: 45_000,
+        }),
+      );
+
+      expect(result.current.broadcast?.requestId).toBe('REQ-2');
+      expect(result.current.deadlineMs).toBe(Date.parse(new Date(now + 25_000).toISOString()));
+      expect(result.current.queuedIds).toEqual(['REQ-1']);
+    });
+
+    it('never moves the request the driver is already answering', () => {
+      const { port, result } = setup();
+      const now = Date.now();
+      act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+      act(() => result.current.accept());
+      expect(result.current.phase).toBe('submitting');
+
+      act(() =>
+        port.emit(DESTINATIONS.solicitudes, {
+          ...second,
+          timeoutEn: new Date(now + 5_000).toISOString(),
+          timeoutMs: 45_000,
+        }),
+      );
+
+      expect(result.current.broadcast?.requestId).toBe('REQ-1');
+      expect(result.current.phase).toBe('submitting');
+      expect(result.current.queuedIds).toEqual(['REQ-2']);
+    });
+
+    it('does not restart a request that is delivered twice', () => {
+      const { port, result } = setup();
+      const creation: SolicitudBroadcastPayload = { ...BROADCAST, timeoutEn: '' };
+      act(() => port.emit(DESTINATIONS.solicitudes, creation));
+      const deadline = result.current.deadlineMs;
+      act(() => result.current.accept());
+
+      act(() => port.emit(DESTINATIONS.solicitudes, creation));
+
+      expect(result.current.phase).toBe('submitting');
+      expect(result.current.deadlineMs).toBe(deadline);
+      expect(result.current.queuedIds).toEqual([]);
+    });
+
+    it('winning a request leaves nothing waiting: a unit in a mission answers no other', () => {
+      const { port, result } = setup();
+      act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+      act(() => port.emit(DESTINATIONS.solicitudes, second));
+      act(() => result.current.accept());
+      act(() =>
+        port.emit(DESTINATIONS.solicitudes, {
+          type: 'request.taken',
+          requestId: 'REQ-1',
+          winner: 'AMB-01',
+        }),
+      );
+
+      expect(result.current.mission?.requestId).toBe('REQ-1');
+      expect(result.current.queuedIds).toEqual([]);
+    });
+
+    it('hides the waiting requests while the driver is not receiving', () => {
+      const port = new FakeRealtimePort();
+      const { result, rerender } = renderHook(
+        ({ online }: { online: boolean }) =>
+          useSolicitudInbox(port, 'AMB-01', { lat: 4.6, lng: -74.1 }, online),
+        { initialProps: { online: true } },
+      );
+      act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+      act(() => port.emit(DESTINATIONS.solicitudes, second));
+
+      rerender({ online: false });
+      expect(result.current.broadcast).toBeNull();
+      expect(result.current.queuedIds).toEqual([]);
+
+      rerender({ online: true });
+      expect(result.current.broadcast?.requestId).toBe('REQ-1');
+      expect(result.current.queuedIds).toEqual(['REQ-2']);
+    });
   });
 
   it('U8: validates a backend wire frame and opens the request', () => {
