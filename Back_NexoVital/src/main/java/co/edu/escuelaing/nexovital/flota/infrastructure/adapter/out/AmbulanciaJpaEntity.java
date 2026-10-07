@@ -21,6 +21,10 @@ import java.util.UUID;
  * <p>The three signal columns (EP-04.F1.US1, D4) are written ONLY by the atomic
  * UPDATEs of {@link AmbulanciaJpaRepository}; there are no setters for them. A
  * new unit starts with no report instant, no source and {@code sinSenal = false}.
+ *
+ * <p>{@code conectada} (EP-04.F2.US1, D2) follows the same rule: it is written
+ * ONLY by the atomic UPDATEs of the repository and has no setter. A new unit
+ * starts connected.
  */
 @Entity
 @Table(name = "ambulancias")
@@ -66,6 +70,16 @@ public class AmbulanciaJpaEntity {
     @Column(nullable = false)
     @ColumnDefault("false")
     private boolean sinSenal;
+
+    /**
+     * True while the driver is connected to the service. A unit is born
+     * connected, so the field initializer and the column default are both
+     * {@code true}: the initializer covers a row inserted by JPA and the default
+     * covers a schema that already has rows.
+     */
+    @Column(nullable = false)
+    @ColumnDefault("true")
+    private boolean conectada = true;
 
     @Version
     private long version;
@@ -126,6 +140,10 @@ public class AmbulanciaJpaEntity {
 
     public boolean isSinSenal() {
         return sinSenal;
+    }
+
+    public boolean isConectada() {
+        return conectada;
     }
 
     public long getVersion() {

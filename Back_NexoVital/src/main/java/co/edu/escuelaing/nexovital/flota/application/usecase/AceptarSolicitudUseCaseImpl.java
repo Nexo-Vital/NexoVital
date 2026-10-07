@@ -41,6 +41,12 @@ import java.util.UUID;
  * expiry sweep: the pre-check rejects a request whose {@code timeoutEn} already
  * passed, and the CAS repeats the same condition atomically, so an accept can
  * never win an expired request in the instant before the sweep reaches it.
+ *
+ * <p><b>Only a connected unit accepts (EP-04.F2.US1, D3).</b> The UPDATE that
+ * occupies the unit also requires {@code conectada = true}. Accepting and
+ * disconnecting compete for the same row, so a unit can never end up in a
+ * mission and disconnected: whoever commits first wins and the other one gets 0
+ * rows.
  */
 @Service
 public class AceptarSolicitudUseCaseImpl implements AceptarSolicitudUseCase {
@@ -108,26 +114,35 @@ public class AceptarSolicitudUseCaseImpl implements AceptarSolicitudUseCase {
         // pre-check above is only a fast path, not the guarantee. Two DIFFERENT
         // requests naming the SAME unit both win their own solicitud CAS, so the
         // unit row decides: the first conditional UPDATE gets 1 row, the loser
-        // gets 0 and must be a 409, not a 500 from a @Version clash.
-        int unidadOcupada = ambulanciaRepository.transicionAtomicaEstado(
-                ambulanciaId, EstadoAmbulancia.DISPONIBLE, EstadoAmbulancia.EN_MISION);
+        // gets 0 and must be a 409, not a 500 from a @Version clash. The same
+        // UPDATE requires the unit to be connected: a driver that disconnected a
+        // moment ago also gets 0 rows. The exception rolls the transaction back,
+        // so the request returns to PENDIENTE and stays open for the rest.
+        int unidadOcupada = ambulanciaRepository.ocuparAtomica(ambulanciaId);
         if (unidadOcupada == 0) {
             throw new AmbulanciaNoDisponibleException(ambulanciaId);
         }
 
+        // The notified list travels with the event: every OTHER notified unit is
+        // told at once that the request is taken (SolicitudTomadaPushListener).
+        // It is read from the request as it was broadcast, which never changes.
         eventPublisher.publishEvent(new SolicitudAsignadaEvent(
                 solicitudId, asignada.getEmergenciaId(), asignada.getZonaId(), ambulanciaId,
-                asignada.getSolicitanteId()));
+                asignada.getSolicitanteId(), solicitud.getAmbulanciasNotificadas()));
         eventPublisher.publishEvent(new FlotaActualizadaEvent(ambulanciaId, EstadoAmbulancia.EN_MISION));
 
         return ResultadoAceptarSolicitud.gano(asignada);
     }
 
-    /** Loads the unit and enforces the availability precondition, mirroring the old check. */
+    /**
+     * Loads the unit and enforces the availability precondition: available and
+     * connected. It is only the fast path; the guarantee is the conditional
+     * UPDATE of {@code ocuparAtomica}.
+     */
     private Ambulancia validarAmbulancia(UUID ambulanciaId) {
         Ambulancia ambulancia = ambulanciaRepository.buscarPorId(ambulanciaId)
                 .orElseThrow(() -> new AmbulanciaNoDisponibleException(ambulanciaId));
-        if (ambulancia.getEstado() != EstadoAmbulancia.DISPONIBLE) {
+        if (ambulancia.getEstado() != EstadoAmbulancia.DISPONIBLE || !ambulancia.isConectada()) {
             throw new AmbulanciaNoDisponibleException(ambulanciaId);
         }
         return ambulancia;

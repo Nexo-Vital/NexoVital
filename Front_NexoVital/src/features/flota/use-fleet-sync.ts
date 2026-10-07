@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { DESTINATIONS, type RealtimePort } from '@/shared/realtime';
 import type { AmbulanceState, Ambulancia, Ubicacion } from '@/types/domain';
-import { useFleetStore } from './fleet-store';
+import { isStaleVersion, useFleetStore } from './fleet-store';
 
 const AMBULANCE_STATES: AmbulanceState[] = ['AVAILABLE', 'ASSIGNED', 'EN_ROUTE', 'MAINTENANCE'];
 
@@ -72,6 +72,19 @@ function applyLivePosition(
   }
   const existing = useFleetStore.getState().units.find((item) => item.id === rawId);
   const incoming = isUbicacion(payload.ubicacion) ? payload.ubicacion : null;
+  // Row version of the write this frame announces (EP-04.F1.US1, D6). The dev
+  // relay and a state frame the server could not version send none.
+  const version = typeof payload.version === 'number' ? payload.version : undefined;
+  // `sinSenal` and `ultimaPosicionEn` travel on the position frame only; a
+  // state frame says nothing about the signal, so `undefined` means "keep".
+  const sinSenal = typeof payload.sinSenal === 'boolean' ? payload.sinSenal : undefined;
+  const ultimaPosicionEn =
+    typeof payload.ultimaPosicionEn === 'string' || payload.ultimaPosicionEn === null
+      ? payload.ultimaPosicionEn
+      : undefined;
+  // `conectada` travels on the connection frame only (EP-04.F2.US1): neither a
+  // state change nor a position report changes it, so `undefined` means "keep".
+  const conectada = typeof payload.conectada === 'boolean' ? payload.conectada : undefined;
 
   // A frame with no position can only refresh a unit already known (a state
   // change); with neither a known unit nor a position there is nothing to anchor.
@@ -98,7 +111,19 @@ function applyLivePosition(
       driverName: 'Unassigned',
       heading,
       source,
+      sinSenal,
+      ultimaPosicionEn,
+      ...(conectada === undefined ? {} : { conectada }),
+      version,
     });
+    return;
+  }
+
+  // D6: the pushes leave the server after commit, each on its own thread, so
+  // two writes on the same unit can arrive inverted. A frame older than what
+  // the store already holds is dropped WHOLE: applying it would paint a stale
+  // position, a stale state or a "sin señal" the unit already left behind.
+  if (isStaleVersion(existing.version, version)) {
     return;
   }
 
@@ -112,7 +137,17 @@ function applyLivePosition(
     payload.source === 'device' || payload.source === 'simulated'
       ? payload.source
       : existing.source;
-  upsert({ ...existing, ubicacion, estado, heading, source });
+  upsert({
+    ...existing,
+    ubicacion,
+    estado,
+    heading,
+    source,
+    sinSenal: sinSenal ?? existing.sinSenal,
+    ultimaPosicionEn: ultimaPosicionEn === undefined ? existing.ultimaPosicionEn : ultimaPosicionEn,
+    ...(conectada === undefined ? {} : { conectada }),
+    version: version ?? existing.version,
+  });
 }
 
 /**
@@ -120,9 +155,15 @@ function applyLivePosition(
  *
  * Three frame kinds share the destination:
  *   - CRUD frames (`fleet.upsert` / `fleet.delete`) from the fleet manager;
- *   - legacy live-position frames (`ambulanceId` + `ubicacion`) from drivers;
+ *   - position frames (`ambulanceId` + `ubicacion`) published by the backend on
+ *     every report, simulated or from a device. The signal-loss notice is one of
+ *     them: same shape, `sinSenal: true` and the last known position;
  *   - state-change frames (`ambulanciaId` + `estado`, no position) published by
- *     the backend on every fleet transition (assignment, finish, ...).
+ *     the backend on every fleet transition (assignment, finish, ...). The
+ *     connection frame is one of them: same shape plus `conectada`.
+ *
+ * The backend frames carry the row `version`, and a frame older than the one the
+ * store holds is discarded (EP-04.F1.US1, D6).
  *
  * Because the store is an upsert, a unit created on another device shows up
  * here even though it was never part of the local fixtures.
@@ -130,12 +171,25 @@ function applyLivePosition(
 export function useFleetSync(port: RealtimePort | null): void {
   const upsert = useFleetStore((state) => state.upsert);
   const remove = useFleetStore((state) => state.remove);
+  const forgetVersions = useFleetStore((state) => state.forgetVersions);
 
   useEffect(() => {
     if (!port) {
       return;
     }
-    return port.subscribe(DESTINATIONS.flota, (payload) => {
+    // A version only orders the frames of ONE uninterrupted subscription. What
+    // the store holds from before this one (another screen, an earlier visit)
+    // and what it holds when the channel drops cannot be trusted to be newer
+    // than what comes next, so its versions are forgotten at both moments. The
+    // snapshot read on mount and on reconnect then merges by version against
+    // the frames of THIS subscription only.
+    forgetVersions();
+    const stopState = port.onStateChange((state) => {
+      if (state !== 'CONNECTED') {
+        forgetVersions();
+      }
+    });
+    const stopFlota = port.subscribe(DESTINATIONS.flota, (payload) => {
       if (!isRecord(payload)) {
         return;
       }
@@ -149,5 +203,9 @@ export function useFleetSync(port: RealtimePort | null): void {
       }
       applyLivePosition(payload, upsert);
     });
-  }, [port, upsert, remove]);
+    return () => {
+      stopState();
+      stopFlota();
+    };
+  }, [port, upsert, remove, forgetVersions]);
 }

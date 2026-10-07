@@ -22,7 +22,7 @@ import { formatUnitList, searchElapsed, searchIntroText } from './citizen-reques
 import type { CitizenRequestPhase } from './citizen-request-store';
 import {
   CITIZEN_UNIT_META,
-  citizenUnitStatus,
+  citizenUnitBucket,
   formatDistance,
   type NearbyAmbulance,
   nearbyAmbulances,
@@ -492,7 +492,7 @@ export function CitizenRequestRail({
   const notifiedUnits = units.filter((unit) => notifiedIds.includes(unit.id));
   const rows = nearbyAmbulances(notifiedUnits, origin, notifiedUnits.length);
   const occupiedIds = units
-    .filter((unit) => citizenUnitStatus(unit.estado) === 'busy')
+    .filter((unit) => citizenUnitBucket(unit) === 'busy')
     .map((unit) => unit.id);
 
   return (

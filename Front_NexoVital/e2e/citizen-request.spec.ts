@@ -1,4 +1,4 @@
-import type { Page, Response } from '@playwright/test';
+import type { Browser, BrowserContext, Page, Response } from '@playwright/test';
 import { type APIResponse, expect, test } from '@playwright/test';
 
 /**
@@ -17,12 +17,16 @@ import { type APIResponse, expect, test } from '@playwright/test';
  * honest local reason when a request cannot start.
  */
 
-/** Persisted auth keys, copied from src/services/apiClient.ts (TOKEN_KEY / SESSION_KEY). */
+/**
+ * Auth keys, copied from src/services/apiClient.ts (TOKEN_KEY / SESSION_KEY). The app
+ * keeps the session in `sessionStorage` (one session per tab), never in `localStorage`.
+ */
 const TOKEN_KEY = 'nexovital.token';
 const SESSION_KEY = 'nexovital.session';
 
 const CITIZEN = { email: 'ciudadano@nexovital.co', password: 'ciudadano123' };
 const ADMIN_CENTRO = { email: 'rangel@nexovital.co', password: 'rangel123' };
+const DRIVER = { email: 'conductor1@nexovital.co', password: 'conductor123' };
 
 /** Exact backend 403 message (SecurityConfig accessDeniedHandler). */
 const DENIED_MESSAGE = 'No tiene permisos para este recurso';
@@ -88,6 +92,67 @@ async function describeCalls(calls: RecordedCall[]): Promise<string> {
     lines.push(`${call.method} ${call.url} -> ${call.status}${suffix}`);
   }
   return lines.length > 0 ? lines.join('\n') : '(no /api/v1/ calls captured)';
+}
+
+/**
+ * Opens a driver console in its own browser session and leaves the driver
+ * connected, so the citizen has somebody to ask.
+ *
+ * A request only reaches a unit that is available, connected and has signal
+ * (EP-04.F2.US1), and a unit is disconnected when its driver's last realtime
+ * session ends. The scenarios that ran before this file closed their drivers, so
+ * without a connected one "Pedir ambulancia" would be disabled and the request
+ * would answer 409. The caller closes the returned context when it is done.
+ */
+async function connectedDriver(browser: Browser): Promise<BrowserContext> {
+  const context = await browser.newContext({
+    baseURL: 'http://localhost:5173',
+    permissions: ['geolocation'],
+    geolocation: { latitude: 4.728, longitude: -74.078 },
+  });
+  const page = await context.newPage();
+  const realtime = page.waitForEvent('websocket', {
+    predicate: (socket) => socket.url().includes('/ws'),
+    timeout: 20_000,
+  });
+  await page.goto('/login');
+  await page.fill('#login-email', DRIVER.email);
+  await page.fill('#login-password', DRIVER.password);
+  await page.getByRole('button', { name: 'Iniciar sesión' }).click();
+  await expect(page.getByRole('complementary', { name: 'Panel del conductor' })).toBeVisible({
+    timeout: 30_000,
+  });
+  await realtime;
+
+  // The buttons stay disabled until the console has read its unit: wait for one
+  // of the two settled states, and press "Conectarse" only when disconnected.
+  const unit = page.getByRole('region', { name: 'Tu ambulancia' });
+  const connected = unit.getByText('En línea', { exact: true });
+  const connect = unit.getByRole('button', { name: 'Conectarse', exact: true });
+  await expect(async () => {
+    if (await connected.isVisible()) {
+      return;
+    }
+    await expect(connect).toBeEnabled({ timeout: 500 });
+  }).toPass({ timeout: 15_000 });
+  if (!(await connected.isVisible())) {
+    await connect.click();
+  }
+  await expect(connected).toBeVisible({ timeout: 10_000 });
+  // Wait until the SERVER says the unit can receive a request (connected and
+  // with signal), so the citizen never races the driver's first position report.
+  await expect(async () => {
+    const mia = await page.evaluate(async (key) => {
+      const token = sessionStorage.getItem(key);
+      const response = await fetch('/api/v1/flota/ambulancias/mia', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return response.ok ? ((await response.json()) as Record<string, unknown> | null) : null;
+    }, TOKEN_KEY);
+    expect(mia?.conectada).toBe(true);
+    expect(mia?.sinSenal).not.toBe(true);
+  }).toPass({ timeout: 15_000 });
+  return context;
 }
 
 /** Signs in through the real form and waits for the citizen map's action rail. */
@@ -161,45 +226,90 @@ async function requestAmbulance(page: Page): Promise<Response> {
 
 /**
  * The citizen legend must count the REAL fleet, not a front-side mock. The
- * rendered "Disponible" and "Ocupada" rows are compared against the backend's
- * own `GET /api/v1/flota/ambulancias` response, read with the CITIZEN's real
- * token, so the assertion can never drift from the seed (no count is hardcoded).
+ * rendered "Disponible", "Ocupada", "Fuera de servicio" and "Sin señal" rows are
+ * compared against the backend's own `GET /api/v1/flota/ambulancias` response, read with the
+ * CITIZEN's real token, so the assertion can never drift from the seed (no count
+ * is hardcoded).
  *
  * The backend's domain states map onto the legend's unit buckets: DISPONIBLE is
- * "Disponible" and EN_MISION/EN_RUTA are "Ocupada". A unit in MANTENIMIENTO has
- * no row in the citizen legend, so it is excluded from both sides of the check.
+ * "Disponible" and EN_MISION/EN_RUTA are "Ocupada". A unit that lost its signal
+ * (`sinSenal`, EP-04.F1.US1) is drawn gray whatever its state, so it is counted
+ * in "Sin señal" and in NONE of the others. A unit whose driver is disconnected
+ * (`conectada: false`, EP-04.F2.US1) or that is in MANTENIMIENTO is "Fuera de
+ * servicio" whatever its state. The four rows add up to the fleet.
+ *
+ * The fleet is LIVE: a unit can lose or recover its signal between the REST read
+ * and the moment the legend is read (a driver of a previous scenario that
+ * disconnected is marked 30 s later). So the whole comparison, REST read
+ * included, is retried until both sides agree instead of comparing the legend
+ * with a snapshot that may already be old.
  */
 async function expectLegendMatchesBackend(page: Page): Promise<void> {
-  const token = await page.evaluate((key) => localStorage.getItem(key), TOKEN_KEY);
+  const token = await page.evaluate((key) => sessionStorage.getItem(key), TOKEN_KEY);
   expect(token).toBeTruthy();
-  const response = await page.request.get('http://localhost:5173/api/v1/flota/ambulancias', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  expect(response.ok()).toBeTruthy();
-  const fleet = (await response.json()) as Array<{ estado: string }>;
-
-  const free = fleet.filter((unit) => unit.estado === 'DISPONIBLE').length;
-  const busy = fleet.filter(
-    (unit) => unit.estado === 'EN_MISION' || unit.estado === 'EN_RUTA',
-  ).length;
-  const maintenance = fleet.filter((unit) => unit.estado === 'MANTENIMIENTO').length;
 
   const legend = page.getByRole('complementary', { name: 'Leyenda del mapa' });
   const legendCount = (label: string) =>
     legend.locator('li').filter({ hasText: label }).locator('b');
 
-  // A vacuous comparison would pass on an empty fleet; the backend must have units.
-  expect(fleet.length).toBeGreaterThan(0);
-  await expect(legendCount('Disponible')).toHaveText(String(free));
-  await expect(legendCount('Ocupada')).toHaveText(String(busy));
-  // Every unit the legend can draw is accounted for: no mock inflates the total.
-  expect(free + busy).toBe(fleet.length - maintenance);
+  let summary = '';
+  await expect(async () => {
+    const response = await page.request.get('http://localhost:5173/api/v1/flota/ambulancias', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(response.ok()).toBeTruthy();
+    const fleet = (await response.json()) as Array<{
+      estado: string;
+      sinSenal?: boolean;
+      conectada?: boolean;
+    }>;
 
-  console.log(
-    `[A] fleet legend: Disponible=${free} Ocupada=${busy} ` +
-      `(backend total=${fleet.length}, maintenance=${maintenance})`,
-  );
+    const withSignal = fleet.filter((unit) => unit.sinSenal !== true);
+    const noSignal = fleet.length - withSignal.length;
+    const outOfService = withSignal.filter(
+      (unit) => unit.conectada === false || unit.estado === 'MANTENIMIENTO',
+    );
+    const inService = withSignal.filter((unit) => !outOfService.includes(unit));
+    const free = inService.filter((unit) => unit.estado === 'DISPONIBLE').length;
+    const busy = inService.filter(
+      (unit) => unit.estado === 'EN_MISION' || unit.estado === 'EN_RUTA',
+    ).length;
+
+    // A vacuous comparison would pass on an empty fleet; the backend must have units.
+    expect(fleet.length).toBeGreaterThan(0);
+    await expect(legendCount('Disponible')).toHaveText(String(free), { timeout: 1_000 });
+    await expect(legendCount('Ocupada')).toHaveText(String(busy), { timeout: 1_000 });
+    await expect(legendCount('Fuera de servicio')).toHaveText(String(outOfService.length), {
+      timeout: 1_000,
+    });
+    await expect(legendCount('Sin señal')).toHaveText(String(noSignal), { timeout: 1_000 });
+    // Every unit is accounted for in exactly one row: no mock inflates the total.
+    expect(free + busy + outOfService.length + noSignal).toBe(fleet.length);
+
+    summary =
+      `Disponible=${free} Ocupada=${busy} Fuera de servicio=${outOfService.length} ` +
+      `Sin señal=${noSignal} (backend total=${fleet.length})`;
+  }).toPass({ timeout: 20_000 });
+
+  console.log(`[A] fleet legend: ${summary}`);
 }
+
+/*
+ * Both scenarios press "Pedir ambulancia", so both need a driver connected for
+ * as long as they run. It lives in its own browser session, apart from the
+ * citizen's `page`, and it is closed afterwards: closing it ends the driver's
+ * realtime session, and the server disconnects the unit again.
+ */
+let driverContext: BrowserContext | null = null;
+
+test.beforeEach(async ({ browser }) => {
+  driverContext = await connectedDriver(browser);
+});
+
+test.afterEach(async () => {
+  await driverContext?.close();
+  driverContext = null;
+});
 
 test('Scenario A: a clean citizen login creates the request with 201 and no red error', async ({
   page,
@@ -238,11 +348,12 @@ test('Scenario B: a foreign persisted token is never sent; the app states the se
 
   const admin = await fetchCredentials(page, ADMIN_CENTRO);
   /*
-   * Drop the admin's token and session into localStorage with the exact shape
-   * apiClient persists. This is done from the SAME document, so no `storage`
-   * event fires here — the real condition is the in-memory citizen session
-   * surviving while the persisted token belongs to another role (another tab of
-   * the same origin would do exactly this and fire the event).
+   * Drop the admin's token and session into sessionStorage, where apiClient
+   * keeps them, with the exact shape it persists. This is done from the SAME
+   * document, so no `storage` event fires here: the real condition is the
+   * in-memory citizen session surviving while the persisted token belongs to
+   * another role. Since the session is per tab another tab can no longer cause
+   * it, but the guard is kept as defence in depth and this proves it still holds.
    *
    * Before the fix the click travelled with the admin token and the backend
    * answered a misleading 403 ACCESO_DENEGADO. Now the screen detects the
@@ -250,8 +361,8 @@ test('Scenario B: a foreign persisted token is never sent; the app states the se
    */
   await page.evaluate(
     ({ tokenKey, sessionKey, token, session }) => {
-      localStorage.setItem(tokenKey, token);
-      localStorage.setItem(sessionKey, JSON.stringify(session));
+      sessionStorage.setItem(tokenKey, token);
+      sessionStorage.setItem(sessionKey, JSON.stringify(session));
     },
     {
       tokenKey: TOKEN_KEY,

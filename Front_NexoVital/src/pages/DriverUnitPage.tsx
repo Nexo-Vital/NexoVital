@@ -1,7 +1,7 @@
 import { Ambulance, Mail, MapPin, Power, User } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { formatCoordinates } from '@/features/ciudadano/citizen-request';
-import { useDriverOnlineStore } from '@/features/conductor/driver-online-store';
+import { useDriverConnection } from '@/features/conductor/use-driver-connection';
 import { fetchMiAmbulancia } from '@/features/flota/fleet-api';
 import { ROLE_LABEL } from '@/features/usuarios/role-home';
 import { useSessionStore } from '@/features/usuarios/session';
@@ -27,7 +27,9 @@ const LOAD_ERROR = 'No se pudo cargar tu unidad.';
  * Driver's own unit, mounted at `/conductor/unidad`. It reads the unit the
  * backend assigned to this driver (`GET /api/v1/flota/ambulancias/mia`) and
  * shows its plate, state, zone and position, next to the signed-in driver's data
- * and the connection toggle.
+ * and the connection toggle. The toggle is the same connection the console
+ * uses (`useDriverConnection`): against the backend it is the unit's own
+ * `conectada`, changed with a REST command, so both screens show one value.
  *
  * The server answers JSON `null` for a driver without a unit, so that arrives
  * here as the explicit empty state instead of a crash. Loading, empty and error
@@ -36,16 +38,14 @@ const LOAD_ERROR = 'No se pudo cargar tu unidad.';
  */
 export default function DriverUnitPage() {
   const user = useSessionStore((state) => state.user);
-  // Connection lives in the same store the console uses, so toggling it here and
-  // there stays one state; this screen never touches the realtime transport.
-  const online = useDriverOnlineStore((state) => state.online);
-  const connect = useDriverOnlineStore((state) => state.goOnline);
-  const disconnect = useDriverOnlineStore((state) => state.goOffline);
-
   // `undefined` = still loading, `null` = the driver has no unit, a value = the
   // unit. Three states without an extra boolean flag.
   const [unit, setUnit] = useState<Ambulancia | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
+  // The unit the server answers a connection command with replaces the one on
+  // screen, so the toggle and the unit data never disagree. This screen never
+  // touches the realtime transport.
+  const { online, pending, connect, disconnect } = useDriverConnection(unit, setUnit);
 
   useEffect(() => {
     let active = true;
@@ -181,7 +181,8 @@ export default function DriverUnitPage() {
           <button
             type="button"
             onClick={disconnect}
-            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-nv-md border-[1.5px] border-nv-line bg-white px-4 font-semibold text-nv-navy text-sm"
+            disabled={pending}
+            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-nv-md border-[1.5px] border-nv-line bg-white px-4 font-semibold text-nv-navy text-sm disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Power className="size-4" aria-hidden />
             Desconectarse
@@ -190,7 +191,8 @@ export default function DriverUnitPage() {
           <button
             type="button"
             onClick={connect}
-            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-nv-md bg-nv-navy px-4 font-semibold text-sm text-white"
+            disabled={pending}
+            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-nv-md bg-nv-navy px-4 font-semibold text-sm text-white disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Power className="size-4" aria-hidden />
             Conectarse

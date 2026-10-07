@@ -13,10 +13,17 @@ import java.util.UUID;
 public interface AmbulanciaRepository {
 
     /**
-     * Every available unit, with NO zone filter: the C2 broadcast reaches all of
-     * them, so the zone is a map warning and never a dispatch key.
+     * Candidates of a NEW request (EP-04.F2.US1, D5): every unit that is
+     * {@code DISPONIBLE}, connected and has signal, read in ONE query. There is
+     * NO zone and NO distance filter: the zone is a map warning and never a
+     * dispatch key, and the search radius is out of the MVP.
+     *
+     * <p>The list is a snapshot of the instant of the query. A unit that
+     * connects right after is not part of it; a unit that disconnects right
+     * after stays in the list but can no longer accept
+     * ({@link #ocuparAtomica(UUID)}).
      */
-    List<Ambulancia> listarDisponibles();
+    List<Ambulancia> listarCandidatasParaSolicitud();
 
     Optional<Ambulancia> buscarPorId(UUID id);
 
@@ -89,4 +96,38 @@ public interface AmbulanciaRepository {
      *         another sweep marked it first
      */
     int marcarSinSenalAtomica(UUID id, Instant limite);
+
+    /**
+     * Connects ONE unit in a conditional UPDATE that only applies while it is
+     * disconnected. It bumps {@code @Version}.
+     *
+     * @return rows affected: 1 = this caller connected it, 0 = it was already
+     *         connected (or it disappeared)
+     */
+    int conectarAtomica(UUID id);
+
+    /**
+     * Disconnects ONE unit in a conditional UPDATE that only applies while it is
+     * connected and NOT in service ({@code EN_MISION} or {@code EN_RUTA}). It
+     * bumps {@code @Version}.
+     *
+     * <p>The condition lives in the UPDATE on purpose. A check in memory would
+     * let an accept commit between the read and the write, leaving a unit in a
+     * mission and disconnected. With the condition in the database the two
+     * statements compete for the row lock and only one of them applies.
+     *
+     * @return rows affected: 1 = this caller disconnected it, 0 = it was already
+     *         disconnected or it is in service
+     */
+    int desconectarAtomica(UUID id);
+
+    /**
+     * Occupies ONE unit for a mission: a conditional UPDATE from
+     * {@code DISPONIBLE} to {@code EN_MISION} that only applies while the unit
+     * is connected. It bumps {@code @Version}.
+     *
+     * @return rows affected: 1 = this caller occupied it, 0 = the unit was no
+     *         longer available or its driver disconnected first
+     */
+    int ocuparAtomica(UUID id);
 }

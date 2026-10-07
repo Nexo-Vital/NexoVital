@@ -49,13 +49,46 @@ export interface RealtimeEnvelope<T = unknown> {
   payload: T;
 }
 
-/** A unit reporting its live position on /topic/flota. */
+/**
+ * Position of a unit on /topic/flota.
+ *
+ * Against the backend the channel is ONE-WAY (EP-04.F1.US1, D1): the server
+ * publishes this frame after persisting a report, and a client never sends it
+ * (the driver reports by REST). Only the demo relay still accepts it from a
+ * client, which is why the three server-only fields are optional.
+ *
+ * The signal-loss notice has this same shape: `sinSenal: true`, the last known
+ * `ubicacion`, and a `source` that may be `null`.
+ */
 export interface LiveUnitPayload {
   ambulanceId: string;
   ubicacion: Ubicacion;
   estado: AmbulanceState;
   heading: number | null;
   source: 'device' | 'simulated';
+  /** `true` on the signal-loss notice, `false` on a position report. */
+  sinSenal?: boolean;
+  /** ISO instant of the last accepted report. */
+  ultimaPosicionEn?: string | null;
+  /** Row version of the write this frame announces; older frames are discarded. */
+  version?: number;
+}
+
+/**
+ * State change of a unit on /topic/flota (backend `FlotaPushPayload`): no
+ * position, the Spanish domain enum name, and the row version the state belongs
+ * to (`null` when the server could not read it).
+ */
+export interface FleetStatePayload {
+  ambulanciaId: string;
+  estado: string;
+  version?: number | null;
+  /**
+   * Present only on the connection frame (backend `ConexionPushPayload`,
+   * EP-04.F2.US1): the driver connected to the service or disconnected from
+   * it. A plain state frame does not carry it, which means "unchanged".
+   */
+  conectada?: boolean;
 }
 
 /**
@@ -76,10 +109,15 @@ export interface FleetUnitDeletePayload {
 /**
  * Every payload that can arrive on /topic/flota.
  *
- * `LiveUnitPayload` has no discriminant, so consumers must check for `type`
- * first; anything without it is a legacy live-position frame.
+ * `LiveUnitPayload` and `FleetStatePayload` have no discriminant, so consumers
+ * must check for `type` first; anything without it is a position frame
+ * (`ambulanceId`) or a state frame (`ambulanciaId`).
  */
-export type FleetPayload = LiveUnitPayload | FleetUnitUpsertPayload | FleetUnitDeletePayload;
+export type FleetPayload =
+  | LiveUnitPayload
+  | FleetStatePayload
+  | FleetUnitUpsertPayload
+  | FleetUnitDeletePayload;
 
 /**
  * New or updated emergency published on /topic/emergencias. Consumers UPSERT:

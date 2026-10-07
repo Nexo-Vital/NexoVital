@@ -21,6 +21,11 @@ import java.util.UUID;
  * the position feed of the unit. They never change {@code estado}: a unit can be
  * {@code DISPONIBLE} or {@code EN_MISION} and, on top of that, have lost its
  * signal.
+ *
+ * <p><b>Connection is data too (EP-04.F2.US1, D2).</b> {@code conectada} says
+ * whether the driver is connected to the service. It is stored apart from
+ * {@code estado}, exactly like the signal. A unit is born connected; only its
+ * driver (or the end of the driver's realtime session) disconnects it.
  */
 public final class Ambulancia {
 
@@ -35,6 +40,7 @@ public final class Ambulancia {
     private final Instant ultimaPosicionEn;
     private final FuentePosicion fuentePosicion;
     private final boolean sinSenal;
+    private final boolean conectada;
 
     /**
      * A unit that has never reported a position: no report instant, no source
@@ -45,9 +51,18 @@ public final class Ambulancia {
         this(id, placa, estado, lat, lng, zona, conductorId, version, null, null, false);
     }
 
+    /** A unit with a position feed and the default connection: connected. */
     public Ambulancia(UUID id, String placa, EstadoAmbulancia estado,
                       double lat, double lng, String zona, UUID conductorId, long version,
                       Instant ultimaPosicionEn, FuentePosicion fuentePosicion, boolean sinSenal) {
+        this(id, placa, estado, lat, lng, zona, conductorId, version,
+                ultimaPosicionEn, fuentePosicion, sinSenal, true);
+    }
+
+    public Ambulancia(UUID id, String placa, EstadoAmbulancia estado,
+                      double lat, double lng, String zona, UUID conductorId, long version,
+                      Instant ultimaPosicionEn, FuentePosicion fuentePosicion, boolean sinSenal,
+                      boolean conectada) {
         this.id = Objects.requireNonNull(id, "id is required");
         this.placa = Objects.requireNonNull(placa, "placa is required");
         this.estado = Objects.requireNonNull(estado, "estado is required");
@@ -59,6 +74,7 @@ public final class Ambulancia {
         this.ultimaPosicionEn = ultimaPosicionEn;
         this.fuentePosicion = fuentePosicion;
         this.sinSenal = sinSenal;
+        this.conectada = conectada;
     }
 
     /**
@@ -73,7 +89,7 @@ public final class Ambulancia {
                     "Ambulance " + placa + " in state " + estado + " cannot enter a mission");
         }
         return new Ambulancia(id, placa, EstadoAmbulancia.EN_MISION, lat, lng, zona, conductorId,
-                version + 1, ultimaPosicionEn, fuentePosicion, sinSenal);
+                version + 1, ultimaPosicionEn, fuentePosicion, sinSenal, conectada);
     }
 
     /**
@@ -94,7 +110,7 @@ public final class Ambulancia {
             throw new IllegalArgumentException("Position coordinates must be finite numbers");
         }
         return new Ambulancia(id, placa, estado, lat, lng, zona, conductorId,
-                version + 1, ultimaPosicionEn, fuentePosicion, sinSenal);
+                version + 1, ultimaPosicionEn, fuentePosicion, sinSenal, conectada);
     }
 
     /**
@@ -110,7 +126,7 @@ public final class Ambulancia {
                     "Ambulance " + placa + " in state " + estado + " cannot be released");
         }
         return new Ambulancia(id, placa, EstadoAmbulancia.DISPONIBLE, lat, lng, zona, conductorId,
-                version + 1, ultimaPosicionEn, fuentePosicion, sinSenal);
+                version + 1, ultimaPosicionEn, fuentePosicion, sinSenal, conectada);
     }
 
     public UUID getId() {
@@ -159,5 +175,20 @@ public final class Ambulancia {
     /** {@code true} while the unit has gone longer than the threshold without reporting. */
     public boolean isSinSenal() {
         return sinSenal;
+    }
+
+    /** {@code true} while the driver is connected to the service. */
+    public boolean isConectada() {
+        return conectada;
+    }
+
+    /**
+     * The rule of EP-04.F2.US1: a unit receives a NEW request only while it is
+     * {@code DISPONIBLE}, connected and has signal. The broadcast applies the
+     * same three conditions in the database query; this method expresses them
+     * for a unit already loaded.
+     */
+    public boolean puedeRecibirSolicitudes() {
+        return estado == EstadoAmbulancia.DISPONIBLE && conectada && !sinSenal;
     }
 }

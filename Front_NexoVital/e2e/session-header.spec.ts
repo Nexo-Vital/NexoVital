@@ -13,7 +13,10 @@ import { expect, test } from '@playwright/test';
 
 const CITIZEN = { email: 'ciudadano@nexovital.co', password: 'ciudadano123' };
 
-/** Persisted auth keys, copied from src/services/apiClient.ts. */
+/**
+ * Auth keys, copied from src/services/apiClient.ts. The app keeps the session in
+ * `sessionStorage` (one session per tab), never in `localStorage`.
+ */
 const TOKEN_KEY = 'nexovital.token';
 const SESSION_KEY = 'nexovital.session';
 
@@ -26,6 +29,20 @@ test('la cabecera muestra al usuario y su menu "Salir" cierra la sesion', async 
   await expect(page.getByRole('button', { name: 'Pedir ambulancia' })).toBeVisible({
     timeout: 30_000,
   });
+
+  // Signed in: the session really is where the app keeps it. Without this, the
+  // "no persisted session" check after "Salir" would pass on an empty storage.
+  const signedIn = await page.evaluate(
+    ([tokenKey, sessionKey]) => {
+      return {
+        token: window.sessionStorage.getItem(tokenKey),
+        session: window.sessionStorage.getItem(sessionKey),
+      };
+    },
+    [TOKEN_KEY, SESSION_KEY],
+  );
+  expect(signedIn.token).toBeTruthy();
+  expect(signedIn.session).toBeTruthy();
 
   // The header carries the signed-in user's real name, read from the login
   // response, not a hardcoded UI literal.
@@ -46,8 +63,8 @@ test('la cabecera muestra al usuario y su menu "Salir" cierra la sesion', async 
   const stored = await page.evaluate(
     ([tokenKey, sessionKey]) => {
       return {
-        token: window.localStorage.getItem(tokenKey),
-        session: window.localStorage.getItem(sessionKey),
+        token: window.sessionStorage.getItem(tokenKey),
+        session: window.sessionStorage.getItem(sessionKey),
       };
     },
     [TOKEN_KEY, SESSION_KEY],

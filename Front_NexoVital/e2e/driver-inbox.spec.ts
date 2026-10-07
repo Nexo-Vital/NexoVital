@@ -26,7 +26,10 @@ import { type APIResponse, expect, test } from '@playwright/test';
 const BASE_URL = 'http://localhost:5173';
 const API = `${BASE_URL}/api/v1`;
 
-/** Persisted auth key, copied from src/services/apiClient.ts (TOKEN_KEY). */
+/**
+ * Auth key, copied from src/services/apiClient.ts (TOKEN_KEY). The app keeps the
+ * session in `sessionStorage` (one session per tab), never in `localStorage`.
+ */
 const TOKEN_KEY = 'nexovital.token';
 
 const CITIZEN = { email: 'ciudadano@nexovital.co', password: 'ciudadano123' };
@@ -106,7 +109,51 @@ async function login(page: Page, account: { email: string; password: string }): 
   await page.getByRole('button', { name: 'Iniciar sesión' }).click();
 }
 
-/** Signs in as a specific driver and waits for the console plus its socket. */
+/**
+ * Leaves the driver connected to the service, whatever state the unit is in.
+ *
+ * The connection is DATA of the unit on the server (EP-04.F2.US1): the console
+ * shows what the server holds and surfaces no request while disconnected. A unit
+ * is born connected, and it is disconnected when its driver's last realtime
+ * session ends, which is what closing the page of an earlier scenario does. So
+ * the same driver can open the console already connected or disconnected.
+ *
+ * The buttons stay disabled until the console has read its unit, so the helper
+ * waits for one of the two settled states before deciding, and presses
+ * "Conectarse" only when the unit is disconnected.
+ */
+async function goOnline(page: Page): Promise<void> {
+  const unit = page.getByRole('region', { name: 'Tu ambulancia' });
+  const connected = unit.getByText('En línea', { exact: true });
+  const connect = unit.getByRole('button', { name: 'Conectarse', exact: true });
+  await expect(async () => {
+    if (await connected.isVisible()) {
+      return;
+    }
+    await expect(connect).toBeEnabled({ timeout: 500 });
+  }).toPass({ timeout: 15_000 });
+  if (!(await connected.isVisible())) {
+    await connect.click();
+  }
+  await expect(connected).toBeVisible({ timeout: 10_000 });
+  // A request only reaches a unit that is connected AND has signal. A driver of
+  // an earlier scenario left its unit without signal, and it recovers it with
+  // the first position report after connecting. Wait until the SERVER says the
+  // unit can receive a request, so the next step never races that report.
+  await expect(async () => {
+    const mia = await page.evaluate(async (key) => {
+      const token = sessionStorage.getItem(key);
+      const response = await fetch('/api/v1/flota/ambulancias/mia', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return response.ok ? ((await response.json()) as Record<string, unknown> | null) : null;
+    }, TOKEN_KEY);
+    expect(mia?.conectada).toBe(true);
+    expect(mia?.sinSenal).not.toBe(true);
+  }).toPass({ timeout: 15_000 });
+}
+
+/** Signs in as a specific driver, waits for the console plus its socket and connects. */
 async function loginAsSpecificDriver(
   page: Page,
   account: { email: string; password: string },
@@ -120,11 +167,12 @@ async function loginAsSpecificDriver(
     timeout: 30_000,
   });
   await realtime;
+  await goOnline(page);
 }
 
-/** Current bearer token persisted by the app for this page's session. */
+/** Current bearer token the app keeps for this page's session (per-tab `sessionStorage`). */
 async function bearer(page: Page): Promise<string> {
-  const token = await page.evaluate((key) => localStorage.getItem(key), TOKEN_KEY);
+  const token = await page.evaluate((key) => sessionStorage.getItem(key), TOKEN_KEY);
   expect(token).toBeTruthy();
   return token as string;
 }

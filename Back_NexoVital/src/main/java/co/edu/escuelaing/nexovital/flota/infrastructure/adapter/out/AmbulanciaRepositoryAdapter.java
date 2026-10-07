@@ -20,6 +20,10 @@ import java.util.UUID;
 @Component
 public class AmbulanciaRepositoryAdapter implements AmbulanciaRepository, FlotaQueryPort {
 
+    /** States in which a unit is attending a request and cannot be disconnected. */
+    private static final List<EstadoAmbulancia> ESTADOS_EN_SERVICIO =
+            List.of(EstadoAmbulancia.EN_MISION, EstadoAmbulancia.EN_RUTA);
+
     private final AmbulanciaJpaRepository jpaRepository;
 
     public AmbulanciaRepositoryAdapter(AmbulanciaJpaRepository jpaRepository) {
@@ -27,8 +31,8 @@ public class AmbulanciaRepositoryAdapter implements AmbulanciaRepository, FlotaQ
     }
 
     @Override
-    public List<Ambulancia> listarDisponibles() {
-        return jpaRepository.findByEstado(EstadoAmbulancia.DISPONIBLE).stream()
+    public List<Ambulancia> listarCandidatasParaSolicitud() {
+        return jpaRepository.findByEstadoAndConectadaTrueAndSinSenalFalse(EstadoAmbulancia.DISPONIBLE).stream()
                 .map(AmbulanciaRepositoryAdapter::toDomain)
                 .toList();
     }
@@ -77,6 +81,22 @@ public class AmbulanciaRepositoryAdapter implements AmbulanciaRepository, FlotaQ
     }
 
     @Override
+    public int conectarAtomica(UUID id) {
+        return jpaRepository.conectarAtomica(id);
+    }
+
+    @Override
+    public int desconectarAtomica(UUID id) {
+        return jpaRepository.desconectarAtomica(id, ESTADOS_EN_SERVICIO);
+    }
+
+    @Override
+    public int ocuparAtomica(UUID id) {
+        return jpaRepository.transicionAtomicaEstadoSiConectada(
+                id, EstadoAmbulancia.DISPONIBLE, EstadoAmbulancia.EN_MISION);
+    }
+
+    @Override
     public List<Ambulancia> consultarFlota() {
         return jpaRepository.findAll().stream().map(AmbulanciaRepositoryAdapter::toDomain).toList();
     }
@@ -91,6 +111,7 @@ public class AmbulanciaRepositoryAdapter implements AmbulanciaRepository, FlotaQ
                 entity.getId(), entity.getPlaca(), entity.getEstado(),
                 entity.getLat(), entity.getLng(), entity.getZona(),
                 entity.getConductorId(), entity.getVersion(),
-                entity.getUltimaPosicionEn(), entity.getFuentePosicion(), entity.isSinSenal());
+                entity.getUltimaPosicionEn(), entity.getFuentePosicion(), entity.isSinSenal(),
+                entity.isConectada());
     }
 }

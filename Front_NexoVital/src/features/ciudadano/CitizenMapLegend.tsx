@@ -1,4 +1,13 @@
-import { ChevronDown, CircleCheck, Clock, Cross, OctagonAlert, TriangleAlert } from 'lucide-react';
+import {
+  ChevronDown,
+  CircleCheck,
+  Clock,
+  Cross,
+  OctagonAlert,
+  PowerOff,
+  TriangleAlert,
+  WifiOff,
+} from 'lucide-react';
 import { useId, useState } from 'react';
 import { cn } from '@/lib/utils';
 import type { Ambulancia } from '@/types/domain';
@@ -13,6 +22,9 @@ import {
   type CitizenUnitStatus,
   countUnitsByStatus,
   NOT_DECLARED_CENTER_STYLE,
+  UNIT_NO_SIGNAL_LABEL,
+  UNIT_NO_SIGNAL_MARKER_CLASS,
+  unitHasLostSignal,
 } from './citizen-view';
 
 const LEVEL_ICON: Record<CitizenCenterLevel, typeof CircleCheck> = {
@@ -25,12 +37,10 @@ const LEVEL_ICON: Record<CitizenCenterLevel, typeof CircleCheck> = {
 const UNIT_ICON: Record<CitizenUnitStatus, typeof CircleCheck> = {
   free: CircleCheck,
   busy: Clock,
-  // MAINTENANCE maps onto the busy variant on the map, so the swatch matches it.
-  maintenance: Clock,
+  // An out-of-service unit is drawn on the busy circle; the badge icon is what
+  // tells the two apart, here and on the map pin.
+  maintenance: PowerOff,
 };
-
-/** The legend omits the maintenance row: the mockup only draws free/busy. */
-const LEGEND_UNIT_ORDER = CITIZEN_UNIT_ORDER.filter((status) => status !== 'maintenance');
 
 interface CitizenMapLegendProps {
   counts: CitizenCenterCounts;
@@ -43,13 +53,23 @@ interface CitizenMapLegendProps {
  * the same table the map pins use — and the unit swatches reuse the pin tokens,
  * so the legend cannot drift from the map.
  *
+ * A unit without signal is drawn gray on the map whatever its state, so it is
+ * counted in its own "Sin señal" row and NOT in the other three: each row counts
+ * the pins drawn that way.
+ *
+ * "Fuera de servicio" counts the units that cannot take a request for a reason
+ * other than being busy: a disconnected driver (EP-04.F2.US1) or maintenance.
+ * The four rows always add up to the fleet.
+ *
  * The card collapses to a single pill so it does not cover the map on a phone:
  * the toggle header is the only interactive part (the rest stays pointer-transparent).
  */
 export function CitizenMapLegend({ counts, units }: CitizenMapLegendProps) {
   const [open, setOpen] = useState(true);
   const bodyId = useId();
-  const unitCounts = countUnitsByStatus(units);
+  const unitsWithSignal = units.filter((unit) => !unitHasLostSignal(unit));
+  const unitCounts = countUnitsByStatus(unitsWithSignal);
+  const noSignalCount = units.length - unitsWithSignal.length;
 
   return (
     <aside
@@ -136,7 +156,7 @@ export function CitizenMapLegend({ counts, units }: CitizenMapLegendProps) {
             Ambulancias
           </h4>
           <ul className="flex list-none flex-col gap-1.5 p-0">
-            {LEGEND_UNIT_ORDER.map((status) => {
+            {CITIZEN_UNIT_ORDER.map((status) => {
               const meta = CITIZEN_UNIT_META[status];
               const Icon = UNIT_ICON[status];
               return (
@@ -154,6 +174,18 @@ export function CitizenMapLegend({ counts, units }: CitizenMapLegendProps) {
                 </li>
               );
             })}
+            <li className="flex items-center gap-2.5 font-medium text-[13px]">
+              <span
+                className={cn(
+                  'flex size-5 shrink-0 items-center justify-center rounded-full',
+                  UNIT_NO_SIGNAL_MARKER_CLASS,
+                )}
+              >
+                <WifiOff className="size-[11px]" aria-hidden />
+              </span>
+              {UNIT_NO_SIGNAL_LABEL}
+              <b className="tabular ml-auto font-bold">{noSignalCount}</b>
+            </li>
           </ul>
 
           <span className="h-px bg-nv-line" aria-hidden />

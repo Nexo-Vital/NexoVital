@@ -482,6 +482,24 @@
     --nv-marker-color: var(--nv-navy);
   }
 
+  /*
+    Lost signal (EP-04.F1.US1): the unit stays on the map at its last known
+    position, drawn gray with a cut-signal badge (colour AND icon). Signal is
+    data, not a state, so this modifier is added ON TOP of the state class. It
+    has the same specificity as the state rules above, so it must stay AFTER
+    them: order decides.
+  */
+  .nv-marker--nosignal .nv-marker__shape {
+    border-color: var(--nv-on-accent);
+    background: var(--nv-idle);
+    --nv-marker-color: var(--nv-on-accent);
+  }
+
+  .nv-marker--nosignal .nv-marker__badge {
+    background: var(--nv-on-accent);
+    --nv-marker-color: var(--nv-idle);
+  }
+
   /* ---- "you are here": 24px dot with a STATIC ring (no animation) ---- */
   .nv-marker--self {
     width: 24px;

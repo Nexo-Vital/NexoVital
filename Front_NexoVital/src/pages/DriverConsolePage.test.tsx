@@ -306,7 +306,24 @@ describe('DriverConsolePage', () => {
     const user = userEvent.setup();
     render(<DriverConsolePage port={new FakeRealtimePort()} ambulanceId="A-07" />);
 
-    // Starts off duty: that button is the pressed one.
+    // Starts disconnected, which reads off duty: that button is the pressed one.
+    expect(screen.getByRole('button', { name: 'Fuera de servicio' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Disponible' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+
+    // Connected, the driver is available until they say otherwise.
+    connectDriver();
+    expect(screen.getByRole('button', { name: 'Disponible' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Fuera de servicio' }));
     expect(screen.getByRole('button', { name: 'Fuera de servicio' })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -317,15 +334,72 @@ describe('DriverConsolePage', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'Disponible' }));
-
     expect(screen.getByRole('button', { name: 'Disponible' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
-    expect(screen.getByRole('button', { name: 'Fuera de servicio' })).toHaveAttribute(
+  });
+
+  it('the declared state cannot change while disconnected', () => {
+    render(<DriverConsolePage port={new FakeRealtimePort()} ambulanceId="A-07" />);
+
+    expect(screen.getByRole('button', { name: 'Disponible' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Fuera de servicio' })).toBeDisabled();
+  });
+
+  it('"En ruta" and "En escena" are never chosen by hand', () => {
+    render(<DriverConsolePage port={new FakeRealtimePort()} ambulanceId="A-07" />);
+    connectDriver();
+
+    expect(screen.getByRole('button', { name: 'En ruta' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'En escena' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Disponible' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Fuera de servicio' })).toBeEnabled();
+  });
+
+  it('the state follows the mission: accepted is "En ruta", arrival is "En escena"', async () => {
+    const user = userEvent.setup();
+    const port = new FakeRealtimePort();
+    render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+
+    await winMission(user, port);
+    expect(screen.getByRole('button', { name: 'En ruta' })).toHaveAttribute('aria-pressed', 'true');
+    // Attending a request, nothing can be declared by hand.
+    expect(screen.getByRole('button', { name: 'Disponible' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Fuera de servicio' })).toBeDisabled();
+
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, {
+        type: 'request.arrived',
+        requestId: 'REQ-1',
+        ambulanceId: 'A-07',
+      }),
+    );
+    expect(screen.getByRole('button', { name: 'En escena' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'En ruta' })).toHaveAttribute(
       'aria-pressed',
       'false',
     );
+  });
+
+  it('out of service, the open request leaves the screen and comes back with "Disponible"', async () => {
+    const user = userEvent.setup();
+    const port = new FakeRealtimePort();
+    render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+    connectDriver();
+    act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+    expect(screen.getByRole('button', { name: 'Aceptar solicitud' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Fuera de servicio' }));
+
+    expect(screen.queryByRole('button', { name: 'Aceptar solicitud' })).toBeNull();
+    expect(screen.getByText('Marca «Disponible» para recibir solicitudes')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Disponible' }));
+    expect(screen.getByRole('button', { name: 'Aceptar solicitud' })).toBeInTheDocument();
   });
 
   it('shows the denied-location error message in the panel', () => {
@@ -380,15 +454,15 @@ describe('DriverConsolePage', () => {
     expect(driverStatusChip()).toHaveTextContent('Fuera de servicio');
     expect(within(rail).queryByText('En mantenimiento')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Disponible' }));
+    connectDriver();
     expect(driverStatusChip()).toHaveTextContent('Disponible');
     expect(driverStatusChip()).not.toHaveTextContent('Ocupada');
 
-    await user.click(screen.getByRole('button', { name: 'En ruta' }));
-    expect(driverStatusChip()).toHaveTextContent('En ruta');
+    await user.click(screen.getByRole('button', { name: 'Fuera de servicio' }));
+    expect(driverStatusChip()).toHaveTextContent('Fuera de servicio');
 
-    await user.click(screen.getByRole('button', { name: 'En escena' }));
-    expect(driverStatusChip()).toHaveTextContent('En escena');
+    await user.click(screen.getByRole('button', { name: 'Disponible' }));
+    expect(driverStatusChip()).toHaveTextContent('Disponible');
   });
 
   it('passes the aid centers to the map and labels the self marker with the unit', async () => {
@@ -695,7 +769,7 @@ describe('DriverConsolePage', () => {
     expect(useDriverAlertsStore.getState().focusRequestId).toBeNull();
   });
 
-  it('shows submitting after accept and Taken by another unit in the card', async () => {
+  it('shows submitting after accept; taken by another unit, the card leaves at once', async () => {
     const user = userEvent.setup();
     const port = new FakeRealtimePort();
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
@@ -718,7 +792,12 @@ describe('DriverConsolePage', () => {
       }),
     );
 
-    expect(screen.getByRole('status')).toHaveTextContent('Tomada por A-09');
+    // No "taken" card waiting to be dismissed: it is gone, and a notice says why.
+    expect(screen.queryByRole('button', { name: 'Aceptar solicitud' })).toBeNull();
+    expect(screen.queryByText(/Tomada por/)).toBeNull();
+    expect(useToastStore.getState().toasts.map((item) => item.message)).toContain(
+      'La solicitud ya fue aceptada por otra ambulancia.',
+    );
     expect(screen.queryByText('Misión actual')).not.toBeInTheDocument();
   });
 
