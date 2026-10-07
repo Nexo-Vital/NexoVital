@@ -45,6 +45,28 @@ function readOpcionalId(value: unknown): string | null | undefined {
   return undefined;
 }
 
+/** Optional server deadline: null/absent is legitimate; a string must parse. */
+function readDeadline(value: unknown): string | null | undefined {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === 'string' && value.length > 0 && Number.isFinite(Date.parse(value))) {
+    return value;
+  }
+  return undefined;
+}
+
+/** Optional window length: null/absent is legitimate; a number must be finite. */
+function readTimeoutMs(value: unknown): number | null | undefined {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return value;
+  }
+  return undefined;
+}
+
 /**
  * Validates the backend `flota` request push (`SolicitudPushPayload`) and maps
  * it to `SolicitudWireFrame`. Returns null on a malformed frame (a missing or
@@ -72,6 +94,8 @@ export function fromWireSolicitud(value: unknown): SolicitudWireFrame | null {
     ambulanciaAsignadaId,
     llegada,
     ubicacion,
+    timeoutEn,
+    timeoutMs,
   } = value;
 
   if (typeof solicitudId !== 'string' || solicitudId.length === 0) {
@@ -113,6 +137,16 @@ export function fromWireSolicitud(value: unknown): SolicitudWireFrame | null {
   if (ubicacion !== null && ubicacion !== undefined && readUbicacion(ubicacion) === null) {
     return null;
   }
+  // The accept deadline and window travel on the creation frame (null on the
+  // lifecycle frames). A present-but-malformed value is a malformed frame.
+  const deadline = readDeadline(timeoutEn);
+  if (deadline === undefined) {
+    return null;
+  }
+  const windowMs = readTimeoutMs(timeoutMs);
+  if (windowMs === undefined) {
+    return null;
+  }
 
   return {
     solicitudId,
@@ -122,6 +156,8 @@ export function fromWireSolicitud(value: unknown): SolicitudWireFrame | null {
     ambulanciasNotificadas: [...ambulanciasNotificadas],
     ambulanciaAsignadaId: typeof ambulanciaAsignadaId === 'string' ? ambulanciaAsignadaId : null,
     ubicacion: readUbicacion(ubicacion),
+    ...(deadline !== null ? { timeoutEn: deadline } : {}),
+    ...(windowMs !== null ? { timeoutMs: windowMs } : {}),
     ...(llegada === true ? { llegada: true } : {}),
   };
 }
@@ -163,6 +199,8 @@ export interface WireSolicitudContext {
  * the context fallback otherwise; `tipo`/`nivel` are filled from the context or
  * left absent. `timeoutEn` is '' when the backend declared no deadline, which
  * the inbox already treats as "no window known" and falls back to its default.
+ * The server-owned `timeoutMs` rides along so the inbox can derive the request
+ * instant from the deadline.
  */
 export function solicitudFrameFromWire(
   frame: SolicitudWireFrame,
@@ -186,7 +224,8 @@ export function solicitudFrameFromWire(
         tipo: context.tipo ?? '',
         ...(context.nivel ? { nivel: context.nivel } : {}),
         ...(escena ? { escena } : {}),
-        timeoutEn: '',
+        timeoutEn: frame.timeoutEn ?? '',
+        ...(frame.timeoutMs !== undefined ? { timeoutMs: frame.timeoutMs } : {}),
         notificadas: frame.ambulanciasNotificadas,
         mode: 'broadcast',
         notifiedCount: frame.ambulanciasNotificadas.length,

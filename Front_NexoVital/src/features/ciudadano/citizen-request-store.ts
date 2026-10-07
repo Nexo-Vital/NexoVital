@@ -8,7 +8,6 @@ import {
 } from '@/features/solicitudes/solicitud-api';
 import {
   nextRequestId,
-  SOLICITUD_TIMEOUT_MS,
   toSolicitud,
 } from '@/features/solicitudes/solicitud-form';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
@@ -202,7 +201,6 @@ export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => 
     try {
       const solicitud = await solicitarAmbulancia({
         ubicacion: origin,
-        timeoutEn: new Date(startedAt + SOLICITUD_TIMEOUT_MS).toISOString(),
       });
       useSolicitudesStore.getState().upsert({
         ...solicitud,

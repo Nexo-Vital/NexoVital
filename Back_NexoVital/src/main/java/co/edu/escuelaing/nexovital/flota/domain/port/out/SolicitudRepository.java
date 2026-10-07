@@ -18,12 +18,17 @@ public interface SolicitudRepository {
 
     /**
      * CAS (compare-and-swap) of the C2 broadcast: updates the request with a
-     * single SQL statement only if it is still in {@code estadoEsperado}, and
-     * assigns the ambulance. Returns affected rows: 1 = this caller won the
-     * transition, 0 = another one won first (lost race or state already moved).
+     * single SQL statement only if it is still in {@code estadoEsperado} AND its
+     * accept window is still open ({@code timeoutEn > ahora}), and assigns the
+     * ambulance. The deadline condition makes the temporal lock absolute: an
+     * accept can never win a request whose window already closed, even in the
+     * instant before the expiry sweep reaches it. Returns affected rows: 1 =
+     * this caller won the transition, 0 = another one won first (lost race,
+     * state already moved, or window already closed).
      */
     int transicionAtomicaAsignar(UUID idSolicitud, UUID ambulanciaId,
-                                 EstadoSolicitud estadoEsperado, EstadoSolicitud nuevoEstado);
+                                 EstadoSolicitud estadoEsperado, EstadoSolicitud nuevoEstado,
+                                 Instant ahora);
 
     int transicionAtomicaEstado(UUID idSolicitud,
                                 EstadoSolicitud estadoEsperado, EstadoSolicitud nuevoEstado);

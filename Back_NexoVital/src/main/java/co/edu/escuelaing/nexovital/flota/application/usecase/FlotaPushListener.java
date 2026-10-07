@@ -19,6 +19,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -75,10 +76,12 @@ public class FlotaPushListener {
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void alCrearSolicitud(SolicitudCreadaEvent evento) {
+        long timeoutMs = Duration.between(evento.solicitadaEn(), evento.timeoutEn()).toMillis();
         SolicitudPushPayload payload = new SolicitudPushPayload(
                 evento.solicitudId(), new Ubicacion(evento.lat(), evento.lng()),
                 evento.emergenciaId(), evento.zonaId(),
-                "PENDIENTE", evento.ambulanciasNotificadas(), null, false);
+                "PENDIENTE", evento.ambulanciasNotificadas(), null, false,
+                evento.timeoutEn().toString(), timeoutMs);
         for (UUID ambulanciaId : evento.ambulanciasNotificadas()) {
             publicarAlConductor(ambulanciaId, payload);
         }
@@ -90,7 +93,7 @@ public class FlotaPushListener {
     public void alAsignarSolicitud(SolicitudAsignadaEvent evento) {
         SolicitudPushPayload payload = new SolicitudPushPayload(
                 evento.solicitudId(), null, evento.emergenciaId(), evento.zonaId(),
-                "ASIGNADA", List.of(), evento.ambulanciaId(), false);
+                "ASIGNADA", List.of(), evento.ambulanciaId(), false, null, null);
         publicarAlConductor(evento.ambulanciaId(), payload);
         publicarAlSolicitante(evento.solicitanteId(), payload);
     }
@@ -110,7 +113,7 @@ public class FlotaPushListener {
     public void alRechazarSolicitud(SolicitudRechazadaEvent evento) {
         publicarAlConductor(evento.ambulanciaId(), new SolicitudPushPayload(
                 evento.solicitudId(), null, evento.emergenciaId(), evento.zonaId(),
-                "RECHAZADA", List.of(), null, false));
+                "RECHAZADA", List.of(), null, false, null, null));
     }
 
     /**
@@ -124,7 +127,7 @@ public class FlotaPushListener {
     public void alDeclararLlegada(SolicitudLlegadaEvent evento) {
         publicarAlSolicitante(evento.solicitanteId(), new SolicitudPushPayload(
                 evento.solicitudId(), null, evento.emergenciaId(), evento.zonaId(),
-                "ASIGNADA", List.of(), evento.ambulanciaId(), true));
+                "ASIGNADA", List.of(), evento.ambulanciaId(), true, null, null));
     }
 
     /** The help center confirmed the assignment: the assigned driver and the requester are told. */
@@ -132,7 +135,7 @@ public class FlotaPushListener {
     public void alConfirmarSolicitud(SolicitudConfirmadaEvent evento) {
         SolicitudPushPayload payload = new SolicitudPushPayload(
                 evento.solicitudId(), null, evento.emergenciaId(), evento.zonaId(),
-                "CONFIRMADA", List.of(), evento.ambulanciaId(), false);
+                "CONFIRMADA", List.of(), evento.ambulanciaId(), false, null, null);
         publicarAlConductor(evento.ambulanciaId(), payload);
         publicarAlSolicitante(evento.solicitanteId(), payload);
     }
@@ -147,7 +150,7 @@ public class FlotaPushListener {
     public void alExpirarSolicitud(SolicitudExpiradaEvent evento) {
         SolicitudPushPayload payload = new SolicitudPushPayload(
                 evento.solicitudId(), null, evento.emergenciaId(), evento.zonaId(),
-                "TIMEOUT", evento.ambulanciasNotificadas(), null, false);
+                "TIMEOUT", evento.ambulanciasNotificadas(), null, false, null, null);
         for (UUID ambulanciaId : evento.ambulanciasNotificadas()) {
             publicarAlConductor(ambulanciaId, payload);
         }
@@ -164,7 +167,7 @@ public class FlotaPushListener {
     public void alCancelarSolicitud(SolicitudCanceladaEvent evento) {
         SolicitudPushPayload payload = new SolicitudPushPayload(
                 evento.solicitudId(), null, evento.emergenciaId(), evento.zonaId(),
-                "CANCELADA", evento.ambulanciasNotificadas(), null, false);
+                "CANCELADA", evento.ambulanciasNotificadas(), null, false, null, null);
         for (UUID ambulanciaId : evento.ambulanciasNotificadas()) {
             publicarAlConductor(ambulanciaId, payload);
         }
@@ -180,7 +183,7 @@ public class FlotaPushListener {
     public void alFinalizarSolicitud(SolicitudFinalizadaEvent evento) {
         SolicitudPushPayload payload = new SolicitudPushPayload(
                 evento.solicitudId(), null, evento.emergenciaId(), evento.zonaId(),
-                "TOMADA", List.of(), evento.ambulanciaId(), false);
+                "TOMADA", List.of(), evento.ambulanciaId(), false, null, null);
         publicarAlConductor(evento.ambulanciaId(), payload);
         publicarAlSolicitante(evento.solicitanteId(), payload);
     }
@@ -233,7 +236,8 @@ public class FlotaPushListener {
     /** Public projection of a request for the driver inbox. */
     public record SolicitudPushPayload(UUID solicitudId, Ubicacion ubicacion, UUID emergenciaId,
                                        String zonaId, String estado, List<UUID> ambulanciasNotificadas,
-                                       UUID ambulanciaAsignadaId, boolean llegada) {
+                                       UUID ambulanciaAsignadaId, boolean llegada,
+                                       String timeoutEn, Long timeoutMs) {
     }
 
     /** Public projection of a fleet state change. */

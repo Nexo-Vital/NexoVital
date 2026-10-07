@@ -27,14 +27,20 @@ function isRequestFrame(payload: Record<string, unknown>): boolean {
 
 /**
  * Registry row from a backend `flota` frame. The wire carries no request type
- * label or deadline, so `tipo` is resolved from the emergency when the store
- * knows it and `timeoutEn` stays empty rather than being invented.
+ * label, so `tipo` is resolved from the emergency when the store knows it. The
+ * server-owned deadline (`timeoutEn`/`timeoutMs`) rides on the creation frame
+ * and the creation instant is derived from it; both degrade honestly when the
+ * frame omits them.
  */
 function solicitudFromWire(frame: SolicitudWireFrame): SolicitudAmbulancia {
   const emergency =
     frame.emergenciaId === null
       ? null
       : (useEmergencyStore.getState().items.find((item) => item.id === frame.emergenciaId) ?? null);
+  const solicitadaEn =
+    frame.timeoutEn !== undefined && frame.timeoutMs !== undefined
+      ? new Date(Date.parse(frame.timeoutEn) - frame.timeoutMs).toISOString()
+      : new Date().toISOString();
   return {
     id: frame.solicitudId,
     emergenciaId: frame.emergenciaId ?? '',
@@ -43,8 +49,8 @@ function solicitudFromWire(frame: SolicitudWireFrame): SolicitudAmbulancia {
     zonaId: frame.zonaId ?? '',
     ...(frame.ubicacion ? { ubicacion: frame.ubicacion } : {}),
     tipo: emergency?.descripcion ?? '',
-    solicitadaEn: new Date().toISOString(),
-    timeoutEn: '',
+    solicitadaEn,
+    timeoutEn: frame.timeoutEn ?? '',
     ambulanciasNotificadas: frame.ambulanciasNotificadas,
     notifiedCount: frame.ambulanciasNotificadas.length,
     ambulanciaAsignadaId: frame.ambulanciaAsignadaId,

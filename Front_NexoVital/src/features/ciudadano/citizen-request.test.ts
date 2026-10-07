@@ -415,11 +415,10 @@ describe('useCitizenRequestStore against the backend', () => {
     const [path, options] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(path).toBe('/api/v1/solicitudes');
     expect(options.method).toBe('POST');
-    // Asking for an ambulance no longer depends on an affected zone: the body is
-    // the pickup point and the deadline, nothing else.
+    // Asking for an ambulance no longer depends on an affected zone, and the
+    // timeout is server-owned: the body is the pickup point, nothing else.
     expect(JSON.parse(options.body as string)).toEqual({
       ubicacion: ORIGIN,
-      timeoutEn: new Date(5000 + 45_000).toISOString(),
     });
 
     // The stored identity and state come from the SERVER response, not the local

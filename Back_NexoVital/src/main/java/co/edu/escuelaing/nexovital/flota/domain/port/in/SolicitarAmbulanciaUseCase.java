@@ -2,7 +2,6 @@ package co.edu.escuelaing.nexovital.flota.domain.port.in;
 
 import co.edu.escuelaing.nexovital.flota.domain.model.SolicitudAmbulancia;
 
-import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -10,6 +9,10 @@ import java.util.UUID;
  *
  * <p>The request no longer depends on an affected zone: the dispatch broadcasts
  * to ALL available units, so the zone is optional context and never a filter.
+ *
+ * <p>The accept window is SERVER-OWNED: the implementation applies the
+ * configured {@code nexovital.solicitud.timeout-segundos} from the moment of
+ * creation. The client cannot propose a deadline.
  */
 public interface SolicitarAmbulanciaUseCase {
 
@@ -23,5 +26,5 @@ public interface SolicitarAmbulanciaUseCase {
      *                      is delivered to this user so they can track it
      */
     SolicitudAmbulancia solicitar(double lat, double lng, UUID emergenciaId, UUID centroAyudaId,
-                                  String zonaId, UUID solicitanteId, Instant timeoutEn);
+                                  String zonaId, UUID solicitanteId);
 }

@@ -24,7 +24,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
-import java.time.Instant;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -141,8 +141,7 @@ class SolicitudExpiracionTest {
     @DisplayName("US9: una solicitud PENDIENTE dentro de su ventana NO expira")
     void unaSolicitudVigenteNoExpira() {
         UUID solicitudId = solicitarAmbulanciaUseCase.solicitar(
-                4.73d, -74.08d, UUID.randomUUID(), UUID.randomUUID(), zona, UUID.randomUUID(),
-                clock.instant().plusSeconds(60)).getId();
+                4.73d, -74.08d, UUID.randomUUID(), UUID.randomUUID(), zona, UUID.randomUUID()).getId();
         solicitudesCreadas.add(solicitudId);
 
         expirarSolicitudesVencidasUseCase.expirarVencidas();
@@ -154,10 +153,13 @@ class SolicitudExpiracionTest {
 
     /** Creates a PENDIENTE request whose accept window already elapsed. */
     private UUID crearSolicitudVencida(UUID solicitanteId) {
-        Instant pasado = clock.instant().minusSeconds(60);
         UUID solicitudId = solicitarAmbulanciaUseCase
-                .solicitar(4.73d, -74.08d, UUID.randomUUID(), UUID.randomUUID(), zona, solicitanteId, pasado)
+                .solicitar(4.73d, -74.08d, UUID.randomUUID(), UUID.randomUUID(), zona, solicitanteId)
                 .getId();
+        // The window is server-owned (60s from creation): advancing the
+        // controllable clock past it is what makes the request due, never a
+        // client-supplied deadline in the past.
+        clock.avanzar(Duration.ofSeconds(61));
         solicitudesCreadas.add(solicitudId);
         return solicitudId;
     }

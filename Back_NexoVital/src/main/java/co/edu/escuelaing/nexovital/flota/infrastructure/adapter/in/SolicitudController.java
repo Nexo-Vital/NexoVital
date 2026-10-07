@@ -125,7 +125,7 @@ public class SolicitudController {
             UUID solicitanteId = usuarioAutenticadoId();
             SolicitudAmbulancia creada = solicitarAmbulanciaUseCase.solicitar(
                     lat, lng, request.emergenciaId(), request.centroAyudaId(), request.zonaId(),
-                    solicitanteId, request.timeoutEn());
+                    solicitanteId);
             return ResponseEntity.status(HttpStatus.CREATED).body(SolicitudAmbulanciaDto.fromDomain(creada));
         } catch (AmbulanciaNoDisponibleException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT)

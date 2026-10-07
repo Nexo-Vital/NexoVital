@@ -18,15 +18,21 @@ public interface SolicitudJpaRepository extends JpaRepository<SolicitudJpaEntity
      * state. Returns affected rows (1 = won, 0 = lost the race). The
      * {@code WHERE s.estado = :estadoEsperado} turns check-and-set into atomic:
      * two threads that both read PENDIENTE can never both win.
+     *
+     * <p>The {@code AND s.timeoutEn > :ahora} clause is the temporal lock: an
+     * accept can only win while the accept window is still open, so a request
+     * whose deadline passed can no longer be taken, even if the expiry sweep has
+     * not closed it yet.
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE SolicitudJpaEntity s "
             + "SET s.estado = :nuevoEstado, s.ambulanciaAsignadaId = :ambulanciaId, s.version = s.version + 1 "
-            + "WHERE s.id = :id AND s.estado = :estadoEsperado")
+            + "WHERE s.id = :id AND s.estado = :estadoEsperado AND s.timeoutEn > :ahora")
     int transicionAtomicaAsignar(@Param("id") UUID id,
                                  @Param("ambulanciaId") UUID ambulanciaId,
                                  @Param("estadoEsperado") EstadoSolicitud estadoEsperado,
-                                 @Param("nuevoEstado") EstadoSolicitud nuevoEstado);
+                                 @Param("nuevoEstado") EstadoSolicitud nuevoEstado,
+                                 @Param("ahora") Instant ahora);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE SolicitudJpaEntity s "

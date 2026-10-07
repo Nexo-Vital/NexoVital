@@ -49,8 +49,10 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
     @Override
     @Transactional
     public int transicionAtomicaAsignar(UUID idSolicitud, UUID ambulanciaId,
-                                        EstadoSolicitud estadoEsperado, EstadoSolicitud nuevoEstado) {
-        return jpaRepository.transicionAtomicaAsignar(idSolicitud, ambulanciaId, estadoEsperado, nuevoEstado);
+                                        EstadoSolicitud estadoEsperado, EstadoSolicitud nuevoEstado,
+                                        Instant ahora) {
+        return jpaRepository.transicionAtomicaAsignar(idSolicitud, ambulanciaId, estadoEsperado,
+                nuevoEstado, ahora);
     }
 
     @Override

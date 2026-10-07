@@ -383,9 +383,10 @@ export type EstadoSolicitudWire =
  * `SolicitudPayload` union:
  *
  *   - it has NO `type` discriminant: the lifecycle is in `estado`;
- *   - it carries no request type label and no accept deadline. The front
- *     resolves them from the emergency (`emergenciaId`) when it has it, and
- *     degrades honestly when it does not.
+ *   - it carries no request type label. The accept deadline DOES travel on the
+ *     creation frame (`timeoutEn` + `timeoutMs`), so the driver card can show
+ *     the real countdown; the front resolves the label from the emergency
+ *     (`emergenciaId`) when it has it, and degrades honestly when it does not.
  *
  * `ubicacion` is the request's own pickup point and travels on the creation
  * frame; the later lifecycle frames send it `null`. `emergenciaId` and `zonaId`
@@ -405,6 +406,14 @@ export interface SolicitudWireFrame {
   ambulanciaAsignadaId: string | null;
   /** Pickup point on the creation frame; null on the lifecycle frames. */
   ubicacion: Ubicacion | null;
+  /**
+   * Server-owned accept deadline (ISO timestamp) on the creation frame; absent
+   * on the lifecycle frames. When absent the inbox falls back to its default
+   * window instead of inventing a deadline.
+   */
+  timeoutEn?: string;
+  /** Server-owned accept window length (ms) on the creation frame. */
+  timeoutMs?: number;
   /**
    * Arrival milestone: true on the request-level push the winning unit's
    * arrival emits. Arrival is NOT a lifecycle state (the request stays

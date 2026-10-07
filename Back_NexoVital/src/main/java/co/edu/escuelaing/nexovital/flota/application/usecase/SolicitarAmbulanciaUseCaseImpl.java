@@ -12,6 +12,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -23,6 +24,11 @@ import java.util.UUID;
  * commit: the service publishes inside the transaction and the
  * {@link FlotaPushListener} listens in {@code AFTER_COMMIT} (golden rule:
  * publish POST-COMMIT).
+ *
+ * <p>The accept window is SERVER-OWNED: the deadline is computed here from the
+ * server clock and the configured {@code nexovital.solicitud.timeout-segundos}.
+ * The client never proposes a timeout, so a skewed client clock can never
+ * create an already-expired request.
  *
  * <p><b>The broadcast has no zone filter.</b> The event carries the ids of EVERY
  * available unit — the request no longer depends on an affected zone, and the
@@ -37,29 +43,32 @@ public class SolicitarAmbulanciaUseCaseImpl implements SolicitarAmbulanciaUseCas
     private final SolicitudRepository solicitudRepository;
     private final AmbulanciaRepository ambulanciaRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final Clock clock;
     private final long timeoutSegundos;
 
     public SolicitarAmbulanciaUseCaseImpl(SolicitudRepository solicitudRepository,
                                           AmbulanciaRepository ambulanciaRepository,
                                           ApplicationEventPublisher eventPublisher,
+                                          Clock clock,
                                           @Value("${nexovital.solicitud.timeout-segundos:60}") long timeoutSegundos) {
         this.solicitudRepository = solicitudRepository;
         this.ambulanciaRepository = ambulanciaRepository;
         this.eventPublisher = eventPublisher;
+        this.clock = clock;
         this.timeoutSegundos = timeoutSegundos;
     }
 
     @Override
     @Transactional
     public SolicitudAmbulancia solicitar(double lat, double lng, UUID emergenciaId, UUID centroAyudaId,
-                                         String zonaId, UUID solicitanteId, Instant timeoutEn) {
+                                         String zonaId, UUID solicitanteId) {
         List<Ambulancia> disponibles = ambulanciaRepository.listarDisponibles();
         if (disponibles.isEmpty()) {
             throw new AmbulanciaNoDisponibleException();
         }
 
-        Instant solicitadaEn = Instant.now();
-        Instant tope = timeoutEn != null ? timeoutEn : solicitadaEn.plus(timeoutSegundos, ChronoUnit.SECONDS);
+        Instant solicitadaEn = Instant.now(clock);
+        Instant tope = solicitadaEn.plus(timeoutSegundos, ChronoUnit.SECONDS);
         List<UUID> notificadas = disponibles.stream().map(Ambulancia::getId).toList();
 
         SolicitudAmbulancia solicitud = SolicitudAmbulancia.solicitar(
@@ -69,7 +78,7 @@ public class SolicitarAmbulanciaUseCaseImpl implements SolicitarAmbulanciaUseCas
 
         eventPublisher.publishEvent(new SolicitudCreadaEvent(
                 guardada.getId(), guardada.getLat(), guardada.getLng(), emergenciaId, zonaId,
-                notificadas, solicitadaEn, guardada.getSolicitanteId()));
+                notificadas, solicitadaEn, guardada.getTimeoutEn(), guardada.getSolicitanteId()));
         return guardada;
     }
 }

@@ -17,6 +17,8 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -25,7 +27,8 @@ import java.util.UUID;
  * <ol>
  *   <li>read the request (fast state check for UX);</li>
  *   <li>atomic CAS PENDIENTE → ASIGNADA with the ambulance assignment (a single
- *       UPDATE conditioned on the expected state, D-F4);</li>
+ *       UPDATE conditioned on the expected state AND on the accept window still
+ *       being open, D-F4);</li>
  *   <li>1 row = win: ambulance to EN_MISION in the SAME transaction, then the
  *       post-commit events; 0 rows = another caller won: losing result, no side
  *       effects.</li>
@@ -33,6 +36,11 @@ import java.util.UUID;
  *
  * <p>The winner returns 200; the loser receives 409. No in-memory lock and no
  * client flag decides the winner: the server is the single source of truth.
+ *
+ * <p><b>Temporal lock.</b> The window close is enforced HERE, not only by the
+ * expiry sweep: the pre-check rejects a request whose {@code timeoutEn} already
+ * passed, and the CAS repeats the same condition atomically, so an accept can
+ * never win an expired request in the instant before the sweep reaches it.
  */
 @Service
 public class AceptarSolicitudUseCaseImpl implements AceptarSolicitudUseCase {
@@ -40,13 +48,16 @@ public class AceptarSolicitudUseCaseImpl implements AceptarSolicitudUseCase {
     private final SolicitudRepository solicitudRepository;
     private final AmbulanciaRepository ambulanciaRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final Clock clock;
 
     public AceptarSolicitudUseCaseImpl(SolicitudRepository solicitudRepository,
                                        AmbulanciaRepository ambulanciaRepository,
-                                       ApplicationEventPublisher eventPublisher) {
+                                       ApplicationEventPublisher eventPublisher,
+                                       Clock clock) {
         this.solicitudRepository = solicitudRepository;
         this.ambulanciaRepository = ambulanciaRepository;
         this.eventPublisher = eventPublisher;
+        this.clock = clock;
     }
 
     @Override
@@ -56,6 +67,14 @@ public class AceptarSolicitudUseCaseImpl implements AceptarSolicitudUseCase {
                 .orElseThrow(() -> new SolicitudNoEncontradaException(solicitudId));
 
         if (solicitud.getEstado() != EstadoSolicitud.PENDIENTE) {
+            throw new SolicitudNoAsignableException(solicitudId, solicitud.getEstado());
+        }
+
+        // Temporal lock: the accept window must still be open. This is the fast
+        // path; the CAS below carries the SAME condition atomically, so the
+        // guarantee never depends on the expiry sweep having run first.
+        Instant ahora = Instant.now(clock);
+        if (!solicitud.getTimeoutEn().isAfter(ahora)) {
             throw new SolicitudNoAsignableException(solicitudId, solicitud.getEstado());
         }
 
@@ -77,7 +96,7 @@ public class AceptarSolicitudUseCaseImpl implements AceptarSolicitudUseCase {
         }
 
         int filas = solicitudRepository.transicionAtomicaAsignar(
-                solicitudId, ambulanciaId, EstadoSolicitud.PENDIENTE, EstadoSolicitud.ASIGNADA);
+                solicitudId, ambulanciaId, EstadoSolicitud.PENDIENTE, EstadoSolicitud.ASIGNADA, ahora);
 
         if (filas == 0) {
             return ResultadoAceptarSolicitud.perdio(solicitud);
