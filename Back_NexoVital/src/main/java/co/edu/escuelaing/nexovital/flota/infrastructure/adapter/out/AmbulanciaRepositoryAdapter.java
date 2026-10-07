@@ -1,11 +1,13 @@
 package co.edu.escuelaing.nexovital.flota.infrastructure.adapter.out;
 
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoAmbulancia;
+import co.edu.escuelaing.nexovital.flota.domain.enums.FuentePosicion;
 import co.edu.escuelaing.nexovital.flota.domain.model.Ambulancia;
 import co.edu.escuelaing.nexovital.flota.domain.port.out.AmbulanciaRepository;
 import co.edu.escuelaing.nexovital.flota.domain.port.out.FlotaQueryPort;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -51,8 +53,27 @@ public class AmbulanciaRepositoryAdapter implements AmbulanciaRepository, FlotaQ
     }
 
     @Override
-    public int actualizarPosicionAtomica(UUID id, double lat, double lng) {
-        return jpaRepository.actualizarPosicionAtomica(id, lat, lng);
+    public int actualizarPosicionAtomica(UUID id, double lat, double lng, FuentePosicion fuente, Instant ahora) {
+        return jpaRepository.actualizarPosicionAtomica(id, lat, lng, fuente, ahora);
+    }
+
+    @Override
+    public int actualizarPosicionSimuladaAtomica(UUID id, double lat, double lng, Instant ahora) {
+        // The simulator writes SIMULADA and steps aside for a unit owned by a DEVICE.
+        return jpaRepository.actualizarPosicionSiNoLaTiene(
+                id, lat, lng, FuentePosicion.SIMULADA, ahora, FuentePosicion.DEVICE);
+    }
+
+    @Override
+    public List<Ambulancia> listarConSenalVencida(Instant limite) {
+        return jpaRepository.findBySinSenalFalseAndUltimaPosicionEnBefore(limite).stream()
+                .map(AmbulanciaRepositoryAdapter::toDomain)
+                .toList();
+    }
+
+    @Override
+    public int marcarSinSenalAtomica(UUID id, Instant limite) {
+        return jpaRepository.marcarSinSenalAtomica(id, limite);
     }
 
     @Override
@@ -69,6 +90,7 @@ public class AmbulanciaRepositoryAdapter implements AmbulanciaRepository, FlotaQ
         return new Ambulancia(
                 entity.getId(), entity.getPlaca(), entity.getEstado(),
                 entity.getLat(), entity.getLng(), entity.getZona(),
-                entity.getConductorId(), entity.getVersion());
+                entity.getConductorId(), entity.getVersion(),
+                entity.getUltimaPosicionEn(), entity.getFuentePosicion(), entity.isSinSenal());
     }
 }

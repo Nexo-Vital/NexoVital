@@ -21,6 +21,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -51,6 +52,12 @@ import java.util.UUID;
  * {@code ubicacion}; the driver card and the request detail read it to show
  * where to go. Later lifecycle frames keep it null: the front already holds the
  * pickup point from the creation frame.
+ *
+ * <p><b>Every {@code /topic/flota} frame is versioned (EP-04.F1.US1, D6).</b>
+ * The push runs after commit, each one on its own thread, so two writes on the
+ * same unit can reach the channel inverted. Both fleet frames carry the row
+ * {@code version}, and the consumer discards any frame older than the one it
+ * holds.
  */
 @Component
 public class FlotaPushListener {
@@ -185,18 +192,30 @@ public class FlotaPushListener {
         publicarAlSolicitante(evento.solicitanteId(), payload);
     }
 
-    /** State/position feed: a topic so every subscribed client sees the same state. */
+    /**
+     * State feed: a topic so every subscribed client sees the same state.
+     *
+     * <p>The frame is a snapshot of the row as it is after the commit: its
+     * {@code estado} and its {@code version} are read together, so the pair is
+     * always consistent and the consumer can order it against the position
+     * frames (D6). If the unit cannot be read, the event's state travels without
+     * a version and the consumer applies it as an unversioned frame.
+     */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void alActualizarFlota(FlotaActualizadaEvent evento) {
+        Optional<Ambulancia> actual = ambulanciaRepository.buscarPorId(evento.ambulanciaId());
+        String estado = actual.map(Ambulancia::getEstado).orElse(evento.estado()).name();
+        Long version = actual.map(Ambulancia::getVersion).orElse(null);
         pushPort.publicar(DESTINO_FLOTA,
-                new FlotaPushPayload(evento.ambulanciaId(), evento.estado().name()));
+                new FlotaPushPayload(evento.ambulanciaId(), estado, version));
     }
 
     /**
      * Live position feed (EP-04.F1.US1, D-T3): a topic frame the front already
      * knows how to consume. It has no {@code type} discriminant (it is the
      * front's {@code LiveUnitPayload}) and the payload is UPSERTED by
-     * {@code ambulanceId}. Published AFTER commit, as every fleet event is.
+     * {@code ambulanceId}. Published AFTER commit, as every fleet event is. The
+     * signal-loss notice travels through here too, with {@code sinSenal = true}.
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void alActualizarPosicion(PosicionActualizadaEvent evento) {
@@ -236,14 +255,18 @@ public class FlotaPushListener {
                                        UUID ambulanciaAsignadaId, boolean llegada) {
     }
 
-    /** Public projection of a fleet state change. */
-    public record FlotaPushPayload(UUID ambulanciaId, String estado) {
+    /**
+     * Public projection of a fleet state change. {@code version} is the row
+     * version the state belongs to, or {@code null} when it could not be read.
+     */
+    public record FlotaPushPayload(UUID ambulanciaId, String estado, Long version) {
     }
 
     /**
-     * Live-position projection, shaped exactly like the front's
-     * {@code LiveUnitPayload}: {@code ambulanceId}, {@code ubicacion},
-     * {@code estado}, {@code heading}, {@code source}.
+     * Live-position projection, shaped like the front's {@code LiveUnitPayload}:
+     * {@code ambulanceId}, {@code ubicacion}, {@code estado}, {@code heading},
+     * {@code source}, plus the signal fields {@code sinSenal},
+     * {@code ultimaPosicionEn} and {@code version} (EP-04.F1.US1).
      *
      * <p><b>Enum bridge.</b> The front's {@code AmbulanceState} is English
      * ({@code AVAILABLE | ASSIGNED | EN_ROUTE | MAINTENANCE}) while the domain
@@ -251,9 +274,14 @@ public class FlotaPushListener {
      * front boundary ({@code fleet-api.ts}), so the live frame must speak the
      * same English literal or the front's UPSERT would ignore it. {@code source}
      * is the front's lowercase {@code 'device' | 'simulated'}.
+     *
+     * <p>{@code ultimaPosicionEn} travels as an ISO-8601 text (or {@code null}),
+     * so the wire format does not depend on how the message converter writes
+     * dates.
      */
     public record PosicionPushPayload(UUID ambulanceId, Ubicacion ubicacion, String estado,
-                                      Integer heading, String source) {
+                                      Integer heading, String source, boolean sinSenal,
+                                      String ultimaPosicionEn, long version) {
 
         static PosicionPushPayload desde(PosicionActualizadaEvent evento) {
             return new PosicionPushPayload(
@@ -261,7 +289,10 @@ public class FlotaPushListener {
                     new Ubicacion(evento.lat(), evento.lng()),
                     estadoWire(evento.estado()),
                     evento.heading(),
-                    fuenteWire(evento.fuente()));
+                    fuenteWire(evento.fuente()),
+                    evento.sinSenal(),
+                    evento.ultimaPosicionEn() == null ? null : evento.ultimaPosicionEn().toString(),
+                    evento.version());
         }
 
         /** Domain state (Spanish) to the front's {@code AmbulanceState} (English). */
@@ -274,8 +305,14 @@ public class FlotaPushListener {
             };
         }
 
-        /** Domain source to the front's lowercase {@code 'device' | 'simulated'}. */
+        /**
+         * Domain source to the front's lowercase {@code 'device' | 'simulated'},
+         * or {@code null} when the unit has no recorded source.
+         */
         private static String fuenteWire(FuentePosicion fuente) {
+            if (fuente == null) {
+                return null;
+            }
             return switch (fuente) {
                 case DEVICE -> "device";
                 case SIMULADA -> "simulated";

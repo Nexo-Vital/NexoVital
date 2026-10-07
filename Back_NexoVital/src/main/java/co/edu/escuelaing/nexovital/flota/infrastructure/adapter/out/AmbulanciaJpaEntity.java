@@ -1,6 +1,7 @@
 package co.edu.escuelaing.nexovital.flota.infrastructure.adapter.out;
 
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoAmbulancia;
+import co.edu.escuelaing.nexovital.flota.domain.enums.FuentePosicion;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -8,12 +9,18 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import org.hibernate.annotations.ColumnDefault;
 
+import java.time.Instant;
 import java.util.UUID;
 
 /**
  * JPA row of a fleet unit. The domain never sees this class. {@code conductorId}
  * is the driver user id used as the per-user push key (D-F1).
+ *
+ * <p>The three signal columns (EP-04.F1.US1, D4) are written ONLY by the atomic
+ * UPDATEs of {@link AmbulanciaJpaRepository}; there are no setters for them. A
+ * new unit starts with no report instant, no source and {@code sinSenal = false}.
  */
 @Entity
 @Table(name = "ambulancias")
@@ -41,6 +48,24 @@ public class AmbulanciaJpaEntity {
     /** Driver user id; nullable because a unit can exist without a driver. */
     @Column
     private UUID conductorId;
+
+    /** Instant of the last accepted position report; null if it never reported. */
+    @Column
+    private Instant ultimaPosicionEn;
+
+    /** Source of the last accepted report; null if it never reported. */
+    @Enumerated(EnumType.STRING)
+    @Column
+    private FuentePosicion fuentePosicion;
+
+    /**
+     * True while the unit has gone longer than the threshold without reporting.
+     * The column default lets a schema that already has rows (profile
+     * {@code docker}, {@code ddl-auto=update}) gain the NOT NULL column.
+     */
+    @Column(nullable = false)
+    @ColumnDefault("false")
+    private boolean sinSenal;
 
     @Version
     private long version;
@@ -89,6 +114,18 @@ public class AmbulanciaJpaEntity {
 
     public UUID getConductorId() {
         return conductorId;
+    }
+
+    public Instant getUltimaPosicionEn() {
+        return ultimaPosicionEn;
+    }
+
+    public FuentePosicion getFuentePosicion() {
+        return fuentePosicion;
+    }
+
+    public boolean isSinSenal() {
+        return sinSenal;
     }
 
     public long getVersion() {

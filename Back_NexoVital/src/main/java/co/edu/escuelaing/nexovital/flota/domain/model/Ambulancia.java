@@ -1,7 +1,9 @@
 package co.edu.escuelaing.nexovital.flota.domain.model;
 
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoAmbulancia;
+import co.edu.escuelaing.nexovital.flota.domain.enums.FuentePosicion;
 
+import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -13,6 +15,12 @@ import java.util.UUID;
  * uses to reach each notified unit by its OWN user destination (D-F1): the
  * STOMP Principal is the {@code Usuario} and {@code Usuario.getName()} resolves
  * to its id, so a per-user push is addressed to this value.
+ *
+ * <p><b>Signal is data, not a state (EP-04.F1.US1, D4).</b>
+ * {@code ultimaPosicionEn}, {@code fuentePosicion} and {@code sinSenal} describe
+ * the position feed of the unit. They never change {@code estado}: a unit can be
+ * {@code DISPONIBLE} or {@code EN_MISION} and, on top of that, have lost its
+ * signal.
  */
 public final class Ambulancia {
 
@@ -24,9 +32,22 @@ public final class Ambulancia {
     private final String zona;
     private final UUID conductorId;
     private final long version;
+    private final Instant ultimaPosicionEn;
+    private final FuentePosicion fuentePosicion;
+    private final boolean sinSenal;
 
+    /**
+     * A unit that has never reported a position: no report instant, no source
+     * and, therefore, no lost signal.
+     */
     public Ambulancia(UUID id, String placa, EstadoAmbulancia estado,
                       double lat, double lng, String zona, UUID conductorId, long version) {
+        this(id, placa, estado, lat, lng, zona, conductorId, version, null, null, false);
+    }
+
+    public Ambulancia(UUID id, String placa, EstadoAmbulancia estado,
+                      double lat, double lng, String zona, UUID conductorId, long version,
+                      Instant ultimaPosicionEn, FuentePosicion fuentePosicion, boolean sinSenal) {
         this.id = Objects.requireNonNull(id, "id is required");
         this.placa = Objects.requireNonNull(placa, "placa is required");
         this.estado = Objects.requireNonNull(estado, "estado is required");
@@ -35,6 +56,9 @@ public final class Ambulancia {
         this.zona = Objects.requireNonNull(zona, "zona is required");
         this.conductorId = conductorId;
         this.version = version;
+        this.ultimaPosicionEn = ultimaPosicionEn;
+        this.fuentePosicion = fuentePosicion;
+        this.sinSenal = sinSenal;
     }
 
     /**
@@ -48,7 +72,8 @@ public final class Ambulancia {
             throw new IllegalStateException(
                     "Ambulance " + placa + " in state " + estado + " cannot enter a mission");
         }
-        return new Ambulancia(id, placa, EstadoAmbulancia.EN_MISION, lat, lng, zona, conductorId, version + 1);
+        return new Ambulancia(id, placa, EstadoAmbulancia.EN_MISION, lat, lng, zona, conductorId,
+                version + 1, ultimaPosicionEn, fuentePosicion, sinSenal);
     }
 
     /**
@@ -68,7 +93,8 @@ public final class Ambulancia {
         if (!Double.isFinite(lat) || !Double.isFinite(lng)) {
             throw new IllegalArgumentException("Position coordinates must be finite numbers");
         }
-        return new Ambulancia(id, placa, estado, lat, lng, zona, conductorId, version + 1);
+        return new Ambulancia(id, placa, estado, lat, lng, zona, conductorId,
+                version + 1, ultimaPosicionEn, fuentePosicion, sinSenal);
     }
 
     /**
@@ -83,7 +109,8 @@ public final class Ambulancia {
             throw new IllegalStateException(
                     "Ambulance " + placa + " in state " + estado + " cannot be released");
         }
-        return new Ambulancia(id, placa, EstadoAmbulancia.DISPONIBLE, lat, lng, zona, conductorId, version + 1);
+        return new Ambulancia(id, placa, EstadoAmbulancia.DISPONIBLE, lat, lng, zona, conductorId,
+                version + 1, ultimaPosicionEn, fuentePosicion, sinSenal);
     }
 
     public UUID getId() {
@@ -117,5 +144,20 @@ public final class Ambulancia {
 
     public long getVersion() {
         return version;
+    }
+
+    /** Instant of the last accepted position report, or {@code null} if it never reported. */
+    public Instant getUltimaPosicionEn() {
+        return ultimaPosicionEn;
+    }
+
+    /** Who produced the last accepted report, or {@code null} if it never reported. */
+    public FuentePosicion getFuentePosicion() {
+        return fuentePosicion;
+    }
+
+    /** {@code true} while the unit has gone longer than the threshold without reporting. */
+    public boolean isSinSenal() {
+        return sinSenal;
     }
 }

@@ -123,7 +123,8 @@ class PosicionPropagacionHttpTest extends LoginTestBase {
         JsonNode json = objectMapper.readTree(objectMapper.writeValueAsString(payload));
         Set<String> claves = new LinkedHashSet<>();
         json.fieldNames().forEachRemaining(claves::add);
-        assertEquals(Set.of("ambulanceId", "ubicacion", "estado", "heading", "source"), claves,
+        assertEquals(Set.of("ambulanceId", "ubicacion", "estado", "heading", "source",
+                "sinSenal", "ultimaPosicionEn", "version"), claves,
                 "el payload debe exponer exactamente las claves de LiveUnitPayload");
         Set<String> clavesUbicacion = new LinkedHashSet<>();
         json.get("ubicacion").fieldNames().forEachRemaining(clavesUbicacion::add);
