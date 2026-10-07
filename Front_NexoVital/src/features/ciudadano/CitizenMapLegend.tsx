@@ -1,4 +1,12 @@
-import { ChevronDown, CircleCheck, Clock, Cross, OctagonAlert, TriangleAlert } from 'lucide-react';
+import {
+  ChevronDown,
+  CircleCheck,
+  Clock,
+  Cross,
+  OctagonAlert,
+  TriangleAlert,
+  WifiOff,
+} from 'lucide-react';
 import { useId, useState } from 'react';
 import { cn } from '@/lib/utils';
 import type { Ambulancia } from '@/types/domain';
@@ -13,6 +21,9 @@ import {
   type CitizenUnitStatus,
   countUnitsByStatus,
   NOT_DECLARED_CENTER_STYLE,
+  UNIT_NO_SIGNAL_LABEL,
+  UNIT_NO_SIGNAL_MARKER_CLASS,
+  unitHasLostSignal,
 } from './citizen-view';
 
 const LEVEL_ICON: Record<CitizenCenterLevel, typeof CircleCheck> = {
@@ -43,13 +54,19 @@ interface CitizenMapLegendProps {
  * the same table the map pins use — and the unit swatches reuse the pin tokens,
  * so the legend cannot drift from the map.
  *
+ * A unit without signal is drawn gray on the map whatever its state, so it is
+ * counted in its own "Sin señal" row and NOT in free/busy: each row counts the
+ * pins of that colour.
+ *
  * The card collapses to a single pill so it does not cover the map on a phone:
  * the toggle header is the only interactive part (the rest stays pointer-transparent).
  */
 export function CitizenMapLegend({ counts, units }: CitizenMapLegendProps) {
   const [open, setOpen] = useState(true);
   const bodyId = useId();
-  const unitCounts = countUnitsByStatus(units);
+  const unitsWithSignal = units.filter((unit) => !unitHasLostSignal(unit));
+  const unitCounts = countUnitsByStatus(unitsWithSignal);
+  const noSignalCount = units.length - unitsWithSignal.length;
 
   return (
     <aside
@@ -154,6 +171,18 @@ export function CitizenMapLegend({ counts, units }: CitizenMapLegendProps) {
                 </li>
               );
             })}
+            <li className="flex items-center gap-2.5 font-medium text-[13px]">
+              <span
+                className={cn(
+                  'flex size-5 shrink-0 items-center justify-center rounded-full',
+                  UNIT_NO_SIGNAL_MARKER_CLASS,
+                )}
+              >
+                <WifiOff className="size-[11px]" aria-hidden />
+              </span>
+              {UNIT_NO_SIGNAL_LABEL}
+              <b className="tabular ml-auto font-bold">{noSignalCount}</b>
+            </li>
           </ul>
 
           <span className="h-px bg-nv-line" aria-hidden />

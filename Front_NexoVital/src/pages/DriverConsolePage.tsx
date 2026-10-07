@@ -26,6 +26,7 @@ import { useEmergencySync } from '@/features/emergencias/use-emergency-sync';
 import { fetchFlota, fetchMiAmbulancia } from '@/features/flota/fleet-api';
 import { useFleetStore } from '@/features/flota/fleet-store';
 import { useFleetSync } from '@/features/flota/use-fleet-sync';
+import { usePositionReport } from '@/features/flota/use-position-report';
 import { LocationPermissionDialog } from '@/features/geolocalizacion/LocationPermissionDialog';
 import { useDeviceLocation } from '@/features/geolocalizacion/use-device-location';
 import {
@@ -312,7 +313,8 @@ export default function DriverConsolePage({
     the fleet data gives their own unit. Use it as the origin for distances, the
     connector and the self marker, and report it as SIMULATED through the app's
     existing `simulated` flag: the self marker gets `nv-marker--sim` and the
-    /topic/flota payload carries `source: 'simulated'`. With no unit either,
+    demo /topic/flota payload carries `source: 'simulated'` (off demo this
+    fallback is never reported, see `usePositionReport`). With no unit either,
     `effectivePosition` stays null and the UI keeps its honest "Sin ubicación".
   */
   const fallbackToUnit = location.position === null && ownUnit !== null;
@@ -467,12 +469,23 @@ export default function DriverConsolePage({
     }
   }, [hasCentered, effectivePosition]);
 
-  // Report this unit on /topic/flota while online so the CRUE map tracks it. A
-  // live mission reports the unit as ASSIGNED regardless of the declared status,
-  // so finishing the service really flips it back to AVAILABLE on the wire.
+  /*
+    How this unit's position reaches the other screens (EP-04.F1.US1, D1).
+
+    DEMO mode has no backend, so the unit is published on /topic/flota through
+    the demo relay, exactly as before. A live mission reports the unit as
+    ASSIGNED regardless of the declared status, so finishing the service really
+    flips it back to AVAILABLE on the wire.
+
+    Against the BACKEND the channel is one-way: a client never writes on
+    /topic/flota (the server drops it). The position is reported by REST every
+    5 s and it is the server that persists it and publishes it, so a client that
+    connects late reads it too and nobody can publish a position for a unit that
+    is not theirs. See `usePositionReport` for the rules.
+  */
   const { heading } = location;
   useEffect(() => {
-    if (!online || !port || !effectivePosition) {
+    if (!demo || !online || !port || !effectivePosition) {
       return;
     }
     const payload: LiveUnitPayload = {
@@ -483,7 +496,27 @@ export default function DriverConsolePage({
       source: effectiveSimulated ? 'simulated' : 'device',
     };
     port.publish(DESTINATIONS.flota, payload);
-  }, [online, port, unitId, effectivePosition, heading, effectiveSimulated, status, missionActive]);
+  }, [
+    demo,
+    online,
+    port,
+    unitId,
+    effectivePosition,
+    heading,
+    effectiveSimulated,
+    status,
+    missionActive,
+  ]);
+  // Only the driver's OWN position is reported (GPS or "Simular posición"):
+  // `location.position`, never `effectivePosition`, whose fallback is the
+  // position the server already holds for the unit. Echoing that one back would
+  // claim the unit for a device that knows nothing and freeze it in place.
+  usePositionReport({
+    enabled: !demo && online && unitResolved,
+    ambulanciaId: unitId,
+    position: location.position,
+    heading,
+  });
 
   const goOnline = useCallback(() => {
     setOnline();
@@ -498,9 +531,9 @@ export default function DriverConsolePage({
   // "Finalizar servicio": against the backend this calls
   // `POST /solicitudes/{id}/finalizar`, which closes the request and releases
   // the unit atomically; the unit is declared available only once the server
-  // confirms. In demo it clears immediately. Either way the /topic/flota effect
-  // republishes the unit as AVAILABLE and the rail drops back to the operations
-  // map.
+  // confirms, and the server itself publishes the release on /topic/flota. In
+  // demo it clears immediately and the demo publish effect republishes the unit
+  // as AVAILABLE. Either way the rail drops back to the operations map.
   const finishService = useCallback(() => {
     void inbox.finishService().then((finished) => {
       if (finished) {

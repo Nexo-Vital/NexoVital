@@ -11,10 +11,10 @@ const ESTADO_TO_AMBULANCE_STATE: Record<string, AmbulanceState> = {
 
 /**
  * Unit exactly as `GET /api/v1/flota/ambulancias` returns it (backend
- * `AmbulanciaDto`): identity, state, position and zone. The driver id is
- * deliberately NOT part of this projection (the read is authenticated for every
- * role), so a driver resolves its OWN unit from `GET
- * /api/v1/flota/ambulancias/mia` instead.
+ * `AmbulanciaDto`): identity, state, position and zone, plus the signal of its
+ * position feed (EP-04.F1.US1). The driver id is deliberately NOT part of this
+ * projection (the read is authenticated for every role), so a driver resolves
+ * its OWN unit from `GET /api/v1/flota/ambulancias/mia` instead.
  */
 export interface AmbulanciaDto {
   id: string;
@@ -22,6 +22,12 @@ export interface AmbulanciaDto {
   estado: string;
   ubicacion: Ubicacion;
   zona: string;
+  /** `true` while the unit has gone longer than the threshold without reporting. */
+  sinSenal?: boolean;
+  /** ISO instant of the last accepted report; `null` if it never reported. */
+  ultimaPosicionEn?: string | null;
+  /** Row version of this snapshot; the `/topic/flota` frames carry the same counter. */
+  version?: number;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -38,13 +44,15 @@ function isEstado(value: unknown): value is AmbulanceState {
  * whole fleet (the boundary convention shared with `fromWireInventario`).
  *
  * `modelo`/`tipo`/`driverName` are not part of the DTO: they stay absent (the UI
- * omits them) instead of being invented.
+ * omits them) instead of being invented. The signal fields are carried only
+ * when the server sends them with the right type, so a backend that predates
+ * them still maps to the same unit as before.
  */
 export function fromWireAmbulancia(value: unknown): Ambulancia | null {
   if (!isRecord(value)) {
     return null;
   }
-  const { id, placa, estado, ubicacion, zona } = value;
+  const { id, placa, estado, ubicacion, zona, sinSenal, ultimaPosicionEn, version } = value;
   if (typeof id !== 'string' || id.length === 0) {
     return null;
   }
@@ -61,7 +69,7 @@ export function fromWireAmbulancia(value: unknown): Ambulancia | null {
   ) {
     return null;
   }
-  return {
+  const unidad: Ambulancia = {
     id,
     placa,
     estado: ESTADO_TO_AMBULANCE_STATE[estado],
@@ -69,6 +77,16 @@ export function fromWireAmbulancia(value: unknown): Ambulancia | null {
     zona,
     driverName: '',
   };
+  if (typeof sinSenal === 'boolean') {
+    unidad.sinSenal = sinSenal;
+  }
+  if (typeof ultimaPosicionEn === 'string' || ultimaPosicionEn === null) {
+    unidad.ultimaPosicionEn = ultimaPosicionEn;
+  }
+  if (typeof version === 'number') {
+    unidad.version = version;
+  }
+  return unidad;
 }
 
 /**
@@ -94,4 +112,31 @@ export async function fetchFlota(): Promise<Ambulancia[]> {
 export async function fetchMiAmbulancia(): Promise<Ambulancia | null> {
   const dto = await apiFetch<unknown>('/flota/ambulancias/mia');
   return fromWireAmbulancia(dto);
+}
+
+/**
+ * Reports the position of the driver's OWN unit:
+ * `POST /api/v1/flota/ambulancias/{id}/posicion` (EP-04.F1.US1, D1).
+ *
+ * This is the ONLY way a position enters the system. The realtime channel is
+ * one-way (server -> clients): the server persists the report and it is the
+ * server that publishes it on `/topic/flota`, so every client and every late
+ * reader sees the same position. The source is not in the body: the route
+ * always speaks for a device.
+ *
+ * `heading` travels as a whole number of degrees (the backend field is an
+ * integer) or `null` when the device does not know it.
+ */
+export async function reportarPosicion(
+  ambulanciaId: string,
+  ubicacion: Ubicacion,
+  heading: number | null,
+): Promise<void> {
+  await apiFetch<unknown>(`/flota/ambulancias/${encodeURIComponent(ambulanciaId)}/posicion`, {
+    method: 'POST',
+    body: JSON.stringify({
+      ubicacion: { lat: ubicacion.lat, lng: ubicacion.lng },
+      heading: heading === null ? null : Math.round(heading),
+    }),
+  });
 }

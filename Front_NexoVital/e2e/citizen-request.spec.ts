@@ -17,7 +17,10 @@ import { type APIResponse, expect, test } from '@playwright/test';
  * honest local reason when a request cannot start.
  */
 
-/** Persisted auth keys, copied from src/services/apiClient.ts (TOKEN_KEY / SESSION_KEY). */
+/**
+ * Auth keys, copied from src/services/apiClient.ts (TOKEN_KEY / SESSION_KEY). The app
+ * keeps the session in `sessionStorage` (one session per tab), never in `localStorage`.
+ */
 const TOKEN_KEY = 'nexovital.token';
 const SESSION_KEY = 'nexovital.session';
 
@@ -161,44 +164,61 @@ async function requestAmbulance(page: Page): Promise<Response> {
 
 /**
  * The citizen legend must count the REAL fleet, not a front-side mock. The
- * rendered "Disponible" and "Ocupada" rows are compared against the backend's
- * own `GET /api/v1/flota/ambulancias` response, read with the CITIZEN's real
- * token, so the assertion can never drift from the seed (no count is hardcoded).
+ * rendered "Disponible", "Ocupada" and "Sin señal" rows are compared against the
+ * backend's own `GET /api/v1/flota/ambulancias` response, read with the
+ * CITIZEN's real token, so the assertion can never drift from the seed (no count
+ * is hardcoded).
  *
  * The backend's domain states map onto the legend's unit buckets: DISPONIBLE is
- * "Disponible" and EN_MISION/EN_RUTA are "Ocupada". A unit in MANTENIMIENTO has
- * no row in the citizen legend, so it is excluded from both sides of the check.
+ * "Disponible" and EN_MISION/EN_RUTA are "Ocupada". A unit that lost its signal
+ * (`sinSenal`, EP-04.F1.US1) is drawn gray whatever its state, so it is counted
+ * in "Sin señal" and in NEITHER of the other two. A unit in MANTENIMIENTO that
+ * still has signal has no row in the citizen legend.
+ *
+ * The fleet is LIVE: a unit can lose or recover its signal between the REST read
+ * and the moment the legend is read (a driver of a previous scenario that
+ * disconnected is marked 30 s later). So the whole comparison, REST read
+ * included, is retried until both sides agree instead of comparing the legend
+ * with a snapshot that may already be old.
  */
 async function expectLegendMatchesBackend(page: Page): Promise<void> {
-  const token = await page.evaluate((key) => localStorage.getItem(key), TOKEN_KEY);
+  const token = await page.evaluate((key) => sessionStorage.getItem(key), TOKEN_KEY);
   expect(token).toBeTruthy();
-  const response = await page.request.get('http://localhost:5173/api/v1/flota/ambulancias', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  expect(response.ok()).toBeTruthy();
-  const fleet = (await response.json()) as Array<{ estado: string }>;
-
-  const free = fleet.filter((unit) => unit.estado === 'DISPONIBLE').length;
-  const busy = fleet.filter(
-    (unit) => unit.estado === 'EN_MISION' || unit.estado === 'EN_RUTA',
-  ).length;
-  const maintenance = fleet.filter((unit) => unit.estado === 'MANTENIMIENTO').length;
 
   const legend = page.getByRole('complementary', { name: 'Leyenda del mapa' });
   const legendCount = (label: string) =>
     legend.locator('li').filter({ hasText: label }).locator('b');
 
-  // A vacuous comparison would pass on an empty fleet; the backend must have units.
-  expect(fleet.length).toBeGreaterThan(0);
-  await expect(legendCount('Disponible')).toHaveText(String(free));
-  await expect(legendCount('Ocupada')).toHaveText(String(busy));
-  // Every unit the legend can draw is accounted for: no mock inflates the total.
-  expect(free + busy).toBe(fleet.length - maintenance);
+  let summary = '';
+  await expect(async () => {
+    const response = await page.request.get('http://localhost:5173/api/v1/flota/ambulancias', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(response.ok()).toBeTruthy();
+    const fleet = (await response.json()) as Array<{ estado: string; sinSenal?: boolean }>;
 
-  console.log(
-    `[A] fleet legend: Disponible=${free} Ocupada=${busy} ` +
-      `(backend total=${fleet.length}, maintenance=${maintenance})`,
-  );
+    const withSignal = fleet.filter((unit) => unit.sinSenal !== true);
+    const noSignal = fleet.length - withSignal.length;
+    const free = withSignal.filter((unit) => unit.estado === 'DISPONIBLE').length;
+    const busy = withSignal.filter(
+      (unit) => unit.estado === 'EN_MISION' || unit.estado === 'EN_RUTA',
+    ).length;
+    const maintenance = withSignal.filter((unit) => unit.estado === 'MANTENIMIENTO').length;
+
+    // A vacuous comparison would pass on an empty fleet; the backend must have units.
+    expect(fleet.length).toBeGreaterThan(0);
+    await expect(legendCount('Disponible')).toHaveText(String(free), { timeout: 1_000 });
+    await expect(legendCount('Ocupada')).toHaveText(String(busy), { timeout: 1_000 });
+    await expect(legendCount('Sin señal')).toHaveText(String(noSignal), { timeout: 1_000 });
+    // Every unit the legend can draw is accounted for: no mock inflates the total.
+    expect(free + busy + noSignal).toBe(fleet.length - maintenance);
+
+    summary =
+      `Disponible=${free} Ocupada=${busy} Sin señal=${noSignal} ` +
+      `(backend total=${fleet.length}, maintenance=${maintenance})`;
+  }).toPass({ timeout: 20_000 });
+
+  console.log(`[A] fleet legend: ${summary}`);
 }
 
 test('Scenario A: a clean citizen login creates the request with 201 and no red error', async ({
@@ -238,11 +258,12 @@ test('Scenario B: a foreign persisted token is never sent; the app states the se
 
   const admin = await fetchCredentials(page, ADMIN_CENTRO);
   /*
-   * Drop the admin's token and session into localStorage with the exact shape
-   * apiClient persists. This is done from the SAME document, so no `storage`
-   * event fires here — the real condition is the in-memory citizen session
-   * surviving while the persisted token belongs to another role (another tab of
-   * the same origin would do exactly this and fire the event).
+   * Drop the admin's token and session into sessionStorage, where apiClient
+   * keeps them, with the exact shape it persists. This is done from the SAME
+   * document, so no `storage` event fires here: the real condition is the
+   * in-memory citizen session surviving while the persisted token belongs to
+   * another role. Since the session is per tab another tab can no longer cause
+   * it, but the guard is kept as defence in depth and this proves it still holds.
    *
    * Before the fix the click travelled with the admin token and the backend
    * answered a misleading 403 ACCESO_DENEGADO. Now the screen detects the
@@ -250,8 +271,8 @@ test('Scenario B: a foreign persisted token is never sent; the app states the se
    */
   await page.evaluate(
     ({ tokenKey, sessionKey, token, session }) => {
-      localStorage.setItem(tokenKey, token);
-      localStorage.setItem(sessionKey, JSON.stringify(session));
+      sessionStorage.setItem(tokenKey, token);
+      sessionStorage.setItem(sessionKey, JSON.stringify(session));
     },
     {
       tokenKey: TOKEN_KEY,

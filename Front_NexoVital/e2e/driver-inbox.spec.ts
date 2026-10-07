@@ -26,7 +26,10 @@ import { type APIResponse, expect, test } from '@playwright/test';
 const BASE_URL = 'http://localhost:5173';
 const API = `${BASE_URL}/api/v1`;
 
-/** Persisted auth key, copied from src/services/apiClient.ts (TOKEN_KEY). */
+/**
+ * Auth key, copied from src/services/apiClient.ts (TOKEN_KEY). The app keeps the
+ * session in `sessionStorage` (one session per tab), never in `localStorage`.
+ */
 const TOKEN_KEY = 'nexovital.token';
 
 const CITIZEN = { email: 'ciudadano@nexovital.co', password: 'ciudadano123' };
@@ -106,7 +109,18 @@ async function login(page: Page, account: { email: string; password: string }): 
   await page.getByRole('button', { name: 'Iniciar sesión' }).click();
 }
 
-/** Signs in as a specific driver and waits for the console plus its socket. */
+/**
+ * Connects the driver to the service. The console starts DISCONNECTED on every
+ * load (the connection state is in memory only) and surfaces no request while it
+ * is: a driver has to press "Conectarse" before an offer can reach the inbox.
+ */
+async function goOnline(page: Page): Promise<void> {
+  const unit = page.getByRole('region', { name: 'Tu ambulancia' });
+  await unit.getByRole('button', { name: 'Conectarse', exact: true }).click();
+  await expect(unit.getByText('En línea', { exact: true })).toBeVisible({ timeout: 10_000 });
+}
+
+/** Signs in as a specific driver, waits for the console plus its socket and connects. */
 async function loginAsSpecificDriver(
   page: Page,
   account: { email: string; password: string },
@@ -120,11 +134,12 @@ async function loginAsSpecificDriver(
     timeout: 30_000,
   });
   await realtime;
+  await goOnline(page);
 }
 
-/** Current bearer token persisted by the app for this page's session. */
+/** Current bearer token the app keeps for this page's session (per-tab `sessionStorage`). */
 async function bearer(page: Page): Promise<string> {
-  const token = await page.evaluate((key) => localStorage.getItem(key), TOKEN_KEY);
+  const token = await page.evaluate((key) => sessionStorage.getItem(key), TOKEN_KEY);
   expect(token).toBeTruthy();
   return token as string;
 }

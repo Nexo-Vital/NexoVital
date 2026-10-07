@@ -380,12 +380,35 @@ export function countUnitsByStatus(units: Ambulancia[]): Record<CitizenUnitStatu
   return counts;
 }
 
+/**
+ * A unit that stopped reporting its position (EP-04.F1.US1). Signal is DATA
+ * about the position feed, not a fourth availability: the unit keeps its state
+ * (free/busy) and stays on the map at its last known position, so this is a
+ * separate question from `citizenUnitStatus`.
+ */
+export function unitHasLostSignal(unit: Pick<Ambulancia, 'sinSenal'>): boolean {
+  return unit.sinSenal === true;
+}
+
+/** How the UI names a unit without signal: legend row and nearby list. */
+export const UNIT_NO_SIGNAL_LABEL = 'Sin señal';
+
+/**
+ * Circular swatch of the "Sin señal" legend row. It reads the same `--nv-idle`
+ * gray the map pin uses (`.nv-marker--nosignal`), so the two cannot drift.
+ */
+export const UNIT_NO_SIGNAL_MARKER_CLASS = 'bg-idle text-white';
+
 export interface NearbyAmbulance {
   ambulance: Ambulancia;
   status: CitizenUnitStatus;
   distanceKm: number;
   etaMin: number;
-  /** Secondary line: the ETA when free, the reason it is not, otherwise. */
+  /**
+   * Secondary line: the ETA when free, the reason it is not, otherwise. A unit
+   * without signal says so instead: its position is the last known one, so an
+   * arrival time computed from it would be a promise nobody can keep.
+   */
   detail: string;
 }
 
@@ -413,8 +436,9 @@ export function nearbyAmbulances(
         status,
         distanceKm: km,
         etaMin,
-        detail:
-          status === 'free'
+        detail: unitHasLostSignal(ambulance)
+          ? UNIT_NO_SIGNAL_LABEL
+          : status === 'free'
             ? `${formatDistance(km)} · ${etaMin} min`
             : status === 'maintenance'
               ? 'En mantenimiento'

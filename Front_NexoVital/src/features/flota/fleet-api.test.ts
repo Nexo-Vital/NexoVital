@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setToken } from '@/services/apiClient';
-import { fetchFlota, fetchMiAmbulancia, fromWireAmbulancia } from './fleet-api';
+import { fetchFlota, fetchMiAmbulancia, fromWireAmbulancia, reportarPosicion } from './fleet-api';
 
 /** A live-shaped unit as `GET /flota/ambulancias` returns it. */
 const WIRE_UNIT = {
@@ -44,6 +44,40 @@ describe('fromWireAmbulancia', () => {
     expect(fromWireAmbulancia({ ...WIRE_UNIT, estado: 'DESCONOCIDO' })).toBeNull();
     expect(fromWireAmbulancia({ ...WIRE_UNIT, ubicacion: { lat: 'x', lng: 0 } })).toBeNull();
     expect(fromWireAmbulancia({ ...WIRE_UNIT, id: '' })).toBeNull();
+  });
+
+  it('carries the signal fields and the version the server sends (EP-04.F1.US1)', () => {
+    const mapped = fromWireAmbulancia({
+      ...WIRE_UNIT,
+      sinSenal: true,
+      ultimaPosicionEn: '2026-10-06T15:00:00Z',
+      version: 7,
+    });
+
+    expect(mapped?.sinSenal).toBe(true);
+    expect(mapped?.ultimaPosicionEn).toBe('2026-10-06T15:00:00Z');
+    expect(mapped?.version).toBe(7);
+  });
+
+  it('keeps a unit that never reported: no signal lost, no report instant', () => {
+    const mapped = fromWireAmbulancia({
+      ...WIRE_UNIT,
+      sinSenal: false,
+      ultimaPosicionEn: null,
+      version: 0,
+    });
+
+    expect(mapped?.sinSenal).toBe(false);
+    expect(mapped?.ultimaPosicionEn).toBeNull();
+    expect(mapped?.version).toBe(0);
+  });
+
+  it('ignores signal fields of the wrong type instead of dropping the unit', () => {
+    const mapped = fromWireAmbulancia({ ...WIRE_UNIT, sinSenal: 'si', version: '7' });
+
+    expect(mapped).not.toBeNull();
+    expect(mapped?.sinSenal).toBeUndefined();
+    expect(mapped?.version).toBeUndefined();
   });
 });
 
@@ -114,5 +148,69 @@ describe('fetchMiAmbulancia', () => {
     fetchMock.mockResolvedValue(mockResponse(200, null));
 
     await expect(fetchMiAmbulancia()).resolves.toBeNull();
+  });
+});
+
+describe('reportarPosicion', () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    localStorage.clear();
+    fetchMock.mockReset();
+    vi.stubGlobal('fetch', fetchMock);
+    setToken('jwt.test');
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('POSTs the position of the unit to its /posicion resource', async () => {
+    fetchMock.mockResolvedValue(mockResponse(200, WIRE_UNIT));
+
+    await reportarPosicion(WIRE_UNIT.id, { lat: 4.75, lng: -74.09 }, 90);
+
+    const [path, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe(`/api/v1/flota/ambulancias/${WIRE_UNIT.id}/posicion`);
+    expect(options.method).toBe('POST');
+    expect(JSON.parse(String(options.body))).toEqual({
+      ubicacion: { lat: 4.75, lng: -74.09 },
+      heading: 90,
+    });
+  });
+
+  it('sends the heading as whole degrees and null when the device has none', async () => {
+    fetchMock.mockResolvedValue(mockResponse(200, WIRE_UNIT));
+
+    await reportarPosicion(WIRE_UNIT.id, { lat: 4.75, lng: -74.09 }, 89.6);
+    await reportarPosicion(WIRE_UNIT.id, { lat: 4.75, lng: -74.09 }, null);
+
+    const bodies = fetchMock.mock.calls.map(
+      (call) => JSON.parse(String((call as [string, RequestInit])[1].body)) as { heading: unknown },
+    );
+    expect(bodies.map((body) => body.heading)).toEqual([90, null]);
+  });
+
+  it('never claims a source: the route always speaks for a device', async () => {
+    fetchMock.mockResolvedValue(mockResponse(200, WIRE_UNIT));
+
+    await reportarPosicion(WIRE_UNIT.id, { lat: 4.75, lng: -74.09 }, null);
+
+    const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(Object.keys(JSON.parse(String(options.body)) as object).sort()).toEqual([
+      'heading',
+      'ubicacion',
+    ]);
+  });
+
+  it('rejects when the server refuses the report (the unit belongs to another driver)', async () => {
+    fetchMock.mockResolvedValue(
+      mockResponse(409, { codigo: 'AMBULANCIA_AJENA', mensaje: 'La unidad no es tuya.' }),
+    );
+
+    await expect(
+      reportarPosicion(WIRE_UNIT.id, { lat: 4.75, lng: -74.09 }, null),
+    ).rejects.toMatchObject({ status: 409, codigo: 'AMBULANCIA_AJENA' });
   });
 });

@@ -62,6 +62,9 @@ const ICON_PATHS = {
     '<path d="M12 16h.01"/><path d="M12 8v4"/><path d="M15.31 2a2 2 0 0 1 1.41.59l4.69 4.69A2 2 0 0 1 22 8.69v6.62a2 2 0 0 1-.59 1.41l-4.69 4.69a2 2 0 0 1-1.41.59H8.69a2 2 0 0 1-1.41-.59l-4.69-4.69A2 2 0 0 1 2 15.31V8.69a2 2 0 0 1 .59-1.41l4.69-4.69A2 2 0 0 1 8.69 2z"/>',
   info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
   user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  // Cut signal — the badge of a unit that stopped reporting its position.
+  wifiOff:
+    '<path d="M12 20h.01"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/><path d="M5 12.859a10 10 0 0 1 5.17-2.69"/><path d="M19 12.859a10 10 0 0 0-2.007-1.523"/><path d="M2 8.82a15 15 0 0 1 4.177-2.643"/><path d="M22 8.82a15 15 0 0 0-11.288-3.764"/><path d="m2 2 20 20"/>',
 } as const;
 
 /** Wraps Lucide path bodies in the themed stroke SVG the CSS sizes per shape. */
@@ -74,6 +77,7 @@ const HOSPITAL_GLYPH = strokeGlyph(ICON_PATHS.cross);
 const AMBULANCE_GLYPH = strokeGlyph(ICON_PATHS.ambulance);
 const CHECK_GLYPH = strokeGlyph(ICON_PATHS.check);
 const CLOCK_GLYPH = strokeGlyph(ICON_PATHS.clock);
+const NO_SIGNAL_GLYPH = strokeGlyph(ICON_PATHS.wifiOff);
 const USER_GLYPH = strokeGlyph(ICON_PATHS.user);
 
 /** Centre badge glyph per traffic light: shape and colour, never colour alone. */
@@ -123,6 +127,12 @@ function buildMarkerIcon(html: string, size: number): L.DivIcon {
  * variant and every other state is busy. MAINTENANCE reuses the busy variant
  * (the mockup does not draw it separately).
  *
+ * A unit that lost its signal (`sinSenal`, EP-04.F1.US1) stays on the map at
+ * its last known position: `nv-marker--nosignal` turns the circle gray and the
+ * badge becomes the cut-signal icon, so the cue is colour AND icon, never colour
+ * alone. Signal is data, not a state, so the modifier is added on top of the
+ * state class and the label keeps the plate.
+ *
  * `notified` adds the static teal ring a unit gets while it is part of an open
  * request's `notificadas`. It defaults to false, so the citizen and CRUE maps
  * draw exactly the same marker they always did. The default label is the unit's
@@ -141,9 +151,12 @@ export function ambulanceIcon(
   const simulatedClass = ambulance.source === 'simulated' ? ' nv-marker--sim' : '';
   const notifiedClass = notified ? ' nv-marker--notified' : '';
   const dimClass = dim ? ' nv-marker--dim' : '';
-  const badge = ambulance.estado === 'AVAILABLE' ? CHECK_GLYPH : CLOCK_GLYPH;
+  const noSignal = ambulance.sinSenal === true;
+  const signalClass = noSignal ? ' nv-marker--nosignal' : '';
+  const stateBadge = ambulance.estado === 'AVAILABLE' ? CHECK_GLYPH : CLOCK_GLYPH;
+  const badge = noSignal ? NO_SIGNAL_GLYPH : stateBadge;
   const html =
-    `<div class="nv-marker nv-marker--unit ${stateClass}${selectedClass}${simulatedClass}${notifiedClass}${dimClass}">` +
+    `<div class="nv-marker nv-marker--unit ${stateClass}${signalClass}${selectedClass}${simulatedClass}${notifiedClass}${dimClass}">` +
     `<span class="nv-marker__shape">${AMBULANCE_GLYPH}</span>` +
     `<span class="nv-marker__badge">${badge}</span>` +
     `<span class="nv-marker__label">${escapeHtml(label ?? unitPlateLabel(ambulance))}</span>` +

@@ -101,6 +101,24 @@ export interface Ambulancia {
   source?: 'device' | 'simulated';
   /** UI convenience: last reported heading, degrees clockwise from north. */
   heading?: number | null;
+  /**
+   * `true` while the unit has gone longer than the server threshold (30 s)
+   * without reporting its position (EP-04.F1.US1). It is DATA about the
+   * position feed, not a state: the unit keeps its `estado` and stays on the
+   * map at its last known `ubicacion`. The server decides it, never the client,
+   * so every connected user sees the same thing. Absent means "has signal".
+   */
+  sinSenal?: boolean;
+  /** ISO instant of the last accepted position report; `null` if it never reported. */
+  ultimaPosicionEn?: string | null;
+  /**
+   * Row version the backend stamps on every write of the unit (position, state
+   * change, signal loss). `GET /flota/ambulancias` and every `/topic/flota`
+   * frame carry it, so a reader can discard a frame older than the one it
+   * holds. Optional: demo fixtures and the dev relay do not carry it, and an
+   * absent version degrades to last-writer-wins.
+   */
+  version?: number;
 }
 
 export type RequestState =

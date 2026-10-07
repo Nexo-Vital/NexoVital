@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { Emergencia } from '@/types/domain';
-import { emergencyIcon } from './markers';
+import type { Ambulancia, Emergencia } from '@/types/domain';
+import { ambulanceIcon, emergencyIcon } from './markers';
 
 function emergency(overrides: Partial<Emergencia> = {}): Emergencia {
   return {
@@ -49,5 +49,63 @@ describe('emergencyIcon', () => {
 
   it('falls back to a generic label when the emergency has no type', () => {
     expect(html(emergency())).toContain('<span class="nv-marker__label">Emergencia</span>');
+  });
+});
+
+function ambulance(overrides: Partial<Ambulancia> = {}): Ambulancia {
+  return {
+    id: '8b6f2f0e-0000-4000-8000-0000000000a1',
+    placa: 'ABC101',
+    estado: 'AVAILABLE',
+    ubicacion: { lat: 4.745, lng: -74.095 },
+    zona: 'Suba',
+    driverName: '',
+    ...overrides,
+  };
+}
+
+function unitHtml(value: Ambulancia): string {
+  return String(ambulanceIcon(value, false).options.html);
+}
+
+/** The badge markup: the second, always-on channel of the pin. */
+function badgeOf(markup: string): string {
+  const start = markup.indexOf('<span class="nv-marker__badge">');
+  return markup.slice(start, markup.indexOf('</span>', start));
+}
+
+describe('ambulanceIcon: signal (EP-04.F1.US1)', () => {
+  it('P13: draws a unit without signal gray, with its own badge icon', () => {
+    const markup = unitHtml(ambulance({ sinSenal: true }));
+
+    // Colour: the CSS modifier that turns the circle gray.
+    expect(markup).toContain('nv-marker--nosignal');
+    // Icon: the badge is neither the free check nor the busy clock.
+    expect(badgeOf(markup)).not.toBe(badgeOf(unitHtml(ambulance({ estado: 'AVAILABLE' }))));
+    expect(badgeOf(markup)).not.toBe(badgeOf(unitHtml(ambulance({ estado: 'ASSIGNED' }))));
+  });
+
+  it('P13: keeps the unit on the map, named by its plate and with its state', () => {
+    const markup = unitHtml(ambulance({ sinSenal: true, estado: 'ASSIGNED' }));
+
+    expect(markup).toContain('<span class="nv-marker__label">ABC101</span>');
+    // Signal is data, not a state: the state class is still there.
+    expect(markup).toContain('nv-marker--assigned');
+  });
+
+  it('uses the same badge for every unit without signal, whatever its state', () => {
+    expect(badgeOf(unitHtml(ambulance({ sinSenal: true, estado: 'AVAILABLE' })))).toBe(
+      badgeOf(unitHtml(ambulance({ sinSenal: true, estado: 'ASSIGNED' }))),
+    );
+  });
+
+  it.each([
+    ['explicitly false', { sinSenal: false }],
+    ['absent (demo fixtures, old frames)', {}],
+  ] as const)('draws a unit with signal as before when sinSenal is %s', (_case, overrides) => {
+    const markup = unitHtml(ambulance(overrides));
+
+    expect(markup).not.toContain('nv-marker--nosignal');
+    expect(markup).toContain('nv-marker--available');
   });
 });

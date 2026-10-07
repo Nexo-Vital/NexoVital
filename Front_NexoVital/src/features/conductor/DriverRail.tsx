@@ -253,7 +253,7 @@ function MyUnitPanel({
       <div className="flex flex-col gap-2 rounded-nv-md border border-nv-line p-3">
         <LocationSimulationControls
           location={location}
-          note="Toca el mapa o arrastra el marcador SIM para moverte. La posición se publica en /topic/flota como unidad simulada."
+          note="Toca el mapa o arrastra el marcador SIM para moverte."
         />
       </div>
     </RailPanel>
