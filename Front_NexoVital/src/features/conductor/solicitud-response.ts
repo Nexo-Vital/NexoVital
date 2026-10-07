@@ -5,9 +5,10 @@ import type { SolicitudAmbulancia } from '@/types/domain';
  *
  * The backend accepts `POST /solicitudes/{id}/accept|reject` for a request that
  * is still `PENDIENTE` and whose `ambulanciasNotificadas` contains the unit
- * (`SolicitudAmbulancia.fueNotificada`). The front was STRICTER than that: it
- * only allowed the inbox's single open broadcast, hiding every older pending
- * request the unit was also notified about.
+ * (`SolicitudAmbulancia.fueNotificada`), unless that unit already declined it:
+ * a decline is final for the unit that made it (EP-04.F2.US5). The front was
+ * STRICTER than that: it only allowed the inbox's single open broadcast, hiding
+ * every older pending request the unit was also notified about.
  *
  * This rule is deliberately INDEPENDENT of delivery order: a notified pending
  * request is respondible whether it arrived first or last. It is NOT the arbiter
@@ -19,8 +20,27 @@ export function canRespondToSolicitud(solicitud: SolicitudAmbulancia, unitId: st
   return (
     solicitud.estado === 'PENDING' &&
     unitId.length > 0 &&
-    solicitud.ambulanciasNotificadas.includes(unitId)
+    solicitud.ambulanciasNotificadas.includes(unitId) &&
+    !rejectedByUnit(solicitud, unitId)
   );
+}
+
+/** Said on a request this unit declined: it is still open, but not for this unit. */
+export const REJECTED_BY_UNIT_REASON =
+  'Ya rechazaste esta solicitud. Sigue disponible para las demás ambulancias.';
+
+/** Label of a registry row this unit declined. */
+export const REJECTED_BY_UNIT_LABEL = 'Rechazada por ti';
+
+/**
+ * Whether this unit declined the request (EP-04.F2.US5). The server records the
+ * decline and refuses that unit's accept afterwards (409
+ * `SOLICITUD_YA_RECHAZADA`), so the row stays visible while the request is open
+ * but is no longer answerable. An unresolved unit (empty string) declined
+ * nothing.
+ */
+export function rejectedByUnit(solicitud: SolicitudAmbulancia, unitId: string): boolean {
+  return unitId.length > 0 && (solicitud.ambulanciasRechazaron ?? []).includes(unitId);
 }
 
 /**
@@ -40,6 +60,9 @@ export function solicitudResponseBlockReason(
   }
   if (unitId.length === 0 || !solicitud.ambulanciasNotificadas.includes(unitId)) {
     return 'No fuiste avisado de esta solicitud: el servidor no la aceptaría.';
+  }
+  if (rejectedByUnit(solicitud, unitId)) {
+    return REJECTED_BY_UNIT_REASON;
   }
   return null;
 }

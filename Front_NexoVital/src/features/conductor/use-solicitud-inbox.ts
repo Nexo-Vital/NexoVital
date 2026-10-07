@@ -60,6 +60,17 @@ export const TAKEN_BY_OTHER_TITLE = 'Solicitud ya aceptada';
  */
 const LOST_ACCEPT_CODES = ['CAS_PERDIDO', 'SOLICITUD_NO_ASIGNABLE'];
 
+/**
+ * The server refused the accept because this unit had already declined the
+ * request (EP-04.F2.US5). It is NOT a lost accept: the request is still open for
+ * the other units, so the row stays and only stops being answerable.
+ */
+function isAlreadyRejected(error: unknown): boolean {
+  return (
+    error instanceof ApiError && error.status === 409 && error.codigo === 'SOLICITUD_YA_RECHAZADA'
+  );
+}
+
 function isLostAccept(error: unknown): boolean {
   return (
     error instanceof ApiError &&
@@ -439,6 +450,23 @@ export function useSolicitudInbox(
   );
 
   /**
+   * This unit declined the request (EP-04.F2.US5). The decline is final and the
+   * server recorded it, so the request stops being OFFERED here: it leaves the
+   * waiting queue, and the card if it was the open one. Its registry row stays,
+   * marked as declined, because the request is still open for the other units
+   * and the driver may keep looking at it.
+   */
+  const recordOwnRejection = useCallback(
+    (requestId: string) => {
+      if (ambulanceId) {
+        useSolicitudesStore.getState().markRejected(requestId, ambulanceId);
+      }
+      dropQueued(requestId);
+    },
+    [ambulanceId, dropQueued],
+  );
+
+  /**
    * Opens the mission for a WIN. Shared by the realtime `request.taken` path
    * (demo) and the REST accept path (backend): the server decided the winner in
    * both cases, so the client only adopts it.
@@ -760,6 +788,11 @@ export function useSolicitudInbox(
             lostToAnotherUnit(active.requestId);
             return;
           }
+          // The unit had declined it before: the row is marked, so its detail
+          // stops offering an accept the server will keep refusing.
+          if (isAlreadyRejected(error)) {
+            recordOwnRejection(active.requestId);
+          }
           const broadcast = broadcastRef.current;
           if (broadcast?.requestId !== active.requestId) {
             return;
@@ -788,7 +821,7 @@ export function useSolicitudInbox(
       requestId: active.requestId,
       ambulanceId,
     });
-  }, [port, ambulanceId, winMission, lostToAnotherUnit]);
+  }, [port, ambulanceId, winMission, lostToAnotherUnit, recordOwnRejection]);
 
   const reject = useCallback(() => {
     const active = broadcastRef.current;
@@ -811,6 +844,9 @@ export function useSolicitudInbox(
       }
       void rechazarSolicitud(active.requestId, ambulanceId)
         .then(() => {
+          // The server recorded the decline: the row is marked at once, whether
+          // or not the card is still the one on screen.
+          recordOwnRejection(active.requestId);
           const broadcast = broadcastRef.current;
           if (broadcast?.requestId !== active.requestId) {
             return;
@@ -838,9 +874,25 @@ export function useSolicitudInbox(
       requestId: active.requestId,
       ambulanceId,
     });
+    recordOwnRejection(active.requestId);
     setPhase('rejected');
     setOutcomeMessage('Solicitud rechazada');
-  }, [port, ambulanceId, dismiss]);
+  }, [port, ambulanceId, dismiss, recordOwnRejection]);
+
+  /**
+   * A registry row was declined from its detail. Besides recording it, the card
+   * is freed when that same request was the open offer: a request the unit
+   * declined is never left on screen asking for an answer.
+   */
+  const declineRow = useCallback(
+    (requestId: string) => {
+      recordOwnRejection(requestId);
+      if (broadcastRef.current?.requestId === requestId) {
+        releaseSlot();
+      }
+    },
+    [recordOwnRejection, releaseSlot],
+  );
 
   /**
    * Answers a registry row by its OWN id, without going through the inbox's
@@ -869,6 +921,7 @@ export function useSolicitudInbox(
             requestId,
             ambulanceId,
           });
+          declineRow(requestId);
           setResponseOutcome({ requestId, phase: 'rejected', message: 'Solicitud rechazada' });
           return;
         }
@@ -890,6 +943,7 @@ export function useSolicitudInbox(
         respondingRef.current = true;
         void rechazarSolicitud(requestId, ambulanceId)
           .then(() => {
+            declineRow(requestId);
             setResponseOutcome({ requestId, phase: 'rejected', message: 'Solicitud rechazada' });
           })
           .catch((error: unknown) => {
@@ -954,6 +1008,11 @@ export function useSolicitudInbox(
             lostToAnotherUnit(requestId);
             return;
           }
+          // The unit had declined it before: the row is marked and stops
+          // offering an accept the server will keep refusing.
+          if (isAlreadyRejected(error)) {
+            declineRow(requestId);
+          }
           // Any other refusal is shown honestly instead of leaving the row stuck
           // on "Enviando…".
           setResponseOutcome({
@@ -966,7 +1025,7 @@ export function useSolicitudInbox(
           respondingRef.current = false;
         });
     },
-    [port, ambulanceId, winMission, lostToAnotherUnit],
+    [port, ambulanceId, winMission, lostToAnotherUnit, declineRow],
   );
 
   const offerPending = useCallback(
@@ -981,6 +1040,11 @@ export function useSolicitudInbox(
         missionRef.current?.requestId === solicitud.id ||
         wonRequestIdRef.current === solicitud.id
       ) {
+        return;
+      }
+      // This unit already declined it (EP-04.F2.US5): the request is listed in
+      // the registry, but it is not offered again, not even after a reload.
+      if (ambulanceId && (solicitud.ambulanciasRechazaron ?? []).includes(ambulanceId)) {
         return;
       }
       const deadline = Date.parse(solicitud.timeoutEn);
@@ -1013,7 +1077,7 @@ export function useSolicitudInbox(
       // The server already filtered by this unit, exactly like a per-user push.
       applyFrame(frame, true);
     },
-    [applyFrame],
+    [applyFrame, ambulanceId],
   );
 
   const restoreMission = useCallback(

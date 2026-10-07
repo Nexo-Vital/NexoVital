@@ -7,8 +7,11 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -17,9 +20,12 @@ import java.util.UUID;
 public class SolicitudRepositoryAdapter implements SolicitudRepository {
 
     private final SolicitudJpaRepository jpaRepository;
+    private final RechazoSolicitudJpaRepository rechazoJpaRepository;
 
-    public SolicitudRepositoryAdapter(SolicitudJpaRepository jpaRepository) {
+    public SolicitudRepositoryAdapter(SolicitudJpaRepository jpaRepository,
+                                      RechazoSolicitudJpaRepository rechazoJpaRepository) {
         this.jpaRepository = jpaRepository;
+        this.rechazoJpaRepository = rechazoJpaRepository;
     }
 
     @Override
@@ -43,7 +49,7 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
 
     @Override
     public Optional<SolicitudAmbulancia> buscarPorId(UUID id) {
-        return jpaRepository.findById(id).map(SolicitudRepositoryAdapter::toDomain);
+        return jpaRepository.findById(id).map(this::toDomain);
     }
 
     @Override
@@ -75,19 +81,13 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
 
     @Override
     public List<SolicitudAmbulancia> listarPendientesVencidas(Instant ahora) {
-        return jpaRepository
-                .findTop200ByEstadoAndTimeoutEnBeforeOrderByTimeoutEnAsc(EstadoSolicitud.PENDIENTE, ahora)
-                .stream()
-                .map(SolicitudRepositoryAdapter::toDomain)
-                .toList();
+        return toDomainLista(jpaRepository
+                .findTop200ByEstadoAndTimeoutEnBeforeOrderByTimeoutEnAsc(EstadoSolicitud.PENDIENTE, ahora));
     }
 
     @Override
     public List<SolicitudAmbulancia> listarPorAmbulanciaAsignada(UUID ambulanciaId) {
-        return jpaRepository
-                .findByAmbulanciaAsignadaIdOrderBySolicitadaEnDesc(ambulanciaId).stream()
-                .map(SolicitudRepositoryAdapter::toDomain)
-                .toList();
+        return toDomainLista(jpaRepository.findByAmbulanciaAsignadaIdOrderBySolicitadaEnDesc(ambulanciaId));
     }
 
     @Override
@@ -99,18 +99,14 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
 
     @Override
     public List<SolicitudAmbulancia> listarPendientesNotificadasA(UUID ambulanciaId, Instant ahora) {
-        return jpaRepository
-                .buscarPendientesNotificadasA(ambulanciaId, EstadoSolicitud.PENDIENTE, ahora).stream()
-                .map(SolicitudRepositoryAdapter::toDomain)
-                .toList();
+        return toDomainLista(jpaRepository
+                .buscarPendientesNotificadasA(ambulanciaId, EstadoSolicitud.PENDIENTE, ahora));
     }
 
     @Override
     public List<SolicitudAmbulancia> listarPendientesNoNotificadasA(UUID ambulanciaId, Instant ahora) {
-        return jpaRepository
-                .buscarPendientesNoNotificadasA(ambulanciaId, EstadoSolicitud.PENDIENTE, ahora).stream()
-                .map(SolicitudRepositoryAdapter::toDomain)
-                .toList();
+        return toDomainLista(jpaRepository
+                .buscarPendientesNoNotificadasA(ambulanciaId, EstadoSolicitud.PENDIENTE, ahora));
     }
 
     /**
@@ -141,7 +137,50 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
         return Optional.of(toDomain(jpaRepository.saveAndFlush(entity)));
     }
 
-    private static SolicitudAmbulancia toDomain(SolicitudJpaEntity entity) {
+    /**
+     * The decline lives in its own table and has its own key, so writing it
+     * never touches the request row: no state, no deadline and no version
+     * change, and nothing an accept could collide with.
+     */
+    @Override
+    @Transactional
+    public boolean registrarRechazo(UUID idSolicitud, UUID ambulanciaId, Instant rechazadaEn) {
+        RechazoSolicitudId id = new RechazoSolicitudId(idSolicitud, ambulanciaId);
+        if (rechazoJpaRepository.existsById(id)) {
+            return false;
+        }
+        rechazoJpaRepository.saveAndFlush(new RechazoSolicitudJpaEntity(idSolicitud, ambulanciaId, rechazadaEn));
+        return true;
+    }
+
+    private SolicitudAmbulancia toDomain(SolicitudJpaEntity entity) {
+        return armar(entity, rechazosPorSolicitud(List.of(entity.getId()))
+                .getOrDefault(entity.getId(), List.of()));
+    }
+
+    /** Maps a whole list reading its declines with ONE extra query. */
+    private List<SolicitudAmbulancia> toDomainLista(List<SolicitudJpaEntity> entities) {
+        if (entities.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, List<UUID>> rechazos = rechazosPorSolicitud(
+                entities.stream().map(SolicitudJpaEntity::getId).toList());
+        return entities.stream()
+                .map(entity -> armar(entity, rechazos.getOrDefault(entity.getId(), List.of())))
+                .toList();
+    }
+
+    /** Units that declined each request, oldest decline first. */
+    private Map<UUID, List<UUID>> rechazosPorSolicitud(Collection<UUID> solicitudIds) {
+        Map<UUID, List<UUID>> rechazos = new HashMap<>();
+        for (RechazoSolicitudJpaEntity rechazo : rechazoJpaRepository.buscarPorSolicitudes(solicitudIds)) {
+            rechazos.computeIfAbsent(rechazo.getSolicitudId(), id -> new ArrayList<>())
+                    .add(rechazo.getAmbulanciaId());
+        }
+        return rechazos;
+    }
+
+    private static SolicitudAmbulancia armar(SolicitudJpaEntity entity, List<UUID> ambulanciasRechazaron) {
         return SolicitudAmbulancia.restaurar(
                 entity.getId(),
                 entity.getLat(),
@@ -154,6 +193,7 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
                 entity.getTimeoutEn(),
                 entity.getSolicitanteId(),
                 entity.getAmbulanciasNotificadas(),
+                ambulanciasRechazaron,
                 entity.getAmbulanciaAsignadaId(),
                 entity.getLlegadaEn(),
                 entity.getVersion());

@@ -13,6 +13,11 @@ interface SolicitudesState {
   markArrived: (requestId: string) => void;
   /** Apply the citizen's confirmation from `request.confirmed`. */
   markConfirmed: (requestId: string) => void;
+  /**
+   * Record that a unit declined a request (EP-04.F2.US5). The row stays in the
+   * registry and stays PENDING: only that unit can no longer answer it.
+   */
+  markRejected: (requestId: string, unitId: string) => void;
   /** Drop a request that was withdrawn, so the registry stops showing it. */
   remove: (requestId: string) => void;
 }
@@ -50,6 +55,15 @@ export const useSolicitudesStore = create<SolicitudesState>((set) => ({
     set((state) => ({
       items: state.items.map((item) =>
         item.id === requestId ? { ...item, estado: 'CONFIRMED' } : item,
+      ),
+    })),
+  markRejected: (requestId, unitId) =>
+    set((state) => ({
+      items: state.items.map((item) =>
+        // Idempotent: declining twice lists the unit once.
+        item.id === requestId && !(item.ambulanciasRechazaron ?? []).includes(unitId)
+          ? { ...item, ambulanciasRechazaron: [...(item.ambulanciasRechazaron ?? []), unitId] }
+          : item,
       ),
     })),
   remove: (requestId) =>

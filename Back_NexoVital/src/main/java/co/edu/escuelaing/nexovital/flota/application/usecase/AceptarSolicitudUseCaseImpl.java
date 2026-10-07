@@ -8,6 +8,7 @@ import co.edu.escuelaing.nexovital.flota.domain.exception.AmbulanciaNoDisponible
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoAsignableException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoEncontradaException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudYaAsignadaException;
+import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudYaRechazadaException;
 import co.edu.escuelaing.nexovital.flota.domain.model.Ambulancia;
 import co.edu.escuelaing.nexovital.flota.domain.model.ResultadoAceptarSolicitud;
 import co.edu.escuelaing.nexovital.flota.domain.model.SolicitudAmbulancia;
@@ -39,6 +40,10 @@ import java.util.UUID;
  * that loses is told the request is already assigned, whether it lost inside
  * the conditional UPDATE (0 rows) or arrived after the winner committed
  * ({@link SolicitudYaAsignadaException}).
+ *
+ * <p><b>A unit that declined cannot accept (EP-04.F2.US5).</b> Its accept is
+ * refused with {@link SolicitudYaRechazadaException} before the CAS, so the
+ * request stays PENDIENTE and untouched for the other notified units.
  *
  * <p><b>Only a connected unit accepts (EP-04.F2.US1, D3).</b> The UPDATE that
  * occupies the unit also requires {@code conectada = true}. Accepting and
@@ -93,6 +98,13 @@ public class AceptarSolicitudUseCaseImpl implements AceptarSolicitudUseCase {
         // is false), so it can never be claimed.
         if (!Objects.equals(ambulancia.getConductorId(), conductorId)) {
             throw new SolicitudNoAsignableException(solicitudId, solicitud.getEstado());
+        }
+
+        // A decline is final for that unit (EP-04.F2.US5): the request is still
+        // open for the others, but the unit that said no cannot take it back.
+        // Checked after the ownership, so only the unit's own driver learns it.
+        if (solicitud.fueRechazadaPor(ambulanciaId)) {
+            throw new SolicitudYaRechazadaException(solicitudId, ambulanciaId);
         }
 
         int filas = solicitudRepository.transicionAtomicaAsignar(

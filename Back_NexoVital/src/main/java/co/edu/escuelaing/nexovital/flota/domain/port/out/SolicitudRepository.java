@@ -101,4 +101,16 @@ public interface SolicitudRepository {
      */
     Optional<SolicitudAmbulancia> incorporarNotificadaSiSigueAbierta(UUID idSolicitud, UUID ambulanciaId,
                                                                     Instant ahora);
+
+    /**
+     * Records that {@code ambulanciaId} declined the request (EP-04.F2.US5).
+     * Nothing changes in the request itself: it keeps its state, its deadline
+     * and its version, so a decline never competes with an accept.
+     *
+     * <p>Idempotent: a unit declines a request at most once.
+     *
+     * @return true when this call recorded the decline, false when that unit
+     *         had already declined the request and nothing was written
+     */
+    boolean registrarRechazo(UUID idSolicitud, UUID ambulanciaId, Instant rechazadaEn);
 }

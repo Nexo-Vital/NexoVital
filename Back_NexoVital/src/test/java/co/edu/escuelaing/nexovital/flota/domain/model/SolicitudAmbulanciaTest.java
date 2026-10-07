@@ -177,4 +177,35 @@ class SolicitudAmbulanciaTest {
         assertTrue(solicitud.fueNotificada(ambulanciaB));
         assertFalse(solicitud.fueNotificada(UUID.randomUUID()));
     }
+
+    @Test
+    void unRechazoSeRegistraSinCambiarElEstadoNiLaVersion() {
+        SolicitudAmbulancia solicitud = pendiente();
+        assertFalse(solicitud.fueRechazadaPor(ambulanciaA));
+        assertTrue(solicitud.getAmbulanciasRechazaron().isEmpty());
+
+        SolicitudAmbulancia rechazada = solicitud.conRechazoDe(ambulanciaA);
+
+        // A decline is not a transition: the request stays open for the rest.
+        assertEquals(EstadoSolicitud.PENDIENTE, rechazada.getEstado());
+        assertEquals(solicitud.getVersion(), rechazada.getVersion());
+        assertEquals(solicitud.getTimeoutEn(), rechazada.getTimeoutEn());
+        assertNull(rechazada.getAmbulanciaAsignadaId());
+        assertEquals(List.of(ambulanciaA), rechazada.getAmbulanciasRechazaron());
+        assertTrue(rechazada.fueRechazadaPor(ambulanciaA));
+        assertFalse(rechazada.fueRechazadaPor(ambulanciaB));
+        assertTrue(rechazada.fueNotificada(ambulanciaA), "quien rechaza sigue siendo una unidad notificada");
+        // The original is untouched (the aggregate is immutable).
+        assertFalse(solicitud.fueRechazadaPor(ambulanciaA));
+    }
+
+    @Test
+    void rechazarDosVecesNoDuplicaYLosRechazosSobrevivenALaAsignacion() {
+        SolicitudAmbulancia rechazada = pendiente().conRechazoDe(ambulanciaA).conRechazoDe(ambulanciaA);
+        assertEquals(List.of(ambulanciaA), rechazada.getAmbulanciasRechazaron());
+
+        SolicitudAmbulancia asignada = rechazada.aceptar(ambulanciaB);
+        assertEquals(EstadoSolicitud.ASIGNADA, asignada.getEstado());
+        assertEquals(List.of(ambulanciaA), asignada.getAmbulanciasRechazaron());
+    }
 }

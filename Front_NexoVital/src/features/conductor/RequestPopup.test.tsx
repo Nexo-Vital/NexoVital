@@ -1,7 +1,8 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RequestPopup } from './RequestPopup';
+import { unlockSound } from './request-sound';
 import { UNIT_UNRESOLVED_REASON } from './use-solicitud-inbox';
 
 function renderPopup(overrides: Partial<Parameters<typeof RequestPopup>[0]> = {}) {
@@ -76,5 +77,42 @@ describe('RequestPopup', () => {
 
     expect(screen.getByRole('button', { name: 'Aceptar' })).toBeDisabled();
     expect(screen.getByText(UNIT_UNRESOLVED_REASON)).toBeInTheDocument();
+  });
+
+  /*
+    The first press on the page unlocks the sound, and with it the sound hint
+    leaves the pop-up. The pop-up is centred, so a row that disappears would move
+    "Cerrar aviso" between the press and the release of that same click and the
+    click would be lost. The space of the hint is kept instead. Kept last: the
+    unlock is remembered for the rest of the file.
+  */
+  it('keeps the space of the sound hint when the sound is unlocked, so no button moves', async () => {
+    class FakeAudioContext {
+      state: 'suspended' | 'running' = 'suspended';
+      async resume(): Promise<void> {
+        this.state = 'running';
+      }
+    }
+    vi.stubGlobal('AudioContext', FakeAudioContext);
+    const height = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(52);
+    try {
+      const handlers = renderPopup();
+      expect(screen.getByRole('button', { name: /sonido bloqueado/ })).toBeInTheDocument();
+      expect(screen.queryByTestId('request-popup-sound-space')).toBeNull();
+
+      await act(async () => {
+        await unlockSound();
+      });
+
+      // The hint is gone, and exactly its height stays reserved.
+      expect(screen.queryByRole('button', { name: /sonido bloqueado/ })).toBeNull();
+      expect(screen.getByTestId('request-popup-sound-space')).toHaveStyle({ height: '52px' });
+      // Closing still works on the first try.
+      await userEvent.setup().click(screen.getByRole('button', { name: 'Cerrar aviso' }));
+      expect(handlers.onClose).toHaveBeenCalledTimes(1);
+    } finally {
+      height.mockRestore();
+      vi.unstubAllGlobals();
+    }
   });
 });

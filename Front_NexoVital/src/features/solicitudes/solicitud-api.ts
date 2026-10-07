@@ -79,6 +79,8 @@ function asUbicacion(value: unknown): Ubicacion | null {
  * fills it from its own request label instead of this mapper inventing one.
  * `llegadaEn` is carried through when the DTO declares the arrival milestone, so
  * the service history can show it without a second, drifting mapping.
+ * `ambulanciasRechazaron` lists the units that declined the request; absent
+ * reads as an empty list.
  */
 export function fromWireSolicitudAmbulancia(value: unknown): SolicitudAmbulancia | null {
   if (!isRecord(value)) {
@@ -97,6 +99,7 @@ export function fromWireSolicitudAmbulancia(value: unknown): SolicitudAmbulancia
     ambulanciasNotificadas,
     ambulanciaAsignadaId,
     llegadaEn,
+    ambulanciasRechazaron,
   } = value;
 
   if (typeof id !== 'string' || id.length === 0) {
@@ -141,6 +144,17 @@ export function fromWireSolicitudAmbulancia(value: unknown): SolicitudAmbulancia
   if (llegadaEn !== null && llegadaEn !== undefined && !isTimestamp(llegadaEn)) {
     return null;
   }
+  // The units that declined it (EP-04.F2.US5). A server that predates the field
+  // sends none, which reads as "nobody declined"; a present value that is not a
+  // list of ids is malformed.
+  if (
+    ambulanciasRechazaron !== null &&
+    ambulanciasRechazaron !== undefined &&
+    (!Array.isArray(ambulanciasRechazaron) ||
+      !ambulanciasRechazaron.every((item) => typeof item === 'string'))
+  ) {
+    return null;
+  }
 
   return {
     id,
@@ -154,6 +168,7 @@ export function fromWireSolicitudAmbulancia(value: unknown): SolicitudAmbulancia
     timeoutEn,
     ambulanciasNotificadas: [...ambulanciasNotificadas],
     notifiedCount: ambulanciasNotificadas.length,
+    ambulanciasRechazaron: Array.isArray(ambulanciasRechazaron) ? [...ambulanciasRechazaron] : [],
     ambulanciaAsignadaId: typeof ambulanciaAsignadaId === 'string' ? ambulanciaAsignadaId : null,
     ...(typeof llegadaEn === 'string' ? { llegadaEn } : {}),
   };

@@ -104,6 +104,7 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
 
     private String zona;
     private final List<UUID> sembradas = new ArrayList<>();
+    private final List<UUID> conductoresSembrados = new ArrayList<>();
     private final Map<UUID, UUID> conductorPorAmbulancia = new HashMap<>();
 
     @BeforeEach
@@ -130,6 +131,8 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
         ambulanciaJpaRepository.deleteAllById(sembradas);
         sembradas.clear();
         conductorPorAmbulancia.clear();
+        usuarioJpaRepository.deleteAllById(conductoresSembrados);
+        conductoresSembrados.clear();
         pushPortDePrueba.limpiar();
     }
 
@@ -268,9 +271,11 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
     void ac4_rechazarDejaLaSolicitudDisponibleParaLasDemas() throws Exception {
         String ciudadano = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
         String conductor = tokenDe(CONDUCTOR, CONDUCTOR_PASSWORD);
-        // Both actions must come from a unit the authenticating driver owns; the
-        // reject does not occupy it, so the same unit can still accept afterwards.
+        // The decline comes from the caller's own unit. It is final for that
+        // unit (EP-04.F2.US5), so the accept is another driver's, with their own
+        // notified unit.
         UUID unidad = unidadDelConductor;
+        OtroConductor otro = sembrarOtroConductor();
         String solicitudId = crearSolicitud(ciudadano, zona);
 
         mockMvc.perform(post("/api/v1/solicitudes/{id}/reject", solicitudId)
@@ -281,12 +286,12 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
                 .andExpect(jsonPath("$.estado").value("PENDIENTE"));
 
         mockMvc.perform(post("/api/v1/solicitudes/{id}/accept", solicitudId)
-                        .header("Authorization", "Bearer " + conductor)
+                        .header("Authorization", "Bearer " + otro.token())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(cuerpoAmbulancia(unidad)))
+                        .content(cuerpoAmbulancia(otro.unidad())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.ganador").value(true))
-                .andExpect(jsonPath("$.solicitud.ambulanciaAsignadaId").value(unidad.toString()));
+                .andExpect(jsonPath("$.solicitud.ambulanciaAsignadaId").value(otro.unidad().toString()));
     }
 
     // -----------------------------------------------------------------------
@@ -566,10 +571,11 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
         // requester (the citizen token) is the only one who may confirm.
         UUID centroAyudaId = UUID.randomUUID();
         String solicitanteId = usuarioDe(CIUDADANO).getId().toString();
-        // The decline must come from the caller's own unit (FIX4); it does not
-        // occupy it, so the same unit can then win the accept.
+        // The decline must come from the caller's own unit (FIX4). It is final
+        // for that unit (EP-04.F2.US5), so the accept is another driver's.
         UUID primera = unidadDelConductor;
-        UUID segunda = unidadDelConductor;
+        OtroConductor otro = sembrarOtroConductor();
+        UUID segunda = otro.unidad();
         String solicitudId = crearSolicitud(ciudadano, zona, centroAyudaId);
 
         // 1) Creation (PENDIENTE) reached the requester on its own destination.
@@ -595,7 +601,7 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
 
         // 3) Assignment (ASIGNADA) reached the requester.
         mockMvc.perform(post("/api/v1/solicitudes/{id}/accept", solicitudId)
-                        .header("Authorization", "Bearer " + conductor)
+                        .header("Authorization", "Bearer " + otro.token())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(cuerpoAmbulancia(segunda)))
                 .andExpect(status().isOk())
@@ -899,6 +905,31 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
+
+    /** A second driver that can log in, with the unit they drive. */
+    private record OtroConductor(String token, UUID unidad) {
+    }
+
+    /**
+     * Creates another driver with their own available unit in the test zone,
+     * BEFORE the request is raised so that unit is notified too. Both are
+     * deleted after the test.
+     */
+    private OtroConductor sembrarOtroConductor() throws Exception {
+        UUID conductorId = UUID.randomUUID();
+        String email = "otro-conductor-" + conductorId + "@nexovital.co";
+        usuarioJpaRepository.save(new UsuarioJpaEntity(conductorId, "Otro conductor", email,
+                passwordEncoderPort.encriptar("otro-conductor-123"), RolUsuario.CONDUCTOR));
+        conductoresSembrados.add(conductorId);
+
+        UUID unidad = UUID.randomUUID();
+        ambulanciaJpaRepository.save(new AmbulanciaJpaEntity(
+                unidad, "OTR" + unidad.toString().substring(0, 4).toUpperCase(), EstadoAmbulancia.DISPONIBLE,
+                4.74d, -74.08d, zona, conductorId));
+        sembradas.add(unidad);
+        conductorPorAmbulancia.put(unidad, conductorId);
+        return new OtroConductor(tokenDe(email, "otro-conductor-123"), unidad);
+    }
 
     /** Executes a GET and reads its JSON body, failing if it is not a 200. */
     private JsonNode leerJson(MockHttpServletRequestBuilder builder) throws Exception {

@@ -73,4 +73,31 @@ describe('useSolicitudesStore', () => {
       'CONFIRMED',
     );
   });
+
+  it('records a decline once per unit and leaves the request PENDING (EP-04.F2.US5)', () => {
+    const store = useSolicitudesStore.getState();
+    store.upsert(solicitud('REQ-1'));
+    store.upsert(solicitud('REQ-2'));
+
+    useSolicitudesStore.getState().markRejected('REQ-1', 'A-07');
+    useSolicitudesStore.getState().markRejected('REQ-1', 'A-07');
+
+    const declined = useSolicitudesStore.getState().items.find((item) => item.id === 'REQ-1');
+    expect(declined?.ambulanciasRechazaron).toEqual(['A-07']);
+    // The row stays listed and open: only that unit can no longer answer it.
+    expect(declined?.estado).toBe('PENDING');
+    const other = useSolicitudesStore.getState().items.find((item) => item.id === 'REQ-2');
+    expect(other?.ambulanciasRechazaron ?? []).toEqual([]);
+  });
+
+  it('keeps the decline when a later frame for the same request carries no list', () => {
+    useSolicitudesStore.getState().upsert(solicitud('REQ-1'));
+    useSolicitudesStore.getState().markRejected('REQ-1', 'A-07');
+
+    useSolicitudesStore.getState().upsert({ ...solicitud('REQ-1'), zonaId: 'Kennedy' });
+
+    const merged = useSolicitudesStore.getState().items.find((item) => item.id === 'REQ-1');
+    expect(merged?.zonaId).toBe('Kennedy');
+    expect(merged?.ambulanciasRechazaron).toEqual(['A-07']);
+  });
 });

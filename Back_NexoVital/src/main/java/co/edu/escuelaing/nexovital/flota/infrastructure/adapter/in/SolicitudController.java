@@ -5,6 +5,7 @@ import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudAjenaExceptio
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoAsignableException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoEncontradaException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudYaAsignadaException;
+import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudYaRechazadaException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoNotificadaException;
 import co.edu.escuelaing.nexovital.flota.domain.model.ResultadoAceptarSolicitud;
 import co.edu.escuelaing.nexovital.flota.domain.model.SolicitudAmbulancia;
@@ -70,6 +71,7 @@ public class SolicitudController {
     private static final String MENSAJE_SOLICITUD_NO_NOTIFICADA =
             "Esta solicitud no fue notificada a tu ambulancia.";
     private static final String MENSAJE_CAS_PERDIDO = "Solicitud ya asignada a otra ambulancia.";
+    private static final String MENSAJE_SOLICITUD_YA_RECHAZADA = "Ya rechazaste esta solicitud.";
     private static final String MENSAJE_AMBULANCIA_NO_DISPONIBLE =
             "No hay ambulancias disponibles para atender la solicitud.";
     private static final String MENSAJE_ERROR_SOLICITUD = "No fue posible registrar la solicitud.";
@@ -189,6 +191,10 @@ public class SolicitudController {
      * UPDATE, and with {@code SOLICITUD_NO_ASIGNABLE} when it arrived after the
      * winner committed (EP-04.F2.US4).
      *
+     * <p>A unit that declined the request before gets 409
+     * {@code SOLICITUD_YA_RECHAZADA}: the request is still open for the other
+     * units, but a decline is final for the one that made it (EP-04.F2.US5).
+     *
      * @return 200 with {@code ganador=true} and the ASSIGNED request; 409
      *         {@code CAS_PERDIDO} / {@code SOLICITUD_NO_ASIGNABLE} if another
      *         caller won, if the unit was never notified for the request, or if
@@ -217,6 +223,11 @@ public class SolicitudController {
         } catch (SolicitudNoEncontradaException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ErrorResponse.of("SOLICITUD_NO_ENCONTRADA", MENSAJE_SOLICITUD_NO_ENCONTRADA));
+        } catch (SolicitudYaRechazadaException e) {
+            // The unit declined this request before (EP-04.F2.US5). Its own
+            // code, so the console never reads it as "another unit took it".
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ErrorResponse.of("SOLICITUD_YA_RECHAZADA", MENSAJE_SOLICITUD_YA_RECHAZADA));
         } catch (SolicitudYaAsignadaException e) {
             // The accept arrived after another unit won. Same reason the loser
             // of the CAS reads; the code stays SOLICITUD_NO_ASIGNABLE because
@@ -241,7 +252,10 @@ public class SolicitudController {
 
     /**
      * A unit declines. The request stays PENDIENTE for the other notified units
-     * (AC4), so a subsequent accept by another unit still succeeds. The unit
+     * (AC4), so a subsequent accept by another unit still succeeds. The decline
+     * is recorded: the answer carries the unit in {@code ambulanciasRechazaron}
+     * and that unit can no longer accept this request (EP-04.F2.US5). Declining
+     * again answers the same 200 and changes nothing. The unit
      * must belong to the authenticated driver, exactly as accept requires, so a
      * driver cannot decline on behalf of another unit.
      *

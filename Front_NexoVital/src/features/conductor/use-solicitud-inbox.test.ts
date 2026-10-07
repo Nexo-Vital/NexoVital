@@ -967,6 +967,112 @@ describe('useSolicitudInbox against the backend (no demo mode)', () => {
     expect(result.current.outcomeMessage).toBe('Solicitud rechazada');
   });
 
+  /*
+    EP-04.F2.US5: a decline is final for the unit that made it. The server
+    records it, so the console marks the registry row and stops offering the
+    request, while the row itself stays listed because the request is still
+    open for the other units.
+  */
+  function rowInRegistry(): SolicitudAmbulancia | undefined {
+    return useSolicitudesStore.getState().items.find((item) => item.id === REAL_REQUEST);
+  }
+
+  it('US5: declining from the card marks the registry row and keeps it listed', async () => {
+    enableBackend();
+    fetchMock.mockResolvedValue(
+      mockResponse(200, {
+        ...acceptBody(true).solicitud,
+        estado: 'PENDIENTE',
+        ambulanciaAsignadaId: null,
+        ambulanciasRechazaron: [REAL_UNIT],
+      }),
+    );
+    useSolicitudesStore.getState().upsert(notifiedRow());
+    const { port, result } = setupBackend();
+
+    act(() => port.emit(DESTINATIONS.solicitudes, REAL_BROADCAST));
+    await act(async () => {
+      result.current.reject();
+    });
+
+    expect(rowInRegistry()?.estado).toBe('PENDING');
+    expect(rowInRegistry()?.ambulanciasRechazaron).toEqual([REAL_UNIT]);
+    // Declining is not "another unit took it".
+    expect(toastMessages()).not.toContain(TAKEN_BY_OTHER_MESSAGE);
+  });
+
+  it('US5: declining from the detail frees the card when it was the open offer', async () => {
+    enableBackend();
+    fetchMock.mockResolvedValue(
+      mockResponse(200, {
+        ...acceptBody(true).solicitud,
+        estado: 'PENDIENTE',
+        ambulanciaAsignadaId: null,
+        ambulanciasRechazaron: [REAL_UNIT],
+      }),
+    );
+    useSolicitudesStore.getState().upsert(notifiedRow());
+    const { port, result } = setupBackend();
+
+    act(() => port.emit(DESTINATIONS.solicitudes, REAL_BROADCAST));
+    expect(result.current.broadcast?.requestId).toBe(REAL_REQUEST);
+    await act(async () => {
+      result.current.respondTo(notifiedRow(), 'reject');
+    });
+
+    const [path] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe(`/api/v1/solicitudes/${REAL_REQUEST}/reject`);
+    // The request is never left on screen asking for an answer it cannot get.
+    expect(result.current.broadcast).toBeNull();
+    expect(result.current.phase).toBe('idle');
+    expect(result.current.responseOutcome).toEqual({
+      requestId: REAL_REQUEST,
+      phase: 'rejected',
+      message: 'Solicitud rechazada',
+    });
+    expect(rowInRegistry()?.ambulanciasRechazaron).toEqual([REAL_UNIT]);
+  });
+
+  it('US5: a failed decline marks nothing, so the driver can answer again', async () => {
+    enableBackend();
+    fetchMock.mockResolvedValue(
+      mockResponse(500, { codigo: 'ERROR_RECHAZO_SOLICITUD', mensaje: 'No fue posible rechazar.' }),
+    );
+    useSolicitudesStore.getState().upsert(notifiedRow());
+    const { result } = setupBackend();
+
+    await act(async () => {
+      result.current.respondTo(notifiedRow(), 'reject');
+    });
+
+    expect(rowInRegistry()?.ambulanciasRechazaron ?? []).toEqual([]);
+  });
+
+  it('US5: an accept the server refuses as already declined marks the row, without the "taken" notice', async () => {
+    enableBackend();
+    fetchMock.mockResolvedValue(
+      mockResponse(409, {
+        codigo: 'SOLICITUD_YA_RECHAZADA',
+        mensaje: 'Ya rechazaste esta solicitud.',
+      }),
+    );
+    useSolicitudesStore.getState().upsert(notifiedRow());
+    const { result } = setupBackend();
+
+    await act(async () => {
+      result.current.respondTo(notifiedRow(), 'accept');
+    });
+
+    // The request is still open for the other units: the row stays, marked.
+    expect(rowInRegistry()?.estado).toBe('PENDING');
+    expect(rowInRegistry()?.ambulanciasRechazaron).toEqual([REAL_UNIT]);
+    expect(result.current.mission).toBeNull();
+    expect(toastMessages()).not.toContain(TAKEN_BY_OTHER_MESSAGE);
+    // The server's own reason is what the detail shows.
+    expect(result.current.responseOutcome?.requestId).toBe(REAL_REQUEST);
+    expect(result.current.responseOutcome?.message).toBe('Ya rechazaste esta solicitud.');
+  });
+
   it('FIX B: refuses to accept or reject while the own unit is unresolved', async () => {
     enableBackend();
     const port = new FakeRealtimePort();

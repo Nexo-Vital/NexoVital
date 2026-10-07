@@ -48,8 +48,37 @@ describe('fromWireSolicitudAmbulancia', () => {
       timeoutEn: WIRE_RESPONSE.timeoutEn,
       ambulanciasNotificadas: ['A-07', 'A-12', 'A-03'],
       notifiedCount: 3,
+      ambulanciasRechazaron: [],
       ambulanciaAsignadaId: null,
     });
+  });
+
+  it('carries the units that declined the request (EP-04.F2.US5)', () => {
+    const mapped = fromWireSolicitudAmbulancia({
+      ...WIRE_RESPONSE,
+      ambulanciasRechazaron: ['A-12'],
+    });
+
+    expect(mapped?.ambulanciasRechazaron).toEqual(['A-12']);
+    // A decline is per unit: the request is still PENDING for the rest.
+    expect(mapped?.estado).toBe('PENDING');
+  });
+
+  it('reads a missing or null list of declines as "nobody declined"', () => {
+    expect(fromWireSolicitudAmbulancia(WIRE_RESPONSE)?.ambulanciasRechazaron).toEqual([]);
+    expect(
+      fromWireSolicitudAmbulancia({ ...WIRE_RESPONSE, ambulanciasRechazaron: null })
+        ?.ambulanciasRechazaron,
+    ).toEqual([]);
+  });
+
+  it('drops a row whose list of declines is malformed', () => {
+    expect(
+      fromWireSolicitudAmbulancia({ ...WIRE_RESPONSE, ambulanciasRechazaron: 'A-12' }),
+    ).toBeNull();
+    expect(
+      fromWireSolicitudAmbulancia({ ...WIRE_RESPONSE, ambulanciasRechazaron: ['A-12', 7] }),
+    ).toBeNull();
   });
 
   it('accepts a standalone request whose emergency, center and zone are null', () => {

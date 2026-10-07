@@ -161,6 +161,12 @@ describe('DriverConsolePage connection off demo mode', () => {
       if (url.endsWith('/mia/solicitudes/pendientes')) {
         return Promise.resolve(mockResponse(200, backend.pendientes));
       }
+      if (url.endsWith('/reject')) {
+        // The server records the decline and leaves the request PENDIENTE.
+        return Promise.resolve(
+          mockResponse(200, wirePending({ ambulanciasRechazaron: [REAL_UNIT] })),
+        );
+      }
       if (url.endsWith('/finalizar')) {
         // The server closes the request and releases the unit in one operation.
         backend.unit = { ...backend.unit, estado: 'DISPONIBLE', version: backend.unit.version + 1 };
@@ -631,6 +637,88 @@ describe('DriverConsolePage connection off demo mode', () => {
       // The pickup point of the notice is still there, and the row is not lost.
       expect(within(detail).getByText('4.7500, -74.0900')).toBeInTheDocument();
       expect(screen.getByRole('list', { name: 'Lista de solicitudes' })).toBeInTheDocument();
+    });
+  });
+
+  /*
+    EP-04.F2.US5: a decline is final for the unit that made it. The request is
+    still open for the others, so the driver keeps seeing it in the registry,
+    but it is not offered again and it cannot be accepted from its detail.
+  */
+  describe('a request this unit declined (EP-04.F2.US5)', () => {
+    const REASON = 'Ya rechazaste esta solicitud. Sigue disponible para las demás ambulancias.';
+
+    it('read back after a reload: listed as declined, never offered again', async () => {
+      const user = userEvent.setup();
+      const declined = wirePending({ ambulanciasRechazaron: [REAL_UNIT] });
+      backend.pendientes = [declined];
+      backend.detalle = { status: 200, body: declined };
+      render(<DriverConsolePage port={new FakeRealtimePort()} />);
+
+      // The row is in the registry, named as what it is.
+      const list = await screen.findByRole('list', { name: 'Lista de solicitudes' });
+      expect(within(list).getByText('Rechazada por ti')).toBeInTheDocument();
+      // But it is not offered: no card and no notice in the middle of the screen.
+      expect(screen.queryByRole('region', { name: 'Solicitud de ambulancia' })).toBeNull();
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+
+      // The detail can still be opened, and it says why it cannot be answered.
+      await user.click(within(list).getByRole('button'));
+      const detail = await screen.findByTestId('solicitud-detail');
+      expect(within(detail).getByText('Rechazada por ti')).toBeInTheDocument();
+      expect(within(detail).getByText(REASON)).toBeInTheDocument();
+      expect(within(detail).getByRole('button', { name: 'Aceptar' })).toBeDisabled();
+      expect(within(detail).getByRole('button', { name: 'Rechazar' })).toBeDisabled();
+      // Looking at it is still allowed.
+      expect(within(detail).getByRole('button', { name: 'Visualizar' })).toBeEnabled();
+      expect(callsTo('/accept')).toHaveLength(0);
+    });
+
+    it('a request only another unit declined is offered as usual', async () => {
+      backend.pendientes = [wirePending({ ambulanciasRechazaron: [OTHER_UNIT] })];
+      render(<DriverConsolePage port={new FakeRealtimePort()} />);
+
+      const card = await screen.findByRole('region', { name: 'Solicitud de ambulancia' });
+      expect(within(card).getByRole('button', { name: 'Aceptar solicitud' })).toBeEnabled();
+      const list = screen.getByRole('list', { name: 'Lista de solicitudes' });
+      expect(within(list).queryByText('Rechazada por ti')).toBeNull();
+    });
+
+    it('declining from the detail keeps the row and blocks "Aceptar" at once', async () => {
+      const user = userEvent.setup();
+      backend.pendientes = [wirePending()];
+      backend.detalle = { status: 200, body: wirePending() };
+      render(<DriverConsolePage port={new FakeRealtimePort()} />);
+      await screen.findByRole('region', { name: 'Solicitud de ambulancia' });
+      const list = screen.getByRole('list', { name: 'Lista de solicitudes' });
+      await user.click(within(list).getByRole('button'));
+      const detail = await screen.findByTestId('solicitud-detail');
+      await waitFor(() =>
+        expect(within(detail).getByRole('button', { name: 'Aceptar' })).toBeEnabled(),
+      );
+
+      await user.click(within(detail).getByRole('button', { name: 'Rechazar' }));
+
+      await waitFor(() => expect(callsTo('/reject')).toHaveLength(1));
+      const [, options] = callsTo('/reject')[0];
+      expect(JSON.parse(String(options.body))).toEqual({ ambulanciaId: REAL_UNIT });
+      // The row is still in the registry, now named as declined...
+      await waitFor(() =>
+        expect(
+          within(screen.getByRole('list', { name: 'Lista de solicitudes' })).getByText(
+            'Rechazada por ti',
+          ),
+        ).toBeInTheDocument(),
+      );
+      // ...the open detail stops offering an answer...
+      const after = screen.getByTestId('solicitud-detail');
+      expect(within(after).getByRole('button', { name: 'Aceptar' })).toBeDisabled();
+      expect(within(after).getByRole('button', { name: 'Rechazar' })).toBeDisabled();
+      expect(within(after).getByText(REASON)).toBeInTheDocument();
+      // ...and the request is no longer on screen asking for one.
+      expect(screen.queryByRole('region', { name: 'Solicitud de ambulancia' })).toBeNull();
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      expect(callsTo('/accept')).toHaveLength(0);
     });
   });
 

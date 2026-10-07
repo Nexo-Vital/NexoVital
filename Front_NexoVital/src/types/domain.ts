@@ -165,6 +165,13 @@ export interface SolicitudAmbulancia {
    * never picks a winner; this is only the number of units the center notified.
    */
   notifiedCount: number;
+  /**
+   * Units that declined this request (contract `ambulanciasRechazaron`,
+   * EP-04.F2.US5). A decline is per unit and final: the request stays PENDING
+   * for the rest, and a unit listed here can still see it but no longer answer
+   * it. Optional because demo fixtures and realtime frames do not carry it.
+   */
+  ambulanciasRechazaron?: string[];
   /** Winning unit once the request is resolved. Never chosen by the client. */
   ambulanciaAsignadaId?: string | null;
   /**

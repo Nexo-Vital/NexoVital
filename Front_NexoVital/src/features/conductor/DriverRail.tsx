@@ -67,6 +67,7 @@ import {
   subscribeSoundStatus,
   unlockSound,
 } from './request-sound';
+import { REJECTED_BY_UNIT_LABEL, rejectedByUnit } from './solicitud-response';
 import type {
   DriverMissionPhase,
   Mission,
@@ -666,10 +667,13 @@ function solicitudSceneLabel(solicitud: SolicitudAmbulancia): string {
 function SolicitudRow({
   solicitud,
   selected,
+  rejected,
   onSelect,
 }: {
   solicitud: SolicitudAmbulancia;
   selected: boolean;
+  /** This unit declined the request: it is still listed, but not answerable. */
+  rejected: boolean;
   onSelect: (solicitud: SolicitudAmbulancia) => void;
 }) {
   return (
@@ -688,7 +692,7 @@ function SolicitudRow({
             {solicitudLabel(solicitud)}
           </b>
           <span className="shrink-0 rounded-nv-pill bg-nv-mint px-2 py-0.5 font-medium text-nv-navy-400 text-[11px]">
-            {REQUEST_STATE_LABEL_ES[solicitud.estado]}
+            {rejected ? REJECTED_BY_UNIT_LABEL : REQUEST_STATE_LABEL_ES[solicitud.estado]}
           </span>
           {selected ? (
             <ChevronUp className="size-4 shrink-0 text-nv-navy-400" aria-hidden />
@@ -720,6 +724,7 @@ function SolicitudDetail({
   distanceKm,
   units,
   canRespond,
+  rejected,
   blockReason,
   outcome,
   notice,
@@ -732,6 +737,8 @@ function SolicitudDetail({
   distanceKm: number | null;
   units: readonly Ambulancia[];
   canRespond: boolean;
+  /** This unit declined the request: it reads as such, like its registry row. */
+  rejected: boolean;
   /** Honest reason the actions are disabled; null while the row is respondible. */
   blockReason: string | null;
   /** Server's answer to this row's last response, or null. */
@@ -754,7 +761,7 @@ function SolicitudDetail({
           {solicitudLabel(solicitud)}
         </h5>
         <span className="shrink-0 rounded-nv-pill bg-nv-mint px-2 py-0.5 font-medium text-nv-navy-400 text-[11px]">
-          {REQUEST_STATE_LABEL_ES[solicitud.estado]}
+          {rejected ? REJECTED_BY_UNIT_LABEL : REQUEST_STATE_LABEL_ES[solicitud.estado]}
         </span>
         <button
           type="button"
@@ -999,6 +1006,9 @@ function SolicitudesPanel({
                 key={solicitud.id}
                 solicitud={solicitud}
                 selected={selectedSolicitud?.id === solicitud.id}
+                rejected={
+                  solicitud.estado === 'PENDING' && rejectedByUnit(solicitud, request.unitId)
+                }
                 onSelect={onSelectSolicitud}
               />
             ))}
@@ -1012,6 +1022,12 @@ function SolicitudesPanel({
           distanceKm={selectedDistanceKm}
           units={units}
           canRespond={selectedCanRespond}
+          rejected={solicitudes.some(
+            (solicitud) =>
+              solicitud.id === selectedSolicitud.id &&
+              solicitud.estado === 'PENDING' &&
+              rejectedByUnit(solicitud, request.unitId),
+          )}
           blockReason={selectedBlockReason}
           outcome={selectedOutcome}
           notice={selectedNotice}

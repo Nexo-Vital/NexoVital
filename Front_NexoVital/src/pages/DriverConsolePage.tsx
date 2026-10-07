@@ -683,14 +683,22 @@ export default function DriverConsolePage({
       active = false;
     };
   }, [selectedId, connection.serverManaged, unitId, unitResolved]);
-  const selectedCanRespond =
-    selectedSolicitud !== null && !unitBusy && canRespondToSolicitud(selectedSolicitud, unitId);
-  const selectedBlockReason =
+  // Whether the selected row can be answered is read from the LIVE registry
+  // row, not from the copy taken when it was opened: a decline made a moment
+  // ago (EP-04.F2.US5) marks the registry row, and the open detail must stop
+  // offering "Aceptar" at once.
+  const selectedLive =
     selectedSolicitud === null
+      ? null
+      : (solicitudesRegistry.find((item) => item.id === selectedSolicitud.id) ?? selectedSolicitud);
+  const selectedCanRespond =
+    selectedLive !== null && !unitBusy && canRespondToSolicitud(selectedLive, unitId);
+  const selectedBlockReason =
+    selectedLive === null
       ? null
       : !unitResolved
         ? UNIT_UNRESOLVED_REASON
-        : (solicitudResponseBlockReason(selectedSolicitud, unitId) ??
+        : (solicitudResponseBlockReason(selectedLive, unitId) ??
           (unitBusy ? UNIT_BUSY_REASON : null));
   // Only the outcome of the row currently selected is shown, so answering one
   // row never paints its result onto another.

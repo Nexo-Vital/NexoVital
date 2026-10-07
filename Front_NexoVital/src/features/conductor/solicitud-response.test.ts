@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { SolicitudAmbulancia } from '@/types/domain';
-import { canRespondToSolicitud, solicitudResponseBlockReason } from './solicitud-response';
+import {
+  canRespondToSolicitud,
+  REJECTED_BY_UNIT_REASON,
+  rejectedByUnit,
+  solicitudResponseBlockReason,
+} from './solicitud-response';
 
 /**
  * The server's answer rule, mirrored by the driver UI: a request is respondible
@@ -66,5 +71,38 @@ describe('solicitudResponseBlockReason', () => {
     expect(solicitudResponseBlockReason(solicitud({ estado: 'TAKEN' }), UNIT)).toMatch(
       /ya no está pendiente/,
     );
+  });
+});
+
+/**
+ * EP-04.F2.US5: a decline is final for the unit that made it. The request stays
+ * PENDING and listed, but that unit can no longer answer it, which is the same
+ * thing the server enforces (409 `SOLICITUD_YA_RECHAZADA`).
+ */
+describe('a request this unit declined', () => {
+  const declined = solicitud({ ambulanciasRechazaron: [UNIT] });
+
+  it('is recognised by the unit that declined it and by nobody else', () => {
+    expect(rejectedByUnit(declined, UNIT)).toBe(true);
+    expect(rejectedByUnit(declined, 'AMB-02')).toBe(false);
+    expect(rejectedByUnit(solicitud(), UNIT)).toBe(false);
+    // An unresolved unit declined nothing.
+    expect(rejectedByUnit(declined, '')).toBe(false);
+  });
+
+  it('can no longer be answered by that unit, although it is still PENDING', () => {
+    expect(declined.estado).toBe('PENDING');
+    expect(canRespondToSolicitud(declined, UNIT)).toBe(false);
+    expect(solicitudResponseBlockReason(declined, UNIT)).toBe(REJECTED_BY_UNIT_REASON);
+  });
+
+  it('stays answerable for the other notified units', () => {
+    expect(canRespondToSolicitud(declined, 'AMB-02')).toBe(true);
+    expect(solicitudResponseBlockReason(declined, 'AMB-02')).toBeNull();
+  });
+
+  it('treats a row without the list as one nobody declined', () => {
+    const { ambulanciasRechazaron: _omitted, ...withoutList } = declined;
+    expect(canRespondToSolicitud(withoutList, UNIT)).toBe(true);
   });
 });

@@ -3,6 +3,7 @@ package co.edu.escuelaing.nexovital.flota.domain.model;
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoSolicitud;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -18,7 +19,9 @@ import java.util.UUID;
  * ASIGNADA/CONFIRMADA → TOMADA (finish/release).
  *
  * <p>A per-unit decline is NOT a state transition here: it leaves the request
- * {@code PENDIENTE} so the other notified units can still accept it (AC4). The
+ * {@code PENDIENTE} so the other notified units can still accept it (AC4). It
+ * is recorded per unit in {@code ambulanciasRechazaron} (EP-04.F2.US5): a unit
+ * that declined keeps seeing the request but can no longer accept it. The
  * {@code RECHAZADA} state is the contract's whole-request rejection (every unit
  * declined or nobody answered) and is never persisted by this aggregate.
  * {@code CANCELADA} is a different outcome: the requester's own withdrawal while
@@ -64,6 +67,12 @@ public final class SolicitudAmbulancia {
      */
     private final UUID solicitanteId;
     private final List<UUID> ambulanciasNotificadas;
+    /**
+     * Units that declined this request (EP-04.F2.US5). A decline is final for
+     * that unit and that request: it never changes the request state, it only
+     * stops that unit from accepting it later.
+     */
+    private final List<UUID> ambulanciasRechazaron;
     private final UUID ambulanciaAsignadaId;
     /**
      * Instant the winning unit declared its arrival at the scene, or null while
@@ -76,6 +85,7 @@ public final class SolicitudAmbulancia {
     private SolicitudAmbulancia(UUID id, double lat, double lng, UUID emergenciaId, EstadoSolicitud estado,
                                 UUID centroAyudaId, String zonaId, Instant solicitadaEn, Instant timeoutEn,
                                 UUID solicitanteId, List<UUID> ambulanciasNotificadas,
+                                List<UUID> ambulanciasRechazaron,
                                 UUID ambulanciaAsignadaId, Instant llegadaEn, long version) {
         this.id = Objects.requireNonNull(id, "id is required");
         this.lat = lat;
@@ -93,6 +103,9 @@ public final class SolicitudAmbulancia {
         this.ambulanciasNotificadas = ambulanciasNotificadas == null
                 ? List.of()
                 : List.copyOf(ambulanciasNotificadas);
+        this.ambulanciasRechazaron = ambulanciasRechazaron == null
+                ? List.of()
+                : List.copyOf(ambulanciasRechazaron);
         this.ambulanciaAsignadaId = ambulanciaAsignadaId;
         this.llegadaEn = llegadaEn;
         this.version = version;
@@ -113,28 +126,44 @@ public final class SolicitudAmbulancia {
         }
         Objects.requireNonNull(solicitanteId, "solicitanteId is required");
         return new SolicitudAmbulancia(id, lat, lng, emergenciaId, EstadoSolicitud.PENDIENTE, centroAyudaId,
-                zonaId, solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, null, null, 0);
+                zonaId, solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, List.of(), null, null, 0);
     }
 
     /**
      * Rebuilds the aggregate from persistence (out adapter). It does not
-     * validate transitions: the state arrives exactly as it was stored.
+     * validate transitions: the state arrives exactly as it was stored. No unit
+     * has declined it.
      */
     public static SolicitudAmbulancia restaurar(UUID id, double lat, double lng, UUID emergenciaId,
                                                 EstadoSolicitud estado, UUID centroAyudaId, String zonaId,
                                                 Instant solicitadaEn, Instant timeoutEn, UUID solicitanteId,
                                                 List<UUID> ambulanciasNotificadas,
                                                 UUID ambulanciaAsignadaId, Instant llegadaEn, long version) {
+        return restaurar(id, lat, lng, emergenciaId, estado, centroAyudaId, zonaId, solicitadaEn, timeoutEn,
+                solicitanteId, ambulanciasNotificadas, List.of(), ambulanciaAsignadaId, llegadaEn, version);
+    }
+
+    /**
+     * Rebuilds the aggregate from persistence with the units that declined it
+     * (EP-04.F2.US5). It does not validate transitions.
+     */
+    public static SolicitudAmbulancia restaurar(UUID id, double lat, double lng, UUID emergenciaId,
+                                                EstadoSolicitud estado, UUID centroAyudaId, String zonaId,
+                                                Instant solicitadaEn, Instant timeoutEn, UUID solicitanteId,
+                                                List<UUID> ambulanciasNotificadas,
+                                                List<UUID> ambulanciasRechazaron,
+                                                UUID ambulanciaAsignadaId, Instant llegadaEn, long version) {
         return new SolicitudAmbulancia(id, lat, lng, emergenciaId, estado, centroAyudaId, zonaId,
-                solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, ambulanciaAsignadaId,
-                llegadaEn, version);
+                solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, ambulanciasRechazaron,
+                ambulanciaAsignadaId, llegadaEn, version);
     }
 
     private static SolicitudAmbulancia conEstado(SolicitudAmbulancia actual, EstadoSolicitud nuevo,
                                                  UUID ambulanciaAsignadaId) {
         return new SolicitudAmbulancia(actual.id, actual.lat, actual.lng, actual.emergenciaId, nuevo,
                 actual.centroAyudaId, actual.zonaId, actual.solicitadaEn, actual.timeoutEn, actual.solicitanteId,
-                actual.ambulanciasNotificadas, ambulanciaAsignadaId, actual.llegadaEn, actual.version + 1);
+                actual.ambulanciasNotificadas, actual.ambulanciasRechazaron, ambulanciaAsignadaId,
+                actual.llegadaEn, actual.version + 1);
     }
 
     private static void requiereTransicion(SolicitudAmbulancia solicitud, EstadoSolicitud esperado, String accion) {
@@ -211,8 +240,8 @@ public final class SolicitudAmbulancia {
     public SolicitudAmbulancia llegar(Instant llegadaEn) {
         requiereTransicion(this, EstadoSolicitud.ASIGNADA, "arrival");
         return new SolicitudAmbulancia(id, lat, lng, emergenciaId, estado, centroAyudaId, zonaId,
-                solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, ambulanciaAsignadaId,
-                Objects.requireNonNull(llegadaEn, "llegadaEn is required"), version + 1);
+                solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, ambulanciasRechazaron,
+                ambulanciaAsignadaId, Objects.requireNonNull(llegadaEn, "llegadaEn is required"), version + 1);
     }
 
     public boolean estaVencida() {
@@ -234,6 +263,29 @@ public final class SolicitudAmbulancia {
     /** @return true when this unit was part of the broadcast (AC1 / L3 filter). */
     public boolean fueNotificada(UUID ambulanciaId) {
         return ambulanciasNotificadas.contains(ambulanciaId);
+    }
+
+    /** @return true when this unit declined the request (EP-04.F2.US5). */
+    public boolean fueRechazadaPor(UUID ambulanciaId) {
+        return ambulanciasRechazaron.contains(ambulanciaId);
+    }
+
+    /**
+     * The same request with {@code ambulanciaId} among the units that declined
+     * it. It is NOT a state transition: the state, the deadline and the version
+     * are untouched, because the decline is stored apart from the request row.
+     * Declining twice returns the same request.
+     */
+    public SolicitudAmbulancia conRechazoDe(UUID ambulanciaId) {
+        Objects.requireNonNull(ambulanciaId, "ambulanciaId is required");
+        if (ambulanciasRechazaron.contains(ambulanciaId)) {
+            return this;
+        }
+        List<UUID> rechazaron = new ArrayList<>(ambulanciasRechazaron);
+        rechazaron.add(ambulanciaId);
+        return new SolicitudAmbulancia(id, lat, lng, emergenciaId, estado, centroAyudaId, zonaId,
+                solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, rechazaron,
+                ambulanciaAsignadaId, llegadaEn, version);
     }
 
     public UUID getId() {
@@ -283,6 +335,11 @@ public final class SolicitudAmbulancia {
 
     public List<UUID> getAmbulanciasNotificadas() {
         return ambulanciasNotificadas;
+    }
+
+    /** Units that declined this request; never null. */
+    public List<UUID> getAmbulanciasRechazaron() {
+        return ambulanciasRechazaron;
     }
 
     public UUID getAmbulanciaAsignadaId() {

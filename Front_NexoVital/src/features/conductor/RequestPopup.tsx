@@ -1,5 +1,5 @@
 import { Check, Eye, MapPin, Navigation, Siren, Timer, VolumeX, X } from 'lucide-react';
-import { useId, useSyncExternalStore } from 'react';
+import { useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useClock } from '@/hooks/use-clock';
 import { formatCountdown } from '@/lib/format';
 import {
@@ -69,6 +69,21 @@ export function RequestPopup({
   );
   const secondsLeft =
     deadlineMs !== null ? Math.ceil(Math.max(0, deadlineMs - now.getTime()) / 1000) : null;
+  /*
+    The sound hint leaves as soon as the sound is unlocked, and the first press
+    anywhere on the page unlocks it. The pop-up is centred, so losing a row would
+    move every button a few pixels BETWEEN the press and the release of that very
+    click: the press lands on "Cerrar aviso" and the release beside it, and the
+    click is lost. The space the hint took is therefore kept, so nothing moves
+    under the driver's finger while the pop-up is open.
+  */
+  const soundHintRef = useRef<HTMLButtonElement>(null);
+  const [soundHintSpace, setSoundHintSpace] = useState(0);
+  useLayoutEffect(() => {
+    if (soundBlocked && soundHintRef.current) {
+      setSoundHintSpace(soundHintRef.current.offsetHeight);
+    }
+  }, [soundBlocked]);
 
   return (
     <div className="pointer-events-none fixed inset-0 z-[1300] flex items-center justify-center bg-nv-navy/30 p-4">
@@ -133,8 +148,9 @@ export function RequestPopup({
           </p>
         )}
 
-        {soundBlocked && (
+        {soundBlocked ? (
           <button
+            ref={soundHintRef}
             type="button"
             onClick={() => void unlockSound()}
             className="flex items-center gap-2 rounded-nv-md bg-nv-amber/30 px-3 py-2 text-left font-medium text-xs leading-[18px]"
@@ -142,6 +158,15 @@ export function RequestPopup({
             <VolumeX className="size-4 shrink-0" aria-hidden />
             El navegador tiene el sonido bloqueado. Toca aquí para activarlo.
           </button>
+        ) : (
+          soundHintSpace > 0 && (
+            <div
+              aria-hidden
+              data-testid="request-popup-sound-space"
+              className="shrink-0"
+              style={{ height: soundHintSpace }}
+            />
+          )
         )}
 
         {!unitResolved && (

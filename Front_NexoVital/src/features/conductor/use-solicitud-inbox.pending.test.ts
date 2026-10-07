@@ -97,6 +97,24 @@ describe('useSolicitudInbox: requests read back from the server', () => {
     expect(result.current.broadcast).toBeNull();
   });
 
+  it('offerPending does not offer again a request this unit declined (EP-04.F2.US5)', () => {
+    const { result } = setup();
+
+    // Read back after a reload: still PENDING for the rest, declined by this unit.
+    act(() => result.current.offerPending(solicitud({ ambulanciasRechazaron: [UNIT] })));
+
+    expect(result.current.broadcast).toBeNull();
+    expect(result.current.queuedIds).toEqual([]);
+  });
+
+  it('offerPending still offers a request only ANOTHER unit declined', () => {
+    const { result } = setup();
+
+    act(() => result.current.offerPending(solicitud({ ambulanciasRechazaron: [OTHER_UNIT] })));
+
+    expect(result.current.broadcast?.requestId).toBe(REQUEST);
+  });
+
   it('offerPending ignores a request that is no longer pending', () => {
     const { result } = setup();
 

@@ -12,10 +12,11 @@ import { type APIResponse, expect, test } from '@playwright/test';
  *     detail — the emergency it points at, the zone, and how many units were
  *     notified — from both the live card and the registry sheet.
  *
- *   EP-04.F2.US3 (reject) a driver declines a broadcast and the request stays
+ *   EP-04.F2.US5 (reject) a driver declines a broadcast and the request stays
  *     PENDIENTE for the remaining units: a second driver accepts it afterwards
  *     and wins. The rejection is a PER-UNIT decision (AC4), never a whole-request
- *     close (RechazarSolicitudUseCaseImpl).
+ *     close (RechazarSolicitudUseCaseImpl), and it is final for the unit that
+ *     made it: that driver keeps seeing the request but can no longer accept it.
  *
  * ORDERING. The backend never re-delivers a broadcast: `POST /solicitudes` fans
  * the PENDIENTE frame out to each notified driver at creation time. Every driver
@@ -456,7 +457,7 @@ test('EP-04.F2.US3 detalle: el conductor ve el detalle de la solicitud notificad
   }
 });
 
-test('EP-04.F2.US3 rechazo: un conductor rechaza y la solicitud sigue para otro', async ({
+test('EP-04.F2.US5 rechazo: un conductor rechaza y la solicitud sigue para otro', async ({
   browser,
 }) => {
   test.setTimeout(180_000);
@@ -508,7 +509,7 @@ test('EP-04.F2.US3 rechazo: un conductor rechaza y la solicitud sigue para otro'
     expect(request.ambulanciasNotificadas).toContain(unit1Id);
     expect(request.ambulanciasNotificadas).toContain(unit2Id);
     console.log(
-      `[US3-rechazo] solicitud=${request.id} notificadas=${request.ambulanciasNotificadas.length}`,
+      `[US5-rechazo] solicitud=${request.id} notificadas=${request.ambulanciasNotificadas.length}`,
     );
 
     // 3. Driver 1 declines from the inbox card.
@@ -526,7 +527,30 @@ test('EP-04.F2.US3 rechazo: un conductor rechaza y la solicitud sigue para otro'
     expect(rejected.id).toBe(request.id);
     expect(rejected.estado).toBe('PENDIENTE');
     await expect(driver1Page.getByText('Solicitud rechazada')).toBeVisible({ timeout: 10_000 });
-    console.log(`[US3-rechazo] driver1 rechazo -> 200 estado=${rejected.estado}`);
+    console.log(`[US5-rechazo] driver1 rechazo -> 200 estado=${rejected.estado}`);
+
+    // 3b. The decline is final for driver 1 (EP-04.F2.US5): the request stays in
+    //     its registry, named as declined, and its detail no longer lets it accept.
+    const reference = `#${request.id.replace(/-/g, '').slice(0, 6)}`;
+    const registry1 = driver1Page.getByRole('list', { name: 'Lista de solicitudes' });
+    const row1 = registry1.getByRole('button').filter({ hasText: reference });
+    await expect(row1).toBeVisible({ timeout: 10_000 });
+    await expect(row1).toContainText('Rechazada por ti');
+    await row1.click();
+    const detail1 = driver1Page.getByTestId('solicitud-detail');
+    await expect(detail1).toBeVisible({ timeout: 10_000 });
+    await expect(detail1.getByRole('button', { name: 'Aceptar', exact: true })).toBeDisabled();
+    await expect(detail1.getByRole('button', { name: 'Rechazar', exact: true })).toBeDisabled();
+    await expect(detail1.getByText(/Ya rechazaste esta solicitud/)).toBeVisible();
+    // The server enforces it too: the same unit's accept is refused, and the
+    // request is left as it was for the other units.
+    const lateAccept = await driver1Page.request.post(`${API}/solicitudes/${request.id}/accept`, {
+      headers: { Authorization: `Bearer ${driver1Token}` },
+      data: { ambulanciaId: unit1Id },
+    });
+    expect(lateAccept.status()).toBe(409);
+    expect(((await lateAccept.json()) as { codigo: string }).codigo).toBe('SOLICITUD_YA_RECHAZADA');
+    console.log('[US5-rechazo] driver1 ya no puede aceptar -> 409 SOLICITUD_YA_RECHAZADA');
 
     // 4. The request is STILL offered to driver 2 and its accept is enabled.
     const card2 = driver2Page.getByRole('region', { name: 'Solicitud de ambulancia' });
@@ -552,7 +576,7 @@ test('EP-04.F2.US3 rechazo: un conductor rechaza y la solicitud sigue para otro'
     expect(accepted.solicitud.estado).toBe('ASIGNADA');
     expect(accepted.solicitud.ambulanciaAsignadaId).toBe(unit2Id);
     await expect(driver2Page.getByText('Solicitud aceptada')).toBeVisible({ timeout: 15_000 });
-    console.log(`[US3-rechazo] driver2 acepto -> 200 ganador=true unidad=${unit2Id}`);
+    console.log(`[US5-rechazo] driver2 acepto -> 200 ganador=true unidad=${unit2Id}`);
 
     // 6. The backend agrees: driver 2's unit is in mission, driver 1's is free.
     const fleet = await getFleet(driver2Page, driver2Token);
@@ -566,7 +590,7 @@ test('EP-04.F2.US3 rechazo: un conductor rechaza y la solicitud sigue para otro'
       await describeInboxCalls(driver2Calls),
     ].join('\n');
     console.log(evidence);
-    await test.info().attach('us3-rechazo-calls.txt', {
+    await test.info().attach('us5-rechazo-calls.txt', {
       body: `solicitud=${request.id}\n${evidence}`,
       contentType: 'text/plain',
     });
