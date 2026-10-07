@@ -448,6 +448,7 @@ function RequestCard({
       className="flex flex-col gap-3.5 rounded-nv-lg border-nv-red-600 border-t-[5px] bg-white p-4 shadow-nv-card"
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <AmbulanciaAlert />
         <h3 className="font-semibold text-[17px]">Solicitud de ambulancia</h3>
         <LevelChip level={broadcast.nivel} />
         <span className="flex-1" />
@@ -568,6 +569,22 @@ function solicitudReference(id: string): string {
  */
 function solicitudLabel(solicitud: SolicitudAmbulancia): string {
   return `${solicitud.tipo || 'Solicitud de ambulancia'} · ${solicitudReference(solicitud.id)}`;
+}
+
+/**
+ * Ambulance with the emergency lights shining (red and blue).
+ * Ambulance recurse from lucide-react source.
+ */
+function AmbulanciaAlert(){
+  return(
+    <span aria-hidden
+      className="relative inline-flex size-12 shrink-0 items-center justify-center rounded-full bg-nv-red-soft"
+    >
+      <Ambulance className="size-7 text-nv-navy" aria-hidden />
+      <span className="absolute top-1 left-[10px] size-2 motion-safe:animate-pulse rounded-full bg-nv-red" />
+      <span className="absolute top-1 right-[10px] size-2 motion-safe:animate-pulse rounded-full bg-nv-navy [animation-delay:0.4s]" />
+    </span>
+  );
 }
 
 /**
