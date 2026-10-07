@@ -80,7 +80,7 @@ public class SolicitarAmbulanciaUseCaseImpl implements SolicitarAmbulanciaUseCas
 
         eventPublisher.publishEvent(new SolicitudCreadaEvent(
                 guardada.getId(), guardada.getLat(), guardada.getLng(), emergenciaId, zonaId,
-                notificadas, solicitadaEn, guardada.getSolicitanteId()));
+                notificadas, solicitadaEn, guardada.getSolicitanteId(), tope));
         return guardada;
     }
 }

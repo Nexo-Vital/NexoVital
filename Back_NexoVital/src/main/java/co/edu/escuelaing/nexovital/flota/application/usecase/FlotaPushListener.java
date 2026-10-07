@@ -19,6 +19,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -53,6 +54,12 @@ import java.util.UUID;
  * where to go. Later lifecycle frames keep it null: the front already holds the
  * pickup point from the creation frame.
  *
+ * <p><b>Accept window.</b> The creation frame also carries {@code solicitadaEn}
+ * and {@code timeoutEn}, the two instants the server itself uses to expire the
+ * request. The driver console counts down to that deadline; without them it
+ * could only assume a window, and its countdown ended before the request did.
+ * Later lifecycle frames keep both null.
+ *
  * <p><b>Every {@code /topic/flota} frame is versioned (EP-04.F1.US1, D6).</b>
  * The push runs after commit, each one on its own thread, so two writes on the
  * same unit can reach the channel inverted. Both fleet frames carry the row
@@ -85,7 +92,8 @@ public class FlotaPushListener {
         SolicitudPushPayload payload = new SolicitudPushPayload(
                 evento.solicitudId(), new Ubicacion(evento.lat(), evento.lng()),
                 evento.emergenciaId(), evento.zonaId(),
-                "PENDIENTE", evento.ambulanciasNotificadas(), null, false);
+                "PENDIENTE", evento.ambulanciasNotificadas(), null, false,
+                textoIso(evento.solicitadaEn()), textoIso(evento.timeoutEn()));
         for (UUID ambulanciaId : evento.ambulanciasNotificadas()) {
             publicarAlConductor(ambulanciaId, payload);
         }
@@ -245,14 +253,35 @@ public class FlotaPushListener {
         }
     }
 
+    /** An instant as ISO-8601 text, or {@code null} when there is none. */
+    private static String textoIso(Instant instante) {
+        return instante == null ? null : instante.toString();
+    }
+
     /** Pickup point of a request, as the driver card receives it. */
     public record Ubicacion(double lat, double lng) {
     }
 
-    /** Public projection of a request for the driver inbox. */
+    /**
+     * Public projection of a request for the driver inbox.
+     *
+     * <p>{@code solicitadaEn} and {@code timeoutEn} are the accept window of the
+     * request, as ISO-8601 text so the wire format does not depend on how the
+     * message converter writes dates. Only the creation frame carries them;
+     * every other frame leaves both null.
+     */
     public record SolicitudPushPayload(UUID solicitudId, Ubicacion ubicacion, UUID emergenciaId,
                                        String zonaId, String estado, List<UUID> ambulanciasNotificadas,
-                                       UUID ambulanciaAsignadaId, boolean llegada) {
+                                       UUID ambulanciaAsignadaId, boolean llegada,
+                                       String solicitadaEn, String timeoutEn) {
+
+        /** A lifecycle frame: it does not restate the accept window. */
+        public SolicitudPushPayload(UUID solicitudId, Ubicacion ubicacion, UUID emergenciaId,
+                                    String zonaId, String estado, List<UUID> ambulanciasNotificadas,
+                                    UUID ambulanciaAsignadaId, boolean llegada) {
+            this(solicitudId, ubicacion, emergenciaId, zonaId, estado, ambulanciasNotificadas,
+                    ambulanciaAsignadaId, llegada, null, null);
+        }
     }
 
     /**
