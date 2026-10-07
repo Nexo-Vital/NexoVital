@@ -170,6 +170,61 @@ async function loginAsSpecificDriver(
   await goOnline(page);
 }
 
+/** Ids of the open requests the server still offers to this driver's unit. */
+async function pendingRequestIds(page: Page): Promise<string[]> {
+  const token = await page.evaluate((key) => sessionStorage.getItem(key), TOKEN_KEY);
+  const response = await page.request.get(`${API}/flota/ambulancias/mia/solicitudes/pendientes`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(response.ok()).toBeTruthy();
+  const body = (await response.json()) as Array<{ id: string }> | null;
+  return Array.isArray(body) ? body.map((row) => row.id) : [];
+}
+
+/**
+ * Leaves the driver with NO open request before the scenario raises its own.
+ *
+ * A request stays PENDIENTE for its whole accept window, and a driver that
+ * connects gets back every request that is still open for its unit
+ * (EP-04.F2.US1). So a request an earlier scenario left unanswered is offered
+ * again here, and since the console shows the OLDEST request first, that
+ * leftover would take the card and the pop-up of the request under test.
+ *
+ * Every scenario asks as the same seeded citizen, so the leftovers are withdrawn
+ * with that citizen's own `POST /solicitudes/{id}/cancelar`. Whatever cannot be
+ * withdrawn (a request of somebody else) is waited out: its window closes by
+ * itself within a minute.
+ */
+async function clearLeftoverRequests(page: Page): Promise<void> {
+  const leftovers = await pendingRequestIds(page);
+  if (leftovers.length > 0) {
+    const session = await page.request.post(`${API}/sesiones`, { data: CITIZEN });
+    expect(session.ok()).toBeTruthy();
+    const citizenToken = ((await session.json()) as { token: string }).token;
+    for (const id of leftovers) {
+      const cancelled = await page.request
+        .post(`${API}/solicitudes/${id}/cancelar`, {
+          headers: { Authorization: `Bearer ${citizenToken}` },
+        })
+        .catch(() => null);
+      console.log(`[limpieza] solicitud previa ${id} -> ${cancelled?.status() ?? 'sin respuesta'}`);
+    }
+  }
+  await expect
+    .poll(async () => (await pendingRequestIds(page)).length, {
+      timeout: 70_000,
+      intervals: [500, 1_000, 2_000],
+    })
+    .toBe(0);
+  // The console agrees: no request card and no notice are left on the screen.
+  await expect(page.getByRole('region', { name: 'Solicitud de ambulancia' })).toBeHidden({
+    timeout: 15_000,
+  });
+  await expect(page.getByRole('alertdialog', { name: 'Nueva solicitud de ambulancia' })).toBeHidden(
+    { timeout: 15_000 },
+  );
+}
+
 /** Current bearer token the app keeps for this page's session (per-tab `sessionStorage`). */
 async function bearer(page: Page): Promise<string> {
   const token = await page.evaluate((key) => sessionStorage.getItem(key), TOKEN_KEY);
@@ -282,7 +337,7 @@ async function closeRequest(
 test('EP-04.F2.US3 detalle: el conductor ve el detalle de la solicitud notificada', async ({
   browser,
 }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(180_000);
 
   const driverContext = await newIsolatedContext(browser);
   const citizenContext = await newIsolatedContext(browser);
@@ -305,6 +360,8 @@ test('EP-04.F2.US3 detalle: el conductor ve el detalle de la solicitud notificad
     expect(mia.ok()).toBeTruthy();
     unitId = ((await mia.json()) as AmbulanciaDto | null)?.id ?? null;
     expect(unitId).toBeTruthy();
+    // Nothing an earlier scenario left open may take the card of this request.
+    await clearLeftoverRequests(driverPage);
 
     // 2. Citizen reports a real emergency (a map warning) and asks for an
     //    ambulance. The request no longer depends on it: the aid/zone report is
@@ -349,6 +406,21 @@ test('EP-04.F2.US3 detalle: el conductor ve el detalle de la solicitud notificad
 
     const sheet = driverPage.getByTestId('solicitud-detail');
     await expect(sheet).toBeVisible({ timeout: 10_000 });
+    // The detail is the server's: opening the row reads GET /solicitudes/{id},
+    // and the server answers 200 because this driver's unit was notified.
+    await expect
+      .poll(
+        () =>
+          driverCalls.some(
+            (call) =>
+              call.method === 'GET' &&
+              call.url.endsWith(`/api/v1/solicitudes/${request.id}`) &&
+              call.status === 200,
+          ),
+        { timeout: 10_000 },
+      )
+      .toBe(true);
+    console.log('[US3-detalle] GET /solicitudes/{id} -> 200');
     await expect(sheet.getByRole('heading', { name: new RegExp(reference) })).toBeVisible();
     // No emergency and no type behind a citizen request: those two rows are
     // left out instead of saying what is missing.
@@ -387,7 +459,7 @@ test('EP-04.F2.US3 detalle: el conductor ve el detalle de la solicitud notificad
 test('EP-04.F2.US3 rechazo: un conductor rechaza y la solicitud sigue para otro', async ({
   browser,
 }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(180_000);
 
   const driver1Context = await newIsolatedContext(browser);
   const driver2Context = await newIsolatedContext(browser);
@@ -425,6 +497,9 @@ test('EP-04.F2.US3 rechazo: un conductor rechaza y la solicitud sigue para otro'
     expect(unit1Id).toBeTruthy();
     expect(unit2Id).toBeTruthy();
     expect(unit1Id).not.toBe(unit2Id);
+    // Nothing an earlier scenario left open may take the card of this request.
+    await clearLeftoverRequests(driver1Page);
+    await clearLeftoverRequests(driver2Page);
 
     // 2. Citizen reports a real emergency and asks for an ambulance.
     await citizenWithEmergency(citizenPage);

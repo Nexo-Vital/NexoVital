@@ -225,6 +225,30 @@ async function requestAmbulance(page: Page): Promise<Response> {
 }
 
 /**
+ * Withdraws the request this citizen just raised, through the same
+ * `POST /solicitudes/{id}/cancelar` the "Cancelar solicitud" button calls. Best
+ * effort: a body that is not a created request is left alone.
+ */
+async function cancelOwnRequest(page: Page, createdBody: string): Promise<void> {
+  let requestId: string | undefined;
+  try {
+    requestId = (JSON.parse(createdBody) as { id?: string }).id;
+  } catch {
+    return;
+  }
+  const token = await page.evaluate((key) => sessionStorage.getItem(key), TOKEN_KEY);
+  if (!requestId || !token) {
+    return;
+  }
+  const cancelled = await page.request
+    .post(`http://localhost:5173/api/v1/solicitudes/${requestId}/cancelar`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    .catch(() => null);
+  console.log(`[A] cleanup: POST /cancelar -> ${cancelled?.status() ?? 'sin respuesta'}`);
+}
+
+/**
  * The citizen legend must count the REAL fleet, not a front-side mock. The
  * rendered "Disponible", "Ocupada", "Fuera de servicio" and "Sin señal" rows are
  * compared against the backend's own `GET /api/v1/flota/ambulancias` response, read with the
@@ -333,10 +357,17 @@ test('Scenario A: a clean citizen login creates the request with 201 and no red 
   console.log(`[A] POST /api/v1/solicitudes -> ${response.status()} ${body}`);
   console.log(`[A] observed calls:\n${await describeCalls(calls)}`);
 
-  expect(response.status()).toBe(201);
-  // The request really opened: the search rail replaced the action rail.
-  await expect(page.getByText('Buscando ambulancia')).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText(DENIED_MESSAGE)).toHaveCount(0);
+  try {
+    expect(response.status()).toBe(201);
+    // The request really opened: the search rail replaced the action rail.
+    await expect(page.getByText('Buscando ambulancia')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(DENIED_MESSAGE)).toHaveCount(0);
+  } finally {
+    // Leave no open request behind. Nobody answers this one, and a request stays
+    // PENDIENTE for its whole accept window: the next driver that connects gets
+    // it back (EP-04.F2.US1) and it would take the card of a later scenario.
+    await cancelOwnRequest(page, body);
+  }
 });
 
 test('Scenario B: a foreign persisted token is never sent; the app states the session changed', async ({

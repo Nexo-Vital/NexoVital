@@ -1,5 +1,6 @@
 import { Check } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from '@/components/ui/toast';
 import { CitizenSummaryChips } from '@/features/ciudadano/CitizenSummaryChips';
 import { formatCoordinates } from '@/features/ciudadano/citizen-request';
 import {
@@ -8,6 +9,7 @@ import {
   formatDistance,
 } from '@/features/ciudadano/citizen-view';
 import { DriverRail, REQUEST_CARD_ID } from '@/features/conductor/DriverRail';
+import { fetchSolicitudDetalle } from '@/features/conductor/detail-api';
 import { type DriverAlert, useDriverAlertsStore } from '@/features/conductor/driver-alerts-store';
 import { resolveDriverAmbulanceId } from '@/features/conductor/driver-session';
 import { DRIVER_STATUS_META, type DriverStatus } from '@/features/conductor/driver-status';
@@ -24,6 +26,7 @@ import {
   useDriverConnection,
 } from '@/features/conductor/use-driver-connection';
 import {
+  TAKEN_BY_OTHER_MESSAGE,
   UNIT_UNRESOLVED_REASON,
   useSolicitudInbox,
 } from '@/features/conductor/use-solicitud-inbox';
@@ -57,7 +60,7 @@ import {
   MOCK_EMERGENCIAS,
   MOCK_SOLICITUDES,
 } from '@/mocks/fixtures';
-import { isDemoMode } from '@/services/apiClient';
+import { ApiError, isDemoMode } from '@/services/apiClient';
 import {
   DESTINATIONS,
   getRealtimePort,
@@ -77,6 +80,30 @@ import type {
 const NO_NOTIFIED_UNITS: readonly string[] = [];
 
 /** Shown on a pending row while this unit is attending another request. */
+/** Said when the server no longer offers the opened request to this unit. */
+const DETAIL_GONE_MESSAGE = 'Esta solicitud ya no está disponible.';
+
+/** Said in the detail when the server's copy of the request could not be read. */
+const DETAIL_STALE_NOTICE =
+  'No se pudo actualizar el detalle. Se muestra lo que llegó con el aviso.';
+
+/**
+ * State a request read from the server takes in the registry (EP-04.F2.US3),
+ * the same one the realtime notices give it: a request another unit or this one
+ * holds is `TAKEN` (the winner says whose), a confirmed one stays `CONFIRMED`,
+ * and one that is closed, expired, cancelled or rejected is not listed at all
+ * (`null`).
+ */
+function registryStateOf(detalle: SolicitudAmbulancia): SolicitudAmbulancia['estado'] | null {
+  if (detalle.estado === 'PENDING' || detalle.estado === 'CONFIRMED') {
+    return detalle.estado;
+  }
+  if (detalle.estado === 'ASSIGNED' && typeof detalle.ambulanciaAsignadaId === 'string') {
+    return 'TAKEN';
+  }
+  return null;
+}
+
 const UNIT_BUSY_REASON =
   'Tu ambulancia está atendiendo un servicio: no puede tomar otra solicitud.';
 
@@ -582,6 +609,80 @@ export default function DriverConsolePage({
       setSelectedSolicitud(null);
     }
   }, [selectedSolicitud, visibleSolicitudes]);
+  /*
+    The detail the driver opens is the SERVER's (EP-04.F2.US3). What the row
+    holds came from the realtime notice, which is not replayed and can be older
+    than the request's real state. Opening a row reads
+    `GET /solicitudes/{id}` and applies the answer to the same registry row the
+    notice feeds, so the detail, the list and the map keep one source:
+
+    - still open, or held by this unit: the row takes the server's facts (pickup
+      point, instants, notified units, state). The type label the notice gave is
+      kept, because the REST row carries none;
+    - assigned to another unit: the row is marked as taken, and the registry
+      stops listing it, exactly as the "taken" notice does;
+    - closed, expired or cancelled, or the server says it is not this unit's
+      (403) or does not exist (404): the row leaves the registry and the driver
+      is told it is no longer available.
+
+    A row a notice already removed is left alone: that notice is newer than this
+    read. Any other failure keeps what the notice brought and says so in the
+    detail. Only the server-managed connection reads it, like the pending
+    requests: demo mode and injected units have no such endpoint.
+  */
+  const selectedId = selectedSolicitud?.id ?? null;
+  const [detailNotice, setDetailNotice] = useState<string | null>(null);
+  useEffect(() => {
+    setDetailNotice(null);
+    if (selectedId === null || !connection.serverManaged) {
+      return;
+    }
+    let active = true;
+    const dropRow = () => {
+      useSolicitudesStore.getState().remove(selectedId);
+      toast(DETAIL_GONE_MESSAGE, 'error');
+    };
+    fetchSolicitudDetalle(selectedId)
+      .then((detalle) => {
+        if (!active || detalle === null) {
+          return;
+        }
+        const store = useSolicitudesStore.getState();
+        const held = store.items.find((item) => item.id === selectedId);
+        if (!held) {
+          return;
+        }
+        const estado = registryStateOf(detalle);
+        if (estado === null) {
+          dropRow();
+          return;
+        }
+        const fresh = { ...detalle, estado, tipo: held.tipo || detalle.tipo };
+        store.upsert(fresh);
+        if (estado === 'TAKEN' && unitResolved && detalle.ambulanciaAsignadaId !== unitId) {
+          // Another unit holds it: the registry stops listing the row, and the
+          // driver is told why the detail closed.
+          toast(TAKEN_BY_OTHER_MESSAGE, 'error');
+          return;
+        }
+        setSelectedSolicitud((current) =>
+          current !== null && current.id === selectedId ? { ...current, ...fresh } : current,
+        );
+      })
+      .catch((error: unknown) => {
+        if (!active) {
+          return;
+        }
+        if (error instanceof ApiError && (error.status === 403 || error.status === 404)) {
+          dropRow();
+          return;
+        }
+        setDetailNotice(DETAIL_STALE_NOTICE);
+      });
+    return () => {
+      active = false;
+    };
+  }, [selectedId, connection.serverManaged, unitId, unitResolved]);
   const selectedCanRespond =
     selectedSolicitud !== null && !unitBusy && canRespondToSolicitud(selectedSolicitud, unitId);
   const selectedBlockReason =
@@ -1053,6 +1154,7 @@ export default function DriverConsolePage({
         selectedCanRespond={selectedCanRespond}
         selectedBlockReason={selectedBlockReason}
         selectedOutcome={selectedOutcome}
+        selectedNotice={detailNotice}
         selectedDistanceKm={selectedSolicitud ? mapSceneDistance : null}
         onSelectSolicitud={handleSelectSolicitud}
         onAcceptSelected={handleAcceptSelected}

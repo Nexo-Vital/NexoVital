@@ -722,6 +722,7 @@ function SolicitudDetail({
   canRespond,
   blockReason,
   outcome,
+  notice,
   onAccept,
   onReject,
   onView,
@@ -735,6 +736,8 @@ function SolicitudDetail({
   blockReason: string | null;
   /** Server's answer to this row's last response, or null. */
   outcome: SolicitudResponseOutcome | null;
+  /** Said when the server's detail could not be read; null otherwise. */
+  notice: string | null;
   onAccept: () => void;
   onReject: () => void;
   onView: () => void;
@@ -789,6 +792,12 @@ function SolicitudDetail({
           icon={Radio}
         />
       </div>
+
+      {notice && (
+        <p role="status" className="text-nv-navy-400 text-xs leading-[18px]">
+          {notice}
+        </p>
+      )}
 
       {!canRespond && blockReason && (
         <p className="rounded-nv-md bg-nv-mint p-3 text-nv-navy-400 text-xs leading-[18px]">
@@ -873,6 +882,7 @@ function SolicitudesPanel({
   selectedCanRespond,
   selectedBlockReason,
   selectedOutcome,
+  selectedNotice,
   selectedDistanceKm,
   onSelectSolicitud,
   onAcceptSelected,
@@ -899,6 +909,8 @@ function SolicitudesPanel({
     selectedBlockReason: string | null;
     /** Server's answer to the selected row's last response, or null. */
     selectedOutcome: SolicitudResponseOutcome | null;
+    /** Said when the server's detail of the selected row could not be read. */
+    selectedNotice: string | null;
     selectedDistanceKm: number | null;
     onSelectSolicitud: (solicitud: SolicitudAmbulancia) => void;
     onAcceptSelected: () => void;
@@ -1002,6 +1014,7 @@ function SolicitudesPanel({
           canRespond={selectedCanRespond}
           blockReason={selectedBlockReason}
           outcome={selectedOutcome}
+          notice={selectedNotice}
           onAccept={onAcceptSelected}
           onReject={onRejectSelected}
           onView={onViewSelected}
@@ -1245,6 +1258,8 @@ interface DriverRailProps extends MissionPanelProps {
   selectedBlockReason: string | null;
   /** Server's answer to the selected row's last response, or null. */
   selectedOutcome: SolicitudResponseOutcome | null;
+  /** Said when the server's detail of the selected row could not be read; null otherwise. */
+  selectedNotice: string | null;
   /** Distance to the selected row's scene, or null without a resolvable scene. */
   selectedDistanceKm: number | null;
   /** Selects a row: expands its detail and centres the map on it. */
@@ -1291,6 +1306,7 @@ export function DriverRail({
   selectedCanRespond,
   selectedBlockReason,
   selectedOutcome,
+  selectedNotice,
   selectedDistanceKm,
   onSelectSolicitud,
   onAcceptSelected,
@@ -1342,6 +1358,7 @@ export function DriverRail({
         selectedCanRespond={selectedCanRespond}
         selectedBlockReason={selectedBlockReason}
         selectedOutcome={selectedOutcome}
+        selectedNotice={selectedNotice}
         selectedDistanceKm={selectedDistanceKm}
         onSelectSolicitud={onSelectSolicitud}
         onAcceptSelected={onAcceptSelected}

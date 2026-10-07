@@ -5,43 +5,37 @@ import { expect, test } from '@playwright/test';
  * End-to-end proof that an aid center's level is the REAL backend state and
  * reacts live, without a page reload.
  *
- * It drives the real scarcity cycle of EP-03.F1.US5 against the running stack
- * (Vite on :5173 proxying /api and /ws to the backend on :8080):
+ * The level of a center is its WORST inventory traffic light and nothing else
+ * (`centerLevel`): a shortage alert does not raise it. So the scenario moves a
+ * real traffic light against the running stack (Vite on :5173 proxying /api and
+ * /ws to the backend on :8080):
  *
- *   1. an over-stock dispatch answers 409 STOCK_INSUFICIENTE and persists an
- *      active shortage alert (the backend alert, not a front mock);
- *   2. the citizen screen (map pin AND rail chip) shows the center as
- *      "En alerta" while its inventory is still GREEN — so the level really
- *      folds the alert source in, and it changed WITHOUT reloading;
- *   3. donating exactly the shortfall the backend reports clears the alert and
- *      the center returns to "Estable", again without a reload.
+ *   1. the citizen screen (map pin AND rail chip) shows the center with the
+ *      level its inventory has in the backend;
+ *   2. a platform administrator withdraws stock (only administrators may; the
+ *      citizen is refused with 403) until one supply is at half of what the
+ *      center needs, which is AMARILLO, and the center turns to "En alerta"
+ *      WITHOUT reloading;
+ *   3. a donation of the same amount brings the center back to where it was,
+ *      again without a reload.
  *
  * Setup and cleanup go through the REST context; every ASSERTION reads the UI.
- * The cleanup donates exactly the backend's own reported faltante, so the run
- * leaves no active alert behind (same discipline as
- * Back_NexoVital/scripts/prueba-funcional-alerta-escasez.ps1).
+ * The cleanup gives back exactly what was withdrawn, so the run leaves the
+ * inventory as it found it.
  */
 
 const API = 'http://localhost:5173/api/v1';
 const CITIZEN = { email: 'ciudadano@nexovital.co', password: 'ciudadano123' };
+/** Seeded platform administrator: the only role that may withdraw from any center. */
+const ADMIN = { email: 'admin@nexovital.co', password: 'admin123' };
 
-/** Extra units over the available stock to force the 409. */
-const EXCESO = 5;
-
-interface AlertaDto {
-  itemId: string;
-  nombre: string;
-  cantidadSolicitada: number;
-  faltante: number;
-  creadaEn: string;
-}
+type Semaforo = 'ROJO' | 'AMARILLO' | 'VERDE' | 'COMPLETO';
+type Level = 'critical' | 'alert' | 'stable' | 'complete';
 
 interface CentroDto {
   id: string;
   nombre: string;
   tipo: string;
-  alerta?: AlertaDto | null;
-  alertasActivas?: number;
 }
 
 interface ItemDto {
@@ -50,12 +44,58 @@ interface ItemDto {
   nombre: string;
   disponible: number;
   requerido: number;
-  semaforo: 'ROJO' | 'AMARILLO' | 'VERDE';
+  semaforo: Semaforo;
+}
+
+/** The chip text of each level (`CITIZEN_LEVEL_META`). */
+const LEVEL_LABEL: Record<Level, string> = {
+  critical: 'Crítico',
+  alert: 'En alerta',
+  stable: 'Estable',
+  complete: 'Completo',
+};
+
+/**
+ * The level the screen must show, computed from the backend: the worst traffic
+ * light of the center's inventory, with the precedence CRITICAL > ALERT >
+ * STABLE > COMPLETE. `null` for a center with no declared supply.
+ */
+function expectedLevel(items: ItemDto[]): Level | null {
+  if (items.length === 0) {
+    return null;
+  }
+  if (items.some((item) => item.semaforo === 'ROJO')) {
+    return 'critical';
+  }
+  if (items.some((item) => item.semaforo === 'AMARILLO')) {
+    return 'alert';
+  }
+  if (items.some((item) => item.semaforo === 'VERDE')) {
+    return 'stable';
+  }
+  return 'complete';
+}
+
+/**
+ * How many units to withdraw so the supply lands at HALF of what the center
+ * needs, which is AMARILLO by the backend rule (35% <= available < 70%). Zero
+ * when the supply cannot be used: no requirement, too small to split, more
+ * stock than required (a donation could not bring it back), or already there.
+ */
+function withdrawalToAmber(item: ItemDto): number {
+  if (item.requerido < 4 || item.disponible > item.requerido) {
+    return 0;
+  }
+  const half = Math.floor(item.requerido / 2);
+  return Math.max(0, item.disponible - half);
 }
 
 /** Signs in through the API and returns the bearer token. */
-async function apiLogin(request: APIRequestContext): Promise<string> {
-  const response = await request.post(`${API}/sesiones`, { data: CITIZEN });
+async function apiLogin(
+  request: APIRequestContext,
+  account: { email: string; password: string },
+): Promise<string> {
+  const response = await request.post(`${API}/sesiones`, { data: account });
   expect(response.ok()).toBeTruthy();
   const session = (await response.json()) as { token: string };
   return session.token;
@@ -114,43 +154,57 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-test('el nivel del centro sube a En alerta y vuelve a Estable sin recargar', async ({
+test('el nivel del centro sube a En alerta y vuelve a su estado sin recargar', async ({
   page,
   request,
 }) => {
-  const token = await apiLogin(request);
+  test.setTimeout(90_000);
+
+  const token = await apiLogin(request, CITIZEN);
+  const adminToken = await apiLogin(request, ADMIN);
   const headers = auth(token);
 
-  // Pick an ESTABLE target: a CENTRO_ACOPIO with no active alert whose every
-  // inventory item is GREEN, so the only thing that can raise its level is the
-  // alert source under test (a donation of one unit never worsens a light).
+  // Pick the target: a CENTRO_ACOPIO that is NOT in alert or critical now (so
+  // "En alerta" is a real change) with a supply that can be taken to half.
   const centros = await getCentros(request, token);
   let target: CentroDto | undefined;
   let item: ItemDto | undefined;
+  let initialLevel: Level | undefined;
   for (const centro of centros) {
-    if (centro.tipo !== 'CENTRO_ACOPIO' || centro.alerta || (centro.alertasActivas ?? 0) > 0) {
+    if (centro.tipo !== 'CENTRO_ACOPIO') {
       continue;
     }
     const inventario = await getInventario(request, token, centro.id);
-    const allGreen = inventario.every((entry) => entry.semaforo === 'VERDE');
-    const withStock = inventario.find((entry) => entry.disponible > 0);
-    if (allGreen && withStock) {
+    const level = expectedLevel(inventario);
+    if (level !== 'stable' && level !== 'complete') {
+      continue;
+    }
+    const candidate = inventario.find((entry) => withdrawalToAmber(entry) > 0);
+    if (candidate) {
       target = centro;
-      item = withStock;
+      item = candidate;
+      initialLevel = level;
       break;
     }
   }
-  if (!target || !item) {
-    throw new Error('no all-GREEN CENTRO_ACOPIO with stock is available to run this scenario');
+  if (!target || !item || !initialLevel) {
+    throw new Error(
+      'no CENTRO_ACOPIO in Estable/Completo with a supply to withdraw is available to run this ' +
+        'scenario (restart the backend to get the seeded inventory back)',
+    );
   }
 
   const targetId = target.id;
   const targetName = target.nombre;
   const shortName = targetName.replace(/^Acopio\s+/, '');
   const itemId = item.id;
-  const disponible = item.disponible;
+  const original = item.disponible;
+  const cantidad = withdrawalToAmber(item);
 
-  console.log(`[nivel] target=${targetName} item=${item.nombre} disponible=${disponible}`);
+  console.log(
+    `[nivel] target=${targetName} nivel=${initialLevel} item=${item.nombre} ` +
+      `disponible=${original} requerido=${item.requerido} retiro=${cantidad}`,
+  );
 
   try {
     await loginAsCitizen(page);
@@ -158,65 +212,60 @@ test('el nivel del centro sube a En alerta y vuelve a Estable sin recargar', asy
     const row = railRowOf(page, targetName);
     const marker = markerOf(page, shortName);
 
-    // The real snapshot is in and the center starts ESTABLE in map AND panel.
-    await expect(row).toContainText('Estable', { timeout: 20_000 });
-    await expect(marker).toHaveAttribute('data-nv-level', 'stable');
+    // The real snapshot is in: map AND panel show the backend's level.
+    await expect(row).toContainText(LEVEL_LABEL[initialLevel], { timeout: 20_000 });
+    await expect(marker).toHaveAttribute('data-nv-level', initialLevel);
 
-    // Scarcity: ask for more than exists -> 409 and a persisted alert.
-    const pedido = disponible + EXCESO;
+    // A citizen may not withdraw stock: the server refuses it.
+    const refused = await request.post(`${API}/centros-acopio/${targetId}/inventario/despacho`, {
+      headers,
+      data: { itemId, cantidad },
+    });
+    expect(refused.status()).toBe(403);
+
+    // The administrator withdraws stock and the supply drops to AMARILLO.
     const despacho = await request.post(`${API}/centros-acopio/${targetId}/inventario/despacho`, {
-      headers,
-      data: { itemId, cantidad: pedido },
+      headers: auth(adminToken),
+      data: { itemId, cantidad },
     });
-    expect(despacho.status()).toBe(409);
-    expect(await despacho.text()).toContain('STOCK_INSUFICIENTE');
-    console.log(`[nivel] despacho pedido=${pedido} -> ${despacho.status()} STOCK_INSUFICIENTE`);
+    expect(despacho.status()).toBe(200);
+    expect(((await despacho.json()) as ItemDto).semaforo).toBe('AMARILLO');
+    console.log(`[nivel] despacho cantidad=${cantidad} -> 200 AMARILLO`);
 
-    // Trigger a real inventory event so the live alert projection refreshes: a
-    // one-unit donation. It cannot cover the demand yet, so the alert stays active.
-    const partial = await request.post(`${API}/centros-acopio/${targetId}/inventario/donacion`, {
-      headers,
-      data: { itemId, cantidad: 1 },
-    });
-    expect(partial.ok()).toBeTruthy();
-
-    // The center changed WITHOUT a reload: the level now folds the alert in.
-    await expect(row).toContainText('En alerta', { timeout: 20_000 });
+    // The center changed WITHOUT a reload, in the rail chip and in the map pin.
+    await expect(row).toContainText(LEVEL_LABEL.alert, { timeout: 20_000 });
     await expect(marker).toHaveAttribute('data-nv-level', 'alert');
     console.log('[nivel] observe En alerta on the map pin and the rail chip');
 
-    // Cover the shortfall the BACKEND reports, using its own number.
-    const [refreshed] = (await getCentros(request, token)).filter(
-      (centro) => centro.id === targetId,
-    );
-    const faltante = refreshed?.alerta?.faltante;
-    expect(faltante).toBeGreaterThan(0);
+    // A donation of the same amount brings the center back to where it was.
     const cobertura = await request.post(`${API}/centros-acopio/${targetId}/inventario/donacion`, {
       headers,
-      data: { itemId: refreshed?.alerta?.itemId ?? itemId, cantidad: faltante },
+      data: { itemId, cantidad },
     });
     expect(cobertura.ok()).toBeTruthy();
-    console.log(`[nivel] donated the reported faltante=${faltante}`);
+    console.log(`[nivel] donated back cantidad=${cantidad}`);
 
-    // Back to ESTABLE, again without a reload.
-    await expect(row).toContainText('Estable', { timeout: 20_000 });
-    await expect(marker).toHaveAttribute('data-nv-level', 'stable');
+    await expect(row).toContainText(LEVEL_LABEL[initialLevel], { timeout: 20_000 });
+    await expect(marker).toHaveAttribute('data-nv-level', initialLevel);
 
-    // And the backend agrees there is no active alert left.
-    const [final] = (await getCentros(request, token)).filter((centro) => centro.id === targetId);
-    expect(final?.alerta ?? null).toBeNull();
-    expect(final?.alertasActivas ?? 0).toBe(0);
-  } finally {
-    // Safety net: if an assertion failed mid-flight, still leave no active alert.
-    const [leftover] = (await getCentros(request, token)).filter(
-      (centro) => centro.id === targetId,
+    // And the backend agrees: the supply has what it had.
+    const final = (await getInventario(request, token, targetId)).find(
+      (entry) => entry.id === itemId,
     );
-    if (leftover?.alerta && leftover.alerta.faltante > 0) {
+    expect(final?.disponible).toBe(original);
+  } finally {
+    // Safety net: give back whatever is still missing if an assertion failed
+    // mid-flight, so the next scenario finds the inventory as it was.
+    const now = (await getInventario(request, token, targetId)).find(
+      (entry) => entry.id === itemId,
+    );
+    const missing = now ? original - now.disponible : 0;
+    if (missing > 0) {
       await request.post(`${API}/centros-acopio/${targetId}/inventario/donacion`, {
         headers,
-        data: { itemId: leftover.alerta.itemId, cantidad: leftover.alerta.faltante },
+        data: { itemId, cantidad: missing },
       });
-      console.log(`[nivel] cleanup donated faltante=${leftover.alerta.faltante}`);
+      console.log(`[nivel] safety cleanup donated ${missing}`);
     }
   }
 });

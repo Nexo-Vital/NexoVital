@@ -101,6 +101,8 @@ interface Backend {
   historial: unknown[];
   /** Answer of `desconectar`; null means "apply it". */
   desconectarError: { status: number; body: unknown } | null;
+  /** Answer of `GET /solicitudes/{id}`; null means "nothing readable" (an empty list). */
+  detalle: { status: number; body: unknown } | null;
 }
 
 describe('DriverConsolePage connection off demo mode', () => {
@@ -121,10 +123,19 @@ describe('DriverConsolePage connection off demo mode', () => {
   beforeEach(() => {
     vi.stubEnv('VITE_DEMO_MODE', '0');
     localStorage.clear();
-    backend = { unit: wireUnit(), pendientes: [], historial: [], desconectarError: null };
+    backend = {
+      unit: wireUnit(),
+      pendientes: [],
+      historial: [],
+      desconectarError: null,
+      detalle: null,
+    };
     fetchMock.mockReset();
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (/\/solicitudes\/[0-9a-f-]{36}$/.test(url) && backend.detalle) {
+        return Promise.resolve(mockResponse(backend.detalle.status, backend.detalle.body));
+      }
       if (url.endsWith('/mia/conectar')) {
         backend.unit = { ...backend.unit, conectada: true, version: backend.unit.version + 1 };
         return Promise.resolve(mockResponse(200, backend.unit));
@@ -517,6 +528,110 @@ describe('DriverConsolePage connection off demo mode', () => {
     expect(within(detail).getByText('ABC202')).toBeInTheDocument();
     // Never the internal id of the unit.
     expect(within(detail).queryByText(new RegExp(REAL_UNIT))).toBeNull();
+  });
+
+  describe('detail of a notified request (EP-04.F2.US3)', () => {
+    /** Renders the console with one pending request and opens its registry row. */
+    async function openRow(): Promise<void> {
+      const user = userEvent.setup();
+      backend.pendientes = [wirePending()];
+      render(<DriverConsolePage port={new FakeRealtimePort()} />);
+      await screen.findByRole('region', { name: 'Solicitud de ambulancia' });
+      const list = screen.getByRole('list', { name: 'Lista de solicitudes' });
+      await user.click(within(list).getByRole('button'));
+    }
+
+    /** Opens the row of a request the server still offers and returns its detail. */
+    async function openDetail(): Promise<HTMLElement> {
+      await openRow();
+      return screen.findByTestId('solicitud-detail');
+    }
+
+    function smallToasts(): string[] {
+      return useToastStore
+        .getState()
+        .toasts.filter((item) => item.tone !== 'notice')
+        .map((item) => item.message);
+    }
+
+    it('opening a row reads the request from the server and shows its facts', async () => {
+      // The server holds a pickup point and a notified list the notice did not.
+      backend.detalle = {
+        status: 200,
+        body: wirePending({
+          ubicacion: { lat: 4.76, lng: -74.08 },
+          ambulanciasNotificadas: [REAL_UNIT],
+        }),
+      };
+
+      const detail = await openDetail();
+
+      await waitFor(() => expect(callsTo(`/solicitudes/${REQUEST}`)).toHaveLength(1));
+      const [, options] = callsTo(`/solicitudes/${REQUEST}`)[0];
+      expect(options.method ?? 'GET').toBe('GET');
+      expect(await within(detail).findByText('4.7600, -74.0800')).toBeInTheDocument();
+      expect(within(detail).getByText('Distancia')).toBeInTheDocument();
+      // Only this unit was notified, by its plate.
+      expect(within(detail).getByText('ABC202')).toBeInTheDocument();
+      // Still open and notified to this unit: it can be answered from the detail.
+      expect(within(detail).getByRole('button', { name: 'Aceptar' })).toBeEnabled();
+      expect(within(detail).queryByRole('status')).toBeNull();
+    });
+
+    it('a request another unit already holds leaves the list, with the reason', async () => {
+      backend.detalle = {
+        status: 200,
+        body: wirePending({ estado: 'ASIGNADA', ambulanciaAsignadaId: OTHER_UNIT }),
+      };
+
+      await openRow();
+
+      await waitFor(() => expect(screen.queryByTestId('solicitud-detail')).toBeNull());
+      expect(screen.queryByRole('list', { name: 'Lista de solicitudes' })).toBeNull();
+      expect(smallToasts()).toContain('La solicitud ya fue aceptada por otra ambulancia.');
+    });
+
+    it('an expired request leaves the list and the driver is told', async () => {
+      backend.detalle = { status: 200, body: wirePending({ estado: 'TIMEOUT' }) };
+
+      await openRow();
+
+      await waitFor(() => expect(screen.queryByTestId('solicitud-detail')).toBeNull());
+      expect(smallToasts()).toContain('Esta solicitud ya no está disponible.');
+    });
+
+    it('403: a request that is not for this unit leaves the list', async () => {
+      backend.detalle = {
+        status: 403,
+        body: {
+          codigo: 'SOLICITUD_NO_NOTIFICADA',
+          mensaje: 'Esta solicitud no fue notificada a tu ambulancia.',
+        },
+      };
+
+      await openRow();
+
+      await waitFor(() => expect(screen.queryByTestId('solicitud-detail')).toBeNull());
+      expect(smallToasts()).toContain('Esta solicitud ya no está disponible.');
+    });
+
+    it('a failed read keeps what the notice brought and says so', async () => {
+      backend.detalle = {
+        status: 500,
+        body: { codigo: 'ERROR_CONSULTA_SOLICITUD', mensaje: 'No fue posible.' },
+      };
+
+      const detail = await openDetail();
+
+      expect(
+        await within(detail).findByText(
+          'No se pudo actualizar el detalle. Se muestra lo que llegó con el aviso.',
+        ),
+      ).toBeInTheDocument();
+      // The pickup point of the notice is still there, and the row is not lost.
+      expect(within(detail).getByText('4.7500, -74.0900')).toBeInTheDocument();
+      expect(screen.getByRole('list', { name: 'Lista de solicitudes' })).toBeInTheDocument();
+    });
   });
 
   it('reopens the mission the unit holds on the server and blocks "Desconectarse"', async () => {
