@@ -4,11 +4,13 @@ import co.edu.escuelaing.nexovital.flota.domain.exception.AmbulanciaNoDisponible
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudAjenaException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoAsignableException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoEncontradaException;
+import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoNotificadaException;
 import co.edu.escuelaing.nexovital.flota.domain.model.ResultadoAceptarSolicitud;
 import co.edu.escuelaing.nexovital.flota.domain.model.SolicitudAmbulancia;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.AceptarSolicitudUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.CancelarSolicitudUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.ConfirmarSolicitudUseCase;
+import co.edu.escuelaing.nexovital.flota.domain.port.in.ConsultarDetalleSolicitudUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.DeclararLlegadaUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.FinalizarSolicitudUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.RechazarSolicitudUseCase;
@@ -26,6 +28,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -63,6 +66,8 @@ public class SolicitudController {
             "La solicitud ya no admite esa transición.";
     private static final String MENSAJE_SOLICITUD_AJENA =
             "Solo el solicitante puede cancelar su propia solicitud.";
+    private static final String MENSAJE_SOLICITUD_NO_NOTIFICADA =
+            "Esta solicitud no fue notificada a tu ambulancia.";
     private static final String MENSAJE_CAS_PERDIDO = "Solicitud ya asignada a otra ambulancia.";
     private static final String MENSAJE_AMBULANCIA_NO_DISPONIBLE =
             "No hay ambulancias disponibles para atender la solicitud.";
@@ -73,6 +78,7 @@ public class SolicitudController {
     private static final String MENSAJE_ERROR_FINALIZACION = "No fue posible finalizar el servicio.";
     private static final String MENSAJE_ERROR_CONFIRMACION = "No fue posible confirmar la solicitud.";
     private static final String MENSAJE_ERROR_CANCELACION = "No fue posible cancelar la solicitud.";
+    private static final String MENSAJE_ERROR_DETALLE = "No fue posible consultar la solicitud.";
 
     private final SolicitarAmbulanciaUseCase solicitarAmbulanciaUseCase;
     private final AceptarSolicitudUseCase aceptarSolicitudUseCase;
@@ -81,6 +87,7 @@ public class SolicitudController {
     private final FinalizarSolicitudUseCase finalizarSolicitudUseCase;
     private final ConfirmarSolicitudUseCase confirmarSolicitudUseCase;
     private final CancelarSolicitudUseCase cancelarSolicitudUseCase;
+    private final ConsultarDetalleSolicitudUseCase consultarDetalleSolicitudUseCase;
 
     public SolicitudController(SolicitarAmbulanciaUseCase solicitarAmbulanciaUseCase,
                                AceptarSolicitudUseCase aceptarSolicitudUseCase,
@@ -88,7 +95,8 @@ public class SolicitudController {
                                DeclararLlegadaUseCase declararLlegadaUseCase,
                                FinalizarSolicitudUseCase finalizarSolicitudUseCase,
                                ConfirmarSolicitudUseCase confirmarSolicitudUseCase,
-                               CancelarSolicitudUseCase cancelarSolicitudUseCase) {
+                               CancelarSolicitudUseCase cancelarSolicitudUseCase,
+                               ConsultarDetalleSolicitudUseCase consultarDetalleSolicitudUseCase) {
         this.solicitarAmbulanciaUseCase = solicitarAmbulanciaUseCase;
         this.aceptarSolicitudUseCase = aceptarSolicitudUseCase;
         this.rechazarSolicitudUseCase = rechazarSolicitudUseCase;
@@ -96,6 +104,7 @@ public class SolicitudController {
         this.finalizarSolicitudUseCase = finalizarSolicitudUseCase;
         this.confirmarSolicitudUseCase = confirmarSolicitudUseCase;
         this.cancelarSolicitudUseCase = cancelarSolicitudUseCase;
+        this.consultarDetalleSolicitudUseCase = consultarDetalleSolicitudUseCase;
     }
 
     /**
@@ -136,6 +145,38 @@ public class SolicitudController {
         } catch (RuntimeException e) {
             return ResponseEntity.internalServerError()
                     .body(ErrorResponse.of("ERROR_REGISTRO_SOLICITUD", MENSAJE_ERROR_SOLICITUD));
+        }
+    }
+
+    /**
+     * Detail of a request for the driver who was notified of it (EP-04.F2.US3):
+     * the pickup point, when it was raised, until when it can be answered, the
+     * notified units and its current state. The unit is resolved from the
+     * authenticated driver, so no unit id is sent. The state does not filter: a
+     * request that was taken, expired or cancelled stays readable by the units
+     * it reached.
+     *
+     * @return 200 with the request; 404 {@code SOLICITUD_NO_ENCONTRADA}; 403
+     *         {@code SOLICITUD_NO_NOTIFICADA} when the request was neither
+     *         notified nor assigned to the caller's unit, or the caller drives
+     *         no unit; 500 {@code ERROR_CONSULTA_SOLICITUD}
+     */
+    @GetMapping("/{id}")
+    @Operation(summary = "Detalle de una solicitud notificada a la ambulancia del conductor")
+    public ResponseEntity<Object> detalle(@PathVariable UUID id) {
+        try {
+            SolicitudAmbulancia solicitud =
+                    consultarDetalleSolicitudUseCase.consultar(id, usuarioAutenticadoId());
+            return ResponseEntity.ok(SolicitudAmbulanciaDto.fromDomain(solicitud));
+        } catch (SolicitudNoEncontradaException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(ErrorResponse.of("SOLICITUD_NO_ENCONTRADA", MENSAJE_SOLICITUD_NO_ENCONTRADA));
+        } catch (SolicitudNoNotificadaException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(ErrorResponse.of("SOLICITUD_NO_NOTIFICADA", MENSAJE_SOLICITUD_NO_NOTIFICADA));
+        } catch (RuntimeException e) {
+            return ResponseEntity.internalServerError()
+                    .body(ErrorResponse.of("ERROR_CONSULTA_SOLICITUD", MENSAJE_ERROR_DETALLE));
         }
     }
 
