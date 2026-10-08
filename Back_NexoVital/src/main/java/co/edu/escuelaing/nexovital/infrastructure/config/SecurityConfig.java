@@ -106,7 +106,11 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                .csrf(csrf -> csrf.disable())
+                // CSRF is disabled on purpose: the API is stateless and the session
+                // travels in the Authorization header (Bearer JWT), never in a cookie.
+                // With no session cookie the browser attaches no credentials on its
+                // own, so a CSRF attack has nothing to ride on. Reviewed as safe.
+                .csrf(csrf -> csrf.disable()) // NOSONAR
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> {
