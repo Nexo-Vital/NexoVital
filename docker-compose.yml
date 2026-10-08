@@ -1,0 +1,69 @@
+# ==========================================================================
+# NexoVital completo en contenedores, para tu maquina:
+#
+# Uso (desde la raiz del repo, con Docker Desktop abierto):
+#   docker compose up -d --build     construye las imagenes y levanta todo
+#   docker compose ps                estado de los tres contenedores
+#   docker compose logs -f backend   log del back en vivo (Ctrl+C para salir)
+#   docker compose down              apaga todo y CONSERVA los datos
+#   docker compose down -v           apaga todo y BORRA los datos
+#
+# Usa los mismos puertos que el arranque manual (5173 y 8080): apaga antes el
+# back y el front que tenga corriendo con mvnw / npm run dev.
+# ==========================================================================
+name: nexovital
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: nexovital
+      POSTGRES_USER: nexovital
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD. Copia .env.example como .env y definela}
+    volumes:
+      - nexovital-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexovital -d nexovital"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  backend:
+    build:
+      context: ./Back_NexoVital
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      NEXOVITAL_DB_URL: jdbc:postgresql://db:5432/nexovital
+      NEXOVITAL_DB_USER: nexovital
+      NEXOVITAL_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      NEXOVITAL_JWT_SECRET: ${NEXOVITAL_JWT_SECRET:-}
+      # El navegador entra por http://localhost:5173, igual que en desarrollo.
+      NEXOVITAL_CORS_ORIGENES: http://localhost:5173,http://127.0.0.1:5173
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    healthcheck:
+      # Sano cuando el puerto 8080 acepta conexiones (Tomcat abre el puerto al
+      # final del arranque). No depende de curl ni wget dentro de la imagen.
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8080'"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./Front_NexoVital
+    environment:
+      # A donde reenvia Nginx las rutas /api y /ws. Sin barra al final.
+      BACKEND_URL: http://backend:8080
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "5173:80"
+
+volumes:
+  nexovital-db:

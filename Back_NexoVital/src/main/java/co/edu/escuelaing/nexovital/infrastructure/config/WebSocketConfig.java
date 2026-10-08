@@ -1,5 +1,6 @@
 package co.edu.escuelaing.nexovital.infrastructure.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
@@ -24,14 +25,20 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final StompAuthChannelInterceptor stompAuthChannelInterceptor;
 
-    public WebSocketConfig(StompAuthChannelInterceptor stompAuthChannelInterceptor) {
+    /** Orígenes del frontend aceptados en el handshake; los mismos de CORS. */
+    private final String[] origenesPermitidos;
+
+    public WebSocketConfig(StompAuthChannelInterceptor stompAuthChannelInterceptor,
+                           @Value("${nexovital.cors.origenes-permitidos:http://localhost:5173,http://127.0.0.1:5173}")
+                           String[] origenesPermitidos) {
         this.stompAuthChannelInterceptor = stompAuthChannelInterceptor;
+        this.origenesPermitidos = origenesPermitidos.clone();
     }
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws")
-                .setAllowedOriginPatterns("http://localhost:5173", "http://127.0.0.1:5173")
+                .setAllowedOriginPatterns(origenesPermitidos)
                 .withSockJS();
     }
 

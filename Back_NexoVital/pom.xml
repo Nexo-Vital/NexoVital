@@ -51,7 +51,13 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-amqp</artifactId>
     </dependency>
-
+    <!-- Endpoint de salud (/actuator/health) para las comprobaciones del
+    contenedor y de la nube. Solo se expone `health`; la ruta se declara
+    en SecurityConfig porque la cadena es fail-closed. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
     <dependency>
       <groupId>io.jsonwebtoken</groupId>
       <artifactId>jjwt-api</artifactId>

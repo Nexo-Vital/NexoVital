@@ -1,0 +1,13 @@
+# Lo que NO se envia a Docker al construir la imagen del back.
+target/
+.git/
+.idea/
+.vscode/
+docs/
+scripts/
+*.md
+*.log
+.env
+.env.*
+Dockerfile
+.dockerignore
