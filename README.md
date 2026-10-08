@@ -5,6 +5,7 @@ repositorio, con un launcher que levanta todo en un clic.
 
 **ARWS — Arquitecturas de Software — ECI — 2026-2**
 
+
 ## Arranque en un clic (Windows)
 
 ```

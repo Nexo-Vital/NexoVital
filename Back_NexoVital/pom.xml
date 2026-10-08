@@ -51,7 +51,13 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-amqp</artifactId>
     </dependency>
-
+    <!-- Endpoint de salud (/actuator/health) para las comprobaciones del
+    contenedor y de la nube. Solo se expone `health`; la ruta se declara
+    en SecurityConfig porque la cadena es fail-closed. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
     <dependency>
       <groupId>io.jsonwebtoken</groupId>
       <artifactId>jjwt-api</artifactId>
@@ -110,4 +116,37 @@
       </plugin>
     </plugins>
   </build>
+
+  <!-- Cobertura de tests para SonarCloud. Es un perfil aparte para que
+       `mvnw test` siga igual: solo se activa con `-Pcobertura` (lo hace el CI).
+       Genera target/site/jacoco/jacoco.xml en la fase `verify`. -->
+  <profiles>
+    <profile>
+      <id>cobertura</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.jacoco</groupId>
+            <artifactId>jacoco-maven-plugin</artifactId>
+            <version>0.8.13</version>
+            <executions>
+              <execution>
+                <id>jacoco-preparar</id>
+                <goals>
+                  <goal>prepare-agent</goal>
+                </goals>
+              </execution>
+              <execution>
+                <id>jacoco-reporte</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>report</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>

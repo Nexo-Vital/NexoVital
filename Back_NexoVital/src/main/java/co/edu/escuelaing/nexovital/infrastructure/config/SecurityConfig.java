@@ -42,10 +42,6 @@ import java.util.List;
 @EnableWebSecurity
 public class SecurityConfig {
 
-    /** Development frontend origin (Vite). */
-    private static final List<String> ORIGENES_PERMITIDOS =
-            List.of("http://localhost:5173", "http://127.0.0.1:5173");
-
     /**
      * Routes owned by springdoc-openapi: the OpenAPI JSON and the Swagger UI
      * assets. Kept as a named constant so the security declaration and the
@@ -90,17 +86,31 @@ public class SecurityConfig {
      */
     private final boolean swaggerHabilitado;
 
+    /**
+     * Frontend origins allowed by CORS. The default is the Vite dev server; a
+     * containerized or cloud deployment sets NEXOVITAL_CORS_ORIGENES with the
+     * public URL of the frontend.
+     */
+    private final List<String> origenesPermitidos;
+
     public SecurityConfig(JwtAuthFilter jwtAuthFilter, ObjectMapper objectMapper,
-                          @Value("${nexovital.swagger.enabled:true}") boolean swaggerHabilitado) {
+                          @Value("${nexovital.swagger.enabled:true}") boolean swaggerHabilitado,
+                          @Value("${nexovital.cors.origenes-permitidos:http://localhost:5173,http://127.0.0.1:5173}")
+                          String[] origenesPermitidos) {
         this.jwtAuthFilter = jwtAuthFilter;
         this.objectMapper = objectMapper;
         this.swaggerHabilitado = swaggerHabilitado;
+        this.origenesPermitidos = List.of(origenesPermitidos);
     }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                .csrf(csrf -> csrf.disable())
+                // CSRF is disabled on purpose: the API is stateless and the session
+                // travels in the Authorization header (Bearer JWT), never in a cookie.
+                // With no session cookie the browser attaches no credentials on its
+                // own, so a CSRF attack has nothing to ride on. Reviewed as safe.
+                .csrf(csrf -> csrf.disable()) // NOSONAR
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> {
@@ -110,6 +120,12 @@ public class SecurityConfig {
                         // dispatch passes through this chain: without permission here, a
                         // validation 400 would turn into a 401.
                         .requestMatchers("/error").permitAll()
+                        // Health endpoint (Actuator): the container platform probes it
+                        // without a token. Only `health` is exposed and it shows no
+                        // details. Declared explicitly because the chain is fail-closed;
+                        // without it the probe would get 403 and the app would be
+                        // restarted as unhealthy.
+                        .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
                         // WebSocket/STOMP handshake (US2 D7): the HTTP handshake carries no
                         // Bearer (the token travels in the STOMP CONNECT frame) and SockJS
                         // issues GET /ws/info over HTTP, so the handshake is permitted. This
@@ -330,7 +346,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(ORIGENES_PERMITIDOS);
+        config.setAllowedOrigins(origenesPermitidos);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);

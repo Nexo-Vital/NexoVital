@@ -12,6 +12,7 @@
     "deploy:demo": "set VITE_DEMO_MODE=1&& npm run build && wrangler deploy",
     "test": "vitest run",
     "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "lint": "biome check .",
@@ -61,6 +62,7 @@
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-basic-ssl": "^1.2.0",
     "@vitejs/plugin-react": "^4.3.1",
+    "@vitest/coverage-v8": "^1.6.1",
     "husky": "^9.1.7",
     "jsdom": "^30.0.1",
     "lint-staged": "^17.5.1",
@@ -76,5 +78,10 @@
     "*.{ts,tsx,js,jsx,json,css,md}": [
       "biome check --write --no-errors-on-unmatched"
     ]
+  },
+  "allowScripts": {
+    "esbuild": true,
+    "msw": true,
+    "workerd": true
   }
 }

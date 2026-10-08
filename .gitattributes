@@ -1,0 +1,4 @@
+# El wrapper de Maven es un script de shell: debe conservar finales de linea LF
+# aunque se edite o se clone en Windows. Con CRLF, Linux (Docker y GitHub
+# Actions) no lo puede ejecutar.
+Back_NexoVital/mvnw text eol=lf
