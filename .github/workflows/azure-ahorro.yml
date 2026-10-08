@@ -1,0 +1,111 @@
+# ==========================================================================
+# Modo ahorro de NexoVital en Azure.
+#
+# Cuando corre: SOLO a mano, desde la pestana Actions ("Run workflow"),
+# eligiendo la accion. No hay horario fijo: tu decides cuando encender y
+# cuando apagar.
+#
+# Acciones:
+#   apagar              back a escala cero y PostgreSQL detenido
+#   encender            PostgreSQL encendido; el back despierta solo al
+#                       primer uso (tarda ~1 minuto)
+#   encender-para-demo  PostgreSQL encendido y el back fijo en 1 replica:
+#                       tiempo real activo todo el tiempo (simulador de flota,
+#                       perdida de senal). Al terminar, correr "apagar".
+#
+# OJO: Azure vuelve a encender sola la base de datos a los 7 dias de
+# detenida. Si llevas una semana sin usarla, corre "apagar" otra vez.
+#
+# El boton "Run workflow" solo aparece cuando este archivo ya esta en main.
+# ==========================================================================
+name: Azure - modo ahorro
+
+on:
+  workflow_dispatch:
+    inputs:
+      accion:
+        description: Que hacer con NexoVital en Azure
+        type: choice
+        options:
+          - apagar
+          - encender
+          - encender-para-demo
+        default: encender
+
+# Nunca dos corridas a la vez (por ejemplo, encender mientras apaga).
+concurrency:
+  group: azure-ahorro
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  ahorro:
+    name: ${{ inputs.accion }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ACCION: ${{ inputs.accion }}
+      RG: ${{ vars.AZURE_RG }}
+      BACK: ${{ vars.AZURE_BACK }}
+      PG: ${{ vars.AZURE_PG }}
+    steps:
+      - name: Iniciar sesion en Azure (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Preparar la CLI de Container Apps
+        run: az extension add --name containerapp --upgrade --yes --only-show-errors
+
+      - name: Aplicar "${{ env.ACCION }}"
+        run: |
+          estado_pg() { az postgres flexible-server show -g "$RG" -n "$PG" --query state -o tsv; }
+
+          case "$ACCION" in
+            apagar)
+              az containerapp update -g "$RG" -n "$BACK" --min-replicas 0 -o none --only-show-errors
+              echo "Back: escala a cero"
+              E=$(estado_pg)
+              if [ "$E" = "Ready" ]; then
+                az postgres flexible-server stop -g "$RG" -n "$PG" -o none
+                echo "PostgreSQL: detenido"
+              else
+                echo "PostgreSQL: no se detiene porque esta en estado '$E'"
+              fi
+              ;;
+            encender|encender-para-demo)
+              E=$(estado_pg)
+              if [ "$E" = "Stopped" ]; then
+                az postgres flexible-server start -g "$RG" -n "$PG" -o none
+                echo "PostgreSQL: encendido"
+              else
+                echo "PostgreSQL: ya estaba en estado '$E'"
+              fi
+              if [ "$ACCION" = "encender-para-demo" ]; then
+                az containerapp update -g "$RG" -n "$BACK" --min-replicas 1 -o none --only-show-errors
+                echo "Back: fijo en 1 replica (recuerda correr 'apagar' al terminar)"
+              else
+                az containerapp update -g "$RG" -n "$BACK" --min-replicas 0 -o none --only-show-errors
+                echo "Back: escala a cero (despierta con el primer uso)"
+              fi
+              ;;
+            *)
+              echo "::error::Accion desconocida: $ACCION"
+              exit 1
+              ;;
+          esac
+
+      - name: Estado final
+        run: |
+          PG_ESTADO=$(az postgres flexible-server show -g "$RG" -n "$PG" --query state -o tsv)
+          MIN=$(az containerapp show -g "$RG" -n "$BACK" --query properties.template.scale.minReplicas -o tsv)
+          {
+            echo "### NexoVital en Azure: $ACCION"
+            echo "- PostgreSQL: $PG_ESTADO"
+            echo "- Back, replicas minimas: $MIN"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
