@@ -1,0 +1,236 @@
+# ==========================================================================
+# CI de NexoVital (un solo repositorio: Back_NexoVital + Front_NexoVital).
+#
+# Cuando corre:
+#   * en cada pull request hacia develop o main;
+#   * en cada push (merge) a develop o main;
+#   * a mano, desde la pestana Actions ("Run workflow").
+#
+# Que hace:
+#   backend   compila el back y corre sus tests (con cobertura JaCoCo)
+#   frontend  lint, tipos, tests (con cobertura) y build del front
+#   sonar     analisis de calidad en SonarCloud (pull requests y main)
+#   imagenes  construye las imagenes Docker; solo las PUBLICA en GHCR cuando
+#             el cambio ya esta en main
+#
+# No gasta credito de Azure: usa los minutos de GitHub Actions.
+# ==========================================================================
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+
+# Si llega un commit nuevo a la misma rama o PR, se cancela la corrida anterior:
+# asi no se gastan minutos en un resultado que ya no importa.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Por defecto el workflow solo puede LEER el repositorio. El unico job que
+# necesita mas permisos (publicar imagenes) los pide abajo.
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (compilar y probar)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: Back_NexoVital
+    steps:
+      - name: Descargar el codigo
+        uses: actions/checkout@v5
+
+      - name: Instalar Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: Back_NexoVital/pom.xml
+
+      # El perfil `cobertura` (pom.xml) activa JaCoCo. `verify` compila, corre
+      # todos los tests y genera target/site/jacoco/jacoco.xml.
+      - name: Compilar y correr los tests
+        run: ./mvnw -B -ntp verify -Pcobertura
+
+      - name: Guardar el reporte de tests si algo fallo
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: backend-reportes-de-tests
+          path: Back_NexoVital/target/surefire-reports
+          retention-days: 3
+
+      # Lo que SonarCloud necesita del back: clases compiladas y cobertura.
+      - name: Guardar resultados para SonarCloud
+        uses: actions/upload-artifact@v5
+        with:
+          name: backend-analisis
+          path: |
+            Back_NexoVital/target/classes
+            Back_NexoVital/target/test-classes
+            Back_NexoVital/target/site/jacoco/jacoco.xml
+          retention-days: 1
+          if-no-files-found: error
+
+  frontend:
+    name: Frontend (lint, tests y build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: Front_NexoVital
+    env:
+      # En CI no hay hooks de git que instalar.
+      HUSKY: 0
+    steps:
+      - name: Descargar el codigo
+        uses: actions/checkout@v5
+
+      - name: Instalar Node 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Front_NexoVital/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci --no-audit --no-fund
+
+      - name: Lint (Biome)
+        run: npm run lint
+
+      - name: Tipos (TypeScript)
+        run: npm run typecheck
+
+      - name: Tests con cobertura
+        run: npm run test:coverage
+
+      # Mismo build que hace la imagen Docker: contra el backend real.
+      - name: Build
+        run: npm run build
+        env:
+          VITE_DEMO_MODE: 0
+
+      - name: Guardar cobertura para SonarCloud
+        uses: actions/upload-artifact@v5
+        with:
+          name: frontend-cobertura
+          path: Front_NexoVital/coverage/lcov.info
+          retention-days: 1
+          if-no-files-found: error
+
+  sonar:
+    name: SonarCloud
+    needs: [backend, frontend]
+    # El plan gratuito de SonarCloud solo analiza la rama principal y los pull
+    # requests; por eso no corre en los push a develop.
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Historia completa: SonarCloud la usa para saber que codigo es nuevo.
+      - name: Descargar el codigo
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Traer resultados del back
+        uses: actions/download-artifact@v5
+        with:
+          name: backend-analisis
+          path: Back_NexoVital/target
+
+      - name: Traer cobertura del front
+        uses: actions/download-artifact@v5
+        with:
+          name: frontend-cobertura
+          path: Front_NexoVital/coverage
+
+      - name: Instalar Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: Back_NexoVital/pom.xml
+
+      # El analisis de Java necesita las librerias del proyecto (Spring, JPA...)
+      # para entender el codigo. No compila nada: solo copia los .jar.
+      - name: Copiar las librerias del back
+        working-directory: Back_NexoVital
+        run: ./mvnw -B -ntp dependency:copy-dependencies -DoutputDirectory=target/dependency
+
+      # El reporte del front nombra los archivos desde Front_NexoVital
+      # ("src/..."), pero el analisis corre desde la raiz del repo.
+      - name: Ajustar rutas de la cobertura del front
+        run: sed -i -E 's|^SF:([^/])|SF:Front_NexoVital/\1|' Front_NexoVital/coverage/lcov.info
+
+      # La configuracion esta en sonar-project.properties (raiz del repo).
+      - name: Analizar con SonarCloud
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  imagenes:
+    name: Imagen Docker (${{ matrix.nombre }})
+    needs: [backend, frontend]
+    # Solo cuando el cambio va hacia main: en el PR se comprueba que la imagen
+    # construye; al llegar a main ademas se publica.
+    if: github.ref == 'refs/heads/main' || github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - nombre: back
+            contexto: Back_NexoVital
+            imagen: ghcr.io/nexo-vital/nexovital-back
+          - nombre: front
+            contexto: Front_NexoVital
+            imagen: ghcr.io/nexo-vital/nexovital-front
+    env:
+      PUBLICAR: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    steps:
+      - name: Descargar el codigo
+        uses: actions/checkout@v5
+
+      - name: Preparar Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # GITHUB_TOKEN lo crea GitHub para cada corrida: no hay que guardar
+      # ninguna contrasena para publicar en GHCR.
+      - name: Iniciar sesion en GHCR
+        if: env.PUBLICAR == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Dos etiquetas: `latest` (la mas reciente de main) y el commit exacto,
+      # que permite volver a una version anterior.
+      - name: Construir la imagen (y publicarla si es main)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.contexto }}
+          push: ${{ env.PUBLICAR == 'true' }}
+          tags: |
+            ${{ matrix.imagen }}:latest
+            ${{ matrix.imagen }}:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.nombre }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.nombre }}

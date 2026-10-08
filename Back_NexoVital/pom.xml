@@ -116,4 +116,37 @@
       </plugin>
     </plugins>
   </build>
+
+  <!-- Cobertura de tests para SonarCloud. Es un perfil aparte para que
+       `mvnw test` siga igual: solo se activa con `-Pcobertura` (lo hace el CI).
+       Genera target/site/jacoco/jacoco.xml en la fase `verify`. -->
+  <profiles>
+    <profile>
+      <id>cobertura</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.jacoco</groupId>
+            <artifactId>jacoco-maven-plugin</artifactId>
+            <version>0.8.13</version>
+            <executions>
+              <execution>
+                <id>jacoco-preparar</id>
+                <goals>
+                  <goal>prepare-agent</goal>
+                </goals>
+              </execution>
+              <execution>
+                <id>jacoco-reporte</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>report</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>
