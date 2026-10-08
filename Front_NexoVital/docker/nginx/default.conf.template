@@ -1,0 +1,85 @@
+# ==========================================================================
+# Nginx del frontend de NexoVital.
+#
+# Hace en contenedores lo mismo que el proxy de Vite en desarrollo:
+#   /api/...  -> backend (REST)
+#   /ws/...   -> backend (WebSocket STOMP / SockJS)
+#   lo demas  -> el sitio estatico (SPA de React)
+#
+# ${BACKEND_URL} es lo UNICO que se reemplaza al arrancar el contenedor (lo hace
+# la imagen oficial de Nginx con la variable de entorno del mismo nombre). Las
+# variables propias de Nginx ($host, $uri, ...) quedan intactas.
+# ==========================================================================
+
+# Solo se pide "upgrade" al backend cuando el navegador lo pidio (WebSocket).
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 80;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Comprobacion de salud del contenedor del front.
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    # API REST.
+    location /api/ {
+        proxy_pass ${BACKEND_URL};
+        proxy_http_version 1.1;
+        proxy_ssl_server_name on;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host $http_host;
+    }
+
+    # Tiempo real: handshake de SockJS y conexion WebSocket.
+    location /ws {
+        proxy_pass ${BACKEND_URL};
+        proxy_http_version 1.1;
+        proxy_ssl_server_name on;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host $http_host;
+        # Una conexion de tiempo real dura mucho mas que una peticion normal.
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        # Los transportes de respaldo de SockJS envian datos de a poco.
+        proxy_buffering off;
+    }
+
+    # Workers de MapLibre (.mjs): el navegador solo los ejecuta si llegan con
+    # tipo JavaScript. Sin esto el mapa vectorial queda en blanco.
+    location ~* \.mjs$ {
+        types { }
+        default_type text/javascript;
+        try_files $uri =404;
+    }
+
+    # Archivos con hash en el nombre: se pueden guardar en cache sin riesgo.
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+    # index.html nunca se guarda en cache: asi un despliegue nuevo se ve de inmediato.
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+    }
+
+    # SPA: cualquier ruta de React Router (/login, /mapa, ...) responde index.html.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

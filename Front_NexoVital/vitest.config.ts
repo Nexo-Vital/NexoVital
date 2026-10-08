@@ -17,5 +17,13 @@ export default defineConfig({
     css: false,
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    // Solo se calcula con `npm run test:coverage` (lo usa el CI para SonarCloud);
+    // `npm run test` sigue igual, sin cobertura.
+    coverage: {
+      provider: 'v8',
+      reporter: ['text-summary', 'lcov'],
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: ['src/**/*.{test,spec}.{ts,tsx}', 'src/test/**', 'src/**/*.d.ts'],
+    },
   },
 });
