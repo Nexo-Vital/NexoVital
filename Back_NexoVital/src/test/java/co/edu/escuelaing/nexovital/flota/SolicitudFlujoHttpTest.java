@@ -843,6 +843,10 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(cuerpoAmbulancia(unidad)))
                 .andExpect(status().isOk());
+        // Finishing also needs the citizen's confirmation of the arrival.
+        mockMvc.perform(post("/api/v1/solicitudes/{id}/confirmar", solicitudId)
+                        .header("Authorization", "Bearer " + ciudadano))
+                .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/v1/solicitudes/{id}/finalizar", solicitudId)
                         .header("Authorization", "Bearer " + conductor)

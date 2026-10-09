@@ -1,5 +1,6 @@
 import { Check, HandHeart } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { SidebarSlot } from '@/app/sidebar-slot';
 import { toast } from '@/components/ui/toast';
 import { AddSupplyDialog, WithdrawSupplyDialog } from '@/features/centro/CenterSupplyDialogs';
 import { CreateCenterDialog } from '@/features/centro/CreateCenterDialog';
@@ -417,6 +418,7 @@ export default function CitizenMapPage({
   const acceptedAt = useCitizenRequestStore((state) => state.acceptedAt);
   const arrivedAt = useCitizenRequestStore((state) => state.arrivedAt);
   const confirmedAt = useCitizenRequestStore((state) => state.confirmedAt);
+  const confirmedBySelf = useCitizenRequestStore((state) => state.confirmedBySelf);
   const searching = requestPhase === 'searching';
   const accepted = requestPhase === 'accepted';
   const arrived = requestPhase === 'arrived';
@@ -918,7 +920,9 @@ export default function CitizenMapPage({
           onSelectEmergency={() => undefined}
           onSelectCentro={requestPhase === 'idle' ? openCenterDetail : undefined}
         />
-        <CitizenMapLegend counts={counts} units={fleet} />
+        <SidebarSlot>
+          <CitizenMapLegend counts={counts} units={fleet} />
+        </SidebarSlot>
 
         {/* `C.c6`: the closing toast. It exists only once the citizen actually
             confirmed; a backend close that skipped their confirmation must not
@@ -929,7 +933,9 @@ export default function CitizenMapPage({
               <span className="grid size-7 shrink-0 place-items-center rounded-full bg-nv-lime text-nv-navy">
                 <Check className="size-4" aria-hidden />
               </span>
-              Confirmaste la llegada. Tu solicitud quedó cerrada.
+              {confirmedBySelf
+                ? 'Confirmaste la llegada. Tu solicitud quedó cerrada.'
+                : 'La llegada se confirmó automáticamente. Tu solicitud quedó cerrada.'}
             </div>
           </div>
         )}
@@ -1051,6 +1057,7 @@ export default function CitizenMapPage({
         <ArrivalPopup
           unitId={acceptedBy}
           unit={assignedUnit}
+          arrivedAt={arrivedAt}
           onConfirm={handleConfirmArrival}
           onClose={closeArrival}
         />

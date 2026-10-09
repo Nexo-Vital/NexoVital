@@ -71,6 +71,10 @@ public interface SolicitudJpaRepository extends JpaRepository<SolicitudJpaEntity
     List<SolicitudJpaEntity> findTop200ByEstadoAndTimeoutEnBeforeOrderByTimeoutEnAsc(
             EstadoSolicitud estado, Instant ahora);
 
+    /** Arrivals still unconfirmed whose declaration is at or before the limit. */
+    List<SolicitudJpaEntity> findTop200ByEstadoAndLlegadaEnLessThanEqualOrderByLlegadaEnAsc(
+            EstadoSolicitud estado, Instant limite);
+
     /**
      * Services ASSIGNED to a unit, newest first (creation instant descending).
      * The derived query filters by the assignment column, so a broadcast-only

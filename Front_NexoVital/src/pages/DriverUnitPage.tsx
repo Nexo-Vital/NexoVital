@@ -1,5 +1,6 @@
 import { Ambulance, Mail, MapPin, Power, User } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { nvButton } from '@/components/ui/button';
 import { formatCoordinates } from '@/features/ciudadano/citizen-request';
 import { useDriverConnection } from '@/features/conductor/use-driver-connection';
 import { fetchMiAmbulancia } from '@/features/flota/fleet-api';
@@ -182,18 +183,13 @@ export default function DriverUnitPage() {
             type="button"
             onClick={disconnect}
             disabled={pending}
-            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-nv-md border-[1.5px] border-nv-line bg-white px-4 font-semibold text-nv-navy text-sm disabled:cursor-not-allowed disabled:opacity-60"
+            className={nvButton({ tone: 'secondary' })}
           >
             <Power className="size-4" aria-hidden />
             Desconectarse
           </button>
         ) : (
-          <button
-            type="button"
-            onClick={connect}
-            disabled={pending}
-            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-nv-md bg-nv-navy px-4 font-semibold text-sm text-white disabled:cursor-not-allowed disabled:opacity-60"
-          >
+          <button type="button" onClick={connect} disabled={pending} className={nvButton()}>
             <Power className="size-4" aria-hidden />
             Conectarse
           </button>

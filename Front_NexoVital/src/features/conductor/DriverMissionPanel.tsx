@@ -1,4 +1,5 @@
 import { Check, Flag, Info, Navigation } from 'lucide-react';
+import { nvButton } from '@/components/ui/button';
 import { formatDistance } from '@/features/ciudadano/citizen-view';
 import {
   DRIVER_ARRIVED_STEP,
@@ -8,7 +9,9 @@ import {
   TrackingSteps,
   TrackingTimeline,
 } from '@/features/seguimiento/tracking';
+import { autoConfirmSecondsLeft, formatSecondsLeft } from '@/features/solicitudes/auto-confirm';
 import { EMERGENCY_LEVEL_META } from '@/features/solicitudes/request-status';
+import { useClock } from '@/hooks/use-clock';
 import { cn } from '@/lib/utils';
 import type { EmergencyLevel } from '@/types/domain';
 import type { DriverMissionPhase } from './use-solicitud-inbox';
@@ -38,8 +41,20 @@ interface DriverMissionPanelProps {
   onFinish: () => void;
 }
 
-const PRIMARY_BUTTON =
-  'inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md bg-nv-navy px-5 font-semibold text-sm text-white disabled:cursor-not-allowed disabled:opacity-60';
+const PRIMARY_BUTTON = nvButton({ size: 'tall' });
+
+/** Live note while the citizen's confirmation is pending; it ticks only while mounted. */
+function ConfirmationPendingNote({ arrivedAt }: { arrivedAt: number | null }) {
+  const now = useClock(1000).getTime();
+  const left = arrivedAt !== null ? autoConfirmSecondsLeft(arrivedAt, now) : null;
+  return (
+    <p role="status" className="text-nv-navy-400 text-xs">
+      {left === null || left > 0
+        ? `Podrás finalizar cuando el ciudadano confirme la llegada. Si no responde, se confirmará automáticamente${left !== null ? ` en ${formatSecondsLeft(left)}` : ''}.`
+        : 'Confirmando la llegada automáticamente…'}
+    </p>
+  );
+}
 
 /**
  * Driver mission rail. It renders the two live stages of the loop:
@@ -69,6 +84,7 @@ export function DriverMissionPanel({
   const levelMeta = nivel ? EMERGENCY_LEVEL_META[nivel] : null;
   const detail = `${distanceKm !== null ? formatDistance(distanceKm) : 'Sin ubicación'} · ${locationLabel}`;
   const arrived = phase !== 'en_route';
+  const confirmed = phase === 'confirmed';
 
   // Real instants only: the third entry exists once the citizen confirmed, so
   // the toast and the timeline never announce a step that has not happened.
@@ -160,13 +176,17 @@ export function DriverMissionPanel({
         </>
       ) : (
         <>
-          <button type="button" onClick={onFinish} className={PRIMARY_BUTTON}>
+          <button type="button" onClick={onFinish} disabled={!confirmed} className={PRIMARY_BUTTON}>
             <Check className="size-5" aria-hidden />
             Finalizar servicio
           </button>
-          <p className="text-nv-navy-400 text-xs">
-            Al finalizar, tu ambulancia vuelve a quedar disponible para nuevas solicitudes.
-          </p>
+          {confirmed ? (
+            <p className="text-nv-navy-400 text-xs">
+              Al finalizar, tu ambulancia vuelve a quedar disponible para nuevas solicitudes.
+            </p>
+          ) : (
+            <ConfirmationPendingNote arrivedAt={arrivedAt} />
+          )}
         </>
       )}
     </>

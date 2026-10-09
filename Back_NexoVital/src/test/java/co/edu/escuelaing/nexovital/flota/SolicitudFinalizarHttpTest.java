@@ -43,11 +43,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import({TestClockConfig.class, PushPortDePruebaConfig.class})
 class SolicitudFinalizarHttpTest extends SolicitudHttpTestSupport {
 
-    /** Request accepted by the driver with its arrival declared: ready to finish. */
+    /** Request accepted, arrived and confirmed by the citizen: ready to finish. */
     private UUID servicioListoParaFinalizar(Conductor conductor, String token) throws Exception {
-        UUID solicitudId = idDe(crearSolicitud(tokenCiudadano()));
+        String ciudadano = tokenCiudadano();
+        UUID solicitudId = idDe(crearSolicitud(ciudadano));
         responder("accept", solicitudId, conductor, token).andExpect(status().isOk());
         responder("llegada", solicitudId, conductor, token).andExpect(status().isOk());
+        confirmarLlegada(solicitudId, ciudadano).andExpect(status().isOk());
         return solicitudId;
     }
 
@@ -186,7 +188,7 @@ class SolicitudFinalizarHttpTest extends SolicitudHttpTestSupport {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.codigo").value("AMBULANCIA_NO_DISPONIBLE"));
 
-        assertEquals(EstadoSolicitud.ASIGNADA, estadoEnBase(solicitudId), "la solicitud no queda cerrada sin su unidad");
+        assertEquals(EstadoSolicitud.CONFIRMADA, estadoEnBase(solicitudId), "la solicitud no queda cerrada sin su unidad");
         assertEquals(EstadoAmbulancia.MANTENIMIENTO, unidadEnBase(conductor.unidad()).getEstado());
         assertEquals(0, liberacionesEnFlota(conductor.unidad()));
         assertEquals(0, cierresAlCiudadano(solicitudId));
@@ -231,7 +233,7 @@ class SolicitudFinalizarHttpTest extends SolicitudHttpTestSupport {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.codigo").value("DATOS_INVALIDOS"));
 
-        assertEquals(EstadoSolicitud.ASIGNADA, estadoEnBase(solicitudId), "ningún rechazo cierra el servicio");
+        assertEquals(EstadoSolicitud.CONFIRMADA, estadoEnBase(solicitudId), "ningún rechazo cierra el servicio");
         assertEquals(EstadoAmbulancia.EN_MISION, unidadEnBase(conductor.unidad()).getEstado());
         assertFalse(liberacionesEnFlota(conductor.unidad()) > 0, "ni libera la unidad");
     }

@@ -1,5 +1,6 @@
 import { Check } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { nvButton } from '@/components/ui/button';
 import { unitPlateLabel } from '@/lib/unit-label';
 import type { Ambulancia } from '@/types/domain';
 
@@ -68,11 +69,7 @@ export function AcceptancePopup({ ambulanceId, unit = null, onClose }: Acceptanc
         </span>
         <h3 className="font-semibold text-2xl tracking-tight">Una ambulancia aceptó</h3>
         <p className="text-nv-navy-400 text-[15px] leading-6">{announcement}</p>
-        <button
-          type="button"
-          onClick={onClose}
-          className="inline-flex h-12 w-full items-center justify-center rounded-nv-md bg-nv-navy px-5 font-semibold text-sm text-white"
-        >
+        <button type="button" onClick={onClose} className={nvButton()}>
           Cerrar
         </button>
       </div>

@@ -296,6 +296,10 @@ foreach ($n in $Ns) {
     if ($null -ne $ganadorId -and $tokenPorUnidad.ContainsKey($ganadorId)) {
         $headersGanador = @{ Authorization = "Bearer $($tokenPorUnidad[$ganadorId])" }
         try {
+            # Finalizar exige la llegada declarada y confirmada por el ciudadano.
+            Invoke-Api -Metodo POST -Ruta "/solicitudes/$solicitudId/llegada" -Headers $headersGanador `
+                -Cuerpo @{ ambulanciaId = $ganadorId } | Out-Null
+            Invoke-Api -Metodo POST -Ruta "/solicitudes/$solicitudId/confirmar" -Headers $headersCiudadano | Out-Null
             $cerrada = Invoke-Api -Metodo POST -Ruta "/solicitudes/$solicitudId/finalizar" -Headers $headersGanador `
                 -Cuerpo @{ ambulanciaId = $ganadorId }
             $final = EstadoDeUnidades -Headers $headersCiudadano

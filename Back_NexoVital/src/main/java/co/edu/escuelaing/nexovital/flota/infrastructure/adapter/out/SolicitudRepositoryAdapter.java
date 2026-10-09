@@ -87,6 +87,12 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
     }
 
     @Override
+    public List<SolicitudAmbulancia> listarLlegadasSinConfirmar(Instant limite) {
+        return toDomainLista(jpaRepository
+                .findTop200ByEstadoAndLlegadaEnLessThanEqualOrderByLlegadaEnAsc(EstadoSolicitud.ASIGNADA, limite));
+    }
+
+    @Override
     public List<SolicitudAmbulancia> listarPorAmbulanciaAsignada(UUID ambulanciaId) {
         return toDomainLista(jpaRepository.findByAmbulanciaAsignadaIdOrderBySolicitadaEnDesc(ambulanciaId));
     }

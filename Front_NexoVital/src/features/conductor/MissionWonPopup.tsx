@@ -1,5 +1,6 @@
 import { Check } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { nvButton } from '@/components/ui/button';
 
 /** How long the "request is yours" notice stays before closing itself, in ms. */
 export const MISSION_WON_POPUP_MS = 4000;
@@ -39,11 +40,7 @@ export function MissionWonPopup({ unitLabel, onClose }: MissionWonPopupProps) {
         </span>
         <h3 className="font-semibold text-2xl tracking-tight">¡La solicitud es tuya!</h3>
         <p className="text-nv-navy-400 text-[15px] leading-6">{announcement}</p>
-        <button
-          type="button"
-          onClick={onClose}
-          className="inline-flex h-12 w-full items-center justify-center rounded-nv-md bg-nv-navy px-5 font-semibold text-sm text-white"
-        >
+        <button type="button" onClick={onClose} className={nvButton()}>
           Entendido
         </button>
       </div>

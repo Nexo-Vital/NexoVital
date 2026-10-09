@@ -244,7 +244,7 @@ class SolicitudLlegadaHttpTest extends SolicitudHttpTestSupport {
     }
 
     @Test
-    @DisplayName("L5: el conductor no puede finalizar sin declarar la llegada; después de declararla, sí")
+    @DisplayName("L5: el conductor no puede finalizar sin llegada ni sin confirmación; con ambas, sí")
     void l5_finalizarExigeLaLlegada() throws Exception {
         Conductor conductor = sembrarConductor(EstadoAmbulancia.DISPONIBLE);
         String token = tokenDe(conductor);
@@ -258,6 +258,14 @@ class SolicitudLlegadaHttpTest extends SolicitudHttpTestSupport {
                 "sin llegada, la unidad sigue en misión");
 
         responder("llegada", solicitudId, conductor, token).andExpect(status().isOk());
+
+        responder("finalizar", solicitudId, conductor, token)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo").value("CONFIRMACION_PENDIENTE"));
+        assertEquals(EstadoAmbulancia.EN_MISION, unidadEnBase(conductor.unidad()).getEstado(),
+                "sin confirmación, la unidad sigue en misión");
+
+        confirmar(solicitudId, tokenCiudadano()).andExpect(status().isOk());
 
         responder("finalizar", solicitudId, conductor, token)
                 .andExpect(status().isOk())
