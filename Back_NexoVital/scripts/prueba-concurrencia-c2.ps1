@@ -189,6 +189,8 @@ foreach ($email in $Conductores) {
         }
         $tokenPorUnidad[$mia.id] = $sesion.token
         $emailPorUnidad[$mia.id] = $email
+        # Una sesion previa del front pudo dejar la unidad desconectada; la prueba la reconecta.
+        $null = Invoke-Api -Metodo POST -Ruta '/flota/ambulancias/mia/conectar' -Headers $headers
     } catch {
         Write-Host "       (login falló) $email : $($_.Exception.Message)"
     }
@@ -239,7 +241,7 @@ foreach ($n in $Ns) {
     }
 
     $solicitud = Invoke-Api -Metodo POST -Ruta '/solicitudes' -Headers $headersCiudadano `
-        -Cuerpo @{ emergenciaId = $emergencia.id; centroAyudaId = $centro.id; zonaId = 'Suba'; timeoutEn = $null }
+        -Cuerpo @{ ubicacion = @{ lat = 4.736; lng = -74.082 }; emergenciaId = $emergencia.id; centroAyudaId = $centro.id; zonaId = 'Suba'; timeoutEn = $null }
     $solicitudId = $solicitud.id
     $notificadas = @($solicitud.ambulanciasNotificadas)
     Write-Host "       solicitud=$solicitudId notificadas=$($notificadas.Count)"
