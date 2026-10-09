@@ -250,7 +250,11 @@ test('sin emergencias: el ciudadano pide y las cinco unidades reciben la notific
     }
     console.log(`[sin-zona] ${unitIds[0]} acepto; las otras cuatro siguen DISPONIBLE`);
 
-    // 5. Leave the state clean: finish the service so the unit is released.
+    // 5. Leave the state clean: declare the arrival, then finish (EP-04.F2.US8).
+    await winnerPage.request.post(`${API}/solicitudes/${request.id}/llegada`, {
+      headers: { Authorization: `Bearer ${winnerToken}` },
+      data: { ambulanciaId: unitIds[0] },
+    });
     const finish = await winnerPage.request.post(`${API}/solicitudes/${request.id}/finalizar`, {
       headers: { Authorization: `Bearer ${winnerToken}` },
       data: { ambulanciaId: unitIds[0] },

@@ -61,6 +61,9 @@ public interface SolicitudRepository {
      */
     List<SolicitudAmbulancia> listarPorAmbulanciaAsignada(UUID ambulanciaId);
 
+    /** Requests of one requester in the given states, newest first. */
+    List<SolicitudAmbulancia> listarDelSolicitante(UUID solicitanteId, Collection<EstadoSolicitud> estados);
+
     /**
      * CAS de expiración: UNA sola UPDATE que cierra la solicitud solo si sigue
      * PENDIENTE Y su {@code timeoutEn} ya pasó. Devuelve filas afectadas: 1 =

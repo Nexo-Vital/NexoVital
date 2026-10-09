@@ -377,6 +377,11 @@ test('AC-refused: cancelar una solicitud ya asignada muestra el motivo del backe
     // Release the unit so a re-run starts clean: finish the accepted service.
     if (!finished && driverToken && requestId && unitId) {
       try {
+        // Finishing requires the declared arrival (EP-04.F2.US8).
+        await driverPage.request.post(`${API}/solicitudes/${requestId}/llegada`, {
+          headers: { Authorization: `Bearer ${driverToken}` },
+          data: { ambulanciaId: unitId },
+        });
         await driverPage.request.post(`${API}/solicitudes/${requestId}/finalizar`, {
           headers: { Authorization: `Bearer ${driverToken}` },
           data: { ambulanciaId: unitId },

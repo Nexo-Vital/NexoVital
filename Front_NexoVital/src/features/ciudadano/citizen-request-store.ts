@@ -4,13 +4,10 @@ import { toast } from '@/components/ui/toast';
 import {
   cancelarSolicitud,
   confirmarSolicitud,
+  listarMisSolicitudes,
   solicitarAmbulancia,
 } from '@/features/solicitudes/solicitud-api';
-import {
-  nextRequestId,
-  SOLICITUD_TIMEOUT_MS,
-  toSolicitud,
-} from '@/features/solicitudes/solicitud-form';
+import { nextRequestId, toSolicitud } from '@/features/solicitudes/solicitud-form';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
 import { isSessionInSync, SESSION_CHANGED_MESSAGE } from '@/features/usuarios/session-sync';
 import { isDemoMode } from '@/services/apiClient';
@@ -23,7 +20,7 @@ import {
   type SolicitudPayload,
   solicitudFrameFromWire,
 } from '@/shared/realtime';
-import type { Ambulancia, Ubicacion } from '@/types/domain';
+import type { Ambulancia, SolicitudAmbulancia, Ubicacion } from '@/types/domain';
 import {
   buildCitizenBroadcast,
   CITIZEN_REQUEST_LABEL,
@@ -108,6 +105,8 @@ interface CitizenRequestState {
    * signed in). Surfaces the honest reason in the rail; no request is sent.
    */
   flagSessionDesync: () => void;
+  /** Adopts the server's view of our active request (EP-04.F2.US9). */
+  restoreFromServer: (items: SolicitudAmbulancia[]) => void;
   /** Drops the search state without publishing (e.g. after an accept). */
   reset: () => void;
 }
@@ -122,6 +121,35 @@ interface CitizenRequestStart {
    */
   origin: Ubicacion | null;
   now?: number;
+}
+
+/** Order of the open phases; a server read never moves a request backwards. */
+const PHASE_RANK: Record<CitizenRequestPhase, number> = {
+  idle: 0,
+  expired: 0,
+  searching: 1,
+  accepted: 2,
+  arrived: 3,
+  closed: 4,
+};
+
+/** Phase a server request maps to, or null when it is not active. */
+function phaseFromServer(solicitud: SolicitudAmbulancia): CitizenRequestPhase | null {
+  if (solicitud.estado === 'PENDING') {
+    return 'searching';
+  }
+  if (solicitud.estado === 'ASSIGNED') {
+    return solicitud.llegadaEn ? 'arrived' : 'accepted';
+  }
+  if (solicitud.estado === 'CONFIRMED') {
+    return 'closed';
+  }
+  return null;
+}
+
+function instantOrNull(value: string | undefined): number | null {
+  const parsed = value ? Date.parse(value) : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 const IDLE_STATE = {
@@ -201,8 +229,8 @@ export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => 
 
     try {
       const solicitud = await solicitarAmbulancia({
+        // No deadline travels: the server fixes the accept window (EP-04.F2.US6).
         ubicacion: origin,
-        timeoutEn: new Date(startedAt + SOLICITUD_TIMEOUT_MS).toISOString(),
       });
       useSolicitudesStore.getState().upsert({
         ...solicitud,
@@ -369,10 +397,47 @@ export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => 
     set({ phase: 'closed' });
   },
 
+  restoreFromServer: (items) => {
+    const state = get();
+    const open = PHASE_RANK[state.phase] > 0 && state.phase !== 'closed';
+    const own = items.find((item) => item.id === state.requestId);
+    // Keeps a local open request the server no longer lists; its push decides.
+    const chosen = own ?? (open ? undefined : items[0]);
+    const phase = chosen ? phaseFromServer(chosen) : null;
+    if (!chosen || !phase) {
+      return;
+    }
+    const same = chosen.id === state.requestId;
+    if (same && PHASE_RANK[phase] < PHASE_RANK[state.phase]) {
+      return;
+    }
+    useSolicitudesStore.getState().upsert({ ...chosen, tipo: CITIZEN_REQUEST_LABEL });
+    const winner = chosen.ambulanciaAsignadaId ?? null;
+    set({
+      phase,
+      requestId: chosen.id,
+      startedAt: instantOrNull(chosen.solicitadaEn) ?? state.startedAt ?? Date.now(),
+      notifiedIds: chosen.ambulanciasNotificadas,
+      acceptedBy: winner,
+      acceptedAt: winner ? ((same ? state.acceptedAt : null) ?? Date.now()) : null,
+      arrivedAt: instantOrNull(chosen.llegadaEn),
+      confirmedAt: same ? state.confirmedAt : null,
+    });
+  },
+
   reset: () => set({ ...IDLE_STATE }),
 
   flagSessionDesync: () => set({ startError: SESSION_CHANGED_MESSAGE }),
 }));
+
+/** Rereads the citizen's active request from the server; a failed read changes nothing. */
+export function syncCitizenRequest(): void {
+  listarMisSolicitudes()
+    .then((items) => useCitizenRequestStore.getState().restoreFromServer(items))
+    .catch(() => {
+      // Best effort: the realtime channel keeps driving the screen.
+    });
+}
 
 /**
  * Applies one actionable frame to the citizen store. The union's broadcast,
@@ -391,6 +456,10 @@ function applyCitizenFrame(payload: SolicitudPayload): void {
   }
   if (payload.type === 'request.arrived') {
     store.applyArrived(payload.requestId);
+    // The push carries no time: reread to show the arrival time the server recorded.
+    if (!isDemoMode()) {
+      syncCitizenRequest();
+    }
     return;
   }
   if (payload.type === 'request.confirmed') {

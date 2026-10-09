@@ -257,6 +257,9 @@ public class SecurityConfig {
                         // fail-closed; without it, POST /solicitudes would be denied.
                         .requestMatchers(HttpMethod.POST, "/api/v1/solicitudes")
                                 .hasAnyAuthority(ROLES_SOLICITANTES)
+                        // The requester's own active requests (EP-04.F2.US9); before the driver's GET.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/solicitudes/mias")
+                                .hasAnyAuthority(ROLES_SOLICITANTES)
                         // Detail of a request (EP-04.F2.US3): only a driver reads
                         // it, and the use case additionally verifies the request
                         // was notified or assigned to the caller's unit (403

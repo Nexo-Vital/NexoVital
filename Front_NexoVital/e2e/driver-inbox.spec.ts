@@ -325,6 +325,11 @@ async function closeRequest(
       },
     );
     if (accepted.ok()) {
+      // Finishing requires the declared arrival (EP-04.F2.US8).
+      await page.request.post(`${API}/solicitudes/${requestId}/llegada`, {
+        headers: { Authorization: `Bearer ${token}` },
+        data: { ambulanciaId: unitId },
+      });
       await page.request.post(`${API}/solicitudes/${requestId}/finalizar`, {
         headers: { Authorization: `Bearer ${token}` },
         data: { ambulanciaId: unitId },
@@ -595,8 +600,12 @@ test('EP-04.F2.US5 rechazo: un conductor rechaza y la solicitud sigue para otro'
       contentType: 'text/plain',
     });
 
-    // 7. Leave the state clean: finish the service as driver 2.
+    // 7. Leave the state clean: declare the arrival and finish as driver 2 (EP-04.F2.US8).
     if (driver2Token && unit2Id && requestId) {
+      await driver2Page.request.post(`${API}/solicitudes/${requestId}/llegada`, {
+        headers: { Authorization: `Bearer ${driver2Token}` },
+        data: { ambulanciaId: unit2Id },
+      });
       const finish = await driver2Page.request.post(`${API}/solicitudes/${requestId}/finalizar`, {
         headers: { Authorization: `Bearer ${driver2Token}` },
         data: { ambulanciaId: unit2Id },
@@ -608,6 +617,12 @@ test('EP-04.F2.US5 rechazo: un conductor rechaza y la solicitud sigue para otro'
     }
   } finally {
     if (!finished && driver2Token && unit2Id && requestId) {
+      await driver2Page.request
+        .post(`${API}/solicitudes/${requestId}/llegada`, {
+          headers: { Authorization: `Bearer ${driver2Token}` },
+          data: { ambulanciaId: unit2Id },
+        })
+        .catch(() => undefined);
       await driver2Page.request
         .post(`${API}/solicitudes/${requestId}/finalizar`, {
           headers: { Authorization: `Bearer ${driver2Token}` },

@@ -78,6 +78,10 @@ public interface SolicitudJpaRepository extends JpaRepository<SolicitudJpaEntity
      */
     List<SolicitudJpaEntity> findByAmbulanciaAsignadaIdOrderBySolicitadaEnDesc(UUID ambulanciaId);
 
+    /** Requests of one requester in the given states, newest first. */
+    List<SolicitudJpaEntity> findBySolicitanteIdAndEstadoInOrderBySolicitadaEnDesc(
+            UUID solicitanteId, Collection<EstadoSolicitud> estados);
+
     /**
      * CAS de expiración: UNA sola {@code UPDATE} que cierra la solicitud solo si
      * sigue PENDIENTE Y su {@code timeoutEn} ya pasó. La condición del

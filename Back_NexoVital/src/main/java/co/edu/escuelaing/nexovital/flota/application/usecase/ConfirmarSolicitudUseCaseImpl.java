@@ -2,6 +2,7 @@ package co.edu.escuelaing.nexovital.flota.application.usecase;
 
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoSolicitud;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudConfirmadaEvent;
+import co.edu.escuelaing.nexovital.flota.domain.exception.LlegadaNoDeclaradaException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoAsignableException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoEncontradaException;
 import co.edu.escuelaing.nexovital.flota.domain.model.SolicitudAmbulancia;
@@ -64,6 +65,15 @@ public class ConfirmarSolicitudUseCaseImpl implements ConfirmarSolicitudUseCase 
         // actor-binding refusals (accept/reject/arrival).
         if (!Objects.equals(solicitud.getSolicitanteId(), solicitanteId)) {
             throw new SolicitudNoAsignableException(solicitudId, solicitud.getEstado());
+        }
+
+        // The citizen confirms that the unit is WITH them, so the unit must have
+        // declared its arrival first (EP-04.F2.US8, M-04). Confirming earlier
+        // used to move the request to CONFIRMADA and leave the arrival
+        // undeclarable forever. The arrival is only ever written once (null ->
+        // instant), so this pre-check cannot be invalidated by a race.
+        if (solicitud.getLlegadaEn() == null) {
+            throw new LlegadaNoDeclaradaException(solicitudId);
         }
 
         int filas = solicitudRepository.transicionAtomicaEstado(

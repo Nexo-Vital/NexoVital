@@ -505,7 +505,6 @@ describe('CitizenMapPage', () => {
       // local `REQ-…`, no `CA-CRUE` and no emergency id travel.
       expect(JSON.parse(options.body as string)).toEqual({
         ubicacion: { lat: 4.728, lng: -74.078 },
-        timeoutEn: expect.any(String),
       });
 
       // The rail renders the server-assigned state and its notified units.
@@ -607,7 +606,6 @@ describe('CitizenMapPage', () => {
       const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(JSON.parse(options.body as string)).toEqual({
         ubicacion: { lat: 4.728, lng: -74.078 },
-        timeoutEn: expect.any(String),
       });
     } finally {
       vi.unstubAllGlobals();

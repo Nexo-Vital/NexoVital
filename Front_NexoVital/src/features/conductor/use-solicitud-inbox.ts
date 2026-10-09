@@ -1136,19 +1136,26 @@ export function useSolicitudInbox(
     // Backend: arrival is a REST command, because there is no @MessageMapping
     // inbound. The SERVER's response is adopted: on 200 the milestone is real,
     // so the mission advances locally without waiting for a push (the arrival
-    // push targets the requester, not this driver).
+    // push targets the requester, not this driver). The time shown is the one
+    // the server recorded (`llegadaEn`, EP-04.F2.US8), not this device's clock;
+    // the device clock is only a fallback for a response without it.
     if (!isDemoMode()) {
       if (!ambulanceId) {
         setOutcomeMessage(UNIT_UNRESOLVED_REASON);
         return;
       }
       void declararLlegada(active.requestId, ambulanceId)
-        .then(() => {
+        .then((solicitud) => {
           const current = missionRef.current;
           if (current?.requestId !== active.requestId || current.arrivedAt !== null) {
             return;
           }
-          const next = { ...current, arrivedAt: Date.now() };
+          const recorded =
+            typeof solicitud.llegadaEn === 'string' ? Date.parse(solicitud.llegadaEn) : Number.NaN;
+          const next = {
+            ...current,
+            arrivedAt: Number.isFinite(recorded) ? recorded : Date.now(),
+          };
           missionRef.current = next;
           setMission(next);
         })
