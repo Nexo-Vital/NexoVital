@@ -6,11 +6,7 @@ import {
   confirmarSolicitud,
   solicitarAmbulancia,
 } from '@/features/solicitudes/solicitud-api';
-import {
-  nextRequestId,
-  SOLICITUD_TIMEOUT_MS,
-  toSolicitud,
-} from '@/features/solicitudes/solicitud-form';
+import { nextRequestId, toSolicitud } from '@/features/solicitudes/solicitud-form';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
 import { isSessionInSync, SESSION_CHANGED_MESSAGE } from '@/features/usuarios/session-sync';
 import { isDemoMode } from '@/services/apiClient';
@@ -201,8 +197,8 @@ export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => 
 
     try {
       const solicitud = await solicitarAmbulancia({
+        // No deadline travels: the server fixes the accept window (EP-04.F2.US6).
         ubicacion: origin,
-        timeoutEn: new Date(startedAt + SOLICITUD_TIMEOUT_MS).toISOString(),
       });
       useSolicitudesStore.getState().upsert({
         ...solicitud,

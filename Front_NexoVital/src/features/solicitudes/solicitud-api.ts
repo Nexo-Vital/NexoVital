@@ -4,19 +4,19 @@ import type { RequestState, SolicitudAmbulancia, Ubicacion } from '@/types/domai
 
 /**
  * Body of `POST /api/v1/solicitudes`, mirroring the backend `SolicitudRequest`
- * record: `{ubicacion, emergenciaId?, centroAyudaId?, zonaId?, timeoutEn?}`.
+ * record: `{ubicacion, emergenciaId?, centroAyudaId?, zonaId?}`.
  *
  * `ubicacion` is the pickup point and the only mandatory field. The emergency,
  * the aid center and the zone are optional context: a citizen request no longer
- * depends on an affected zone. `timeoutEn` is optional too — the backend falls
- * back to its configured accept window when it is absent.
+ * depends on an affected zone. There is no deadline field: the server alone
+ * fixes the accept window (EP-04.F2.US6), so a wrong device clock cannot
+ * shorten or stretch it.
  */
 export interface SolicitudRequestBody {
   ubicacion: Ubicacion;
   emergenciaId?: string;
   centroAyudaId?: string;
   zonaId?: string;
-  timeoutEn?: string;
 }
 
 /** Contract estado (Spanish) -> UI `RequestState` (English). */

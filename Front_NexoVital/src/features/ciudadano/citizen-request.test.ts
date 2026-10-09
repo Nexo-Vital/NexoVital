@@ -416,10 +416,9 @@ describe('useCitizenRequestStore against the backend', () => {
     expect(path).toBe('/api/v1/solicitudes');
     expect(options.method).toBe('POST');
     // Asking for an ambulance no longer depends on an affected zone: the body is
-    // the pickup point and the deadline, nothing else.
+    // only the pickup point. The deadline is the server's (EP-04.F2.US6).
     expect(JSON.parse(options.body as string)).toEqual({
       ubicacion: ORIGIN,
-      timeoutEn: new Date(5000 + 45_000).toISOString(),
     });
 
     // The stored identity and state come from the SERVER response, not the local
