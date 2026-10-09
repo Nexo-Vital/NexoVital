@@ -1,0 +1,145 @@
+# ==========================================================================
+# CD de NexoVital: despliegue continuo a Azure Container Apps.
+#
+# Cuando corre:
+#   * solo, cada vez que el workflow "CI" TERMINA CON EXITO por un push
+#     (merge) a main. Si el CI falla, no se despliega nada;
+#   * a mano, desde la pestana Actions ("Run workflow") sobre main, para
+#     volver a desplegar el ultimo commit de main.
+#
+# Que hace: actualiza el back y el front con las imagenes que el CI publico
+# en GHCR para ESE commit (etiqueta = SHA) y comprueba que respondan.
+# ==========================================================================
+name: CD
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+# Nunca dos despliegues a la vez; el siguiente espera su turno y nunca se
+# corta uno a la mitad.
+concurrency:
+  group: cd-azure
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  desplegar:
+    name: Desplegar en Azure
+    # Automatico: solo si el CI de un push a main salio bien (en ese caso el CI
+    # publico las imagenes). Manual: solo desde main.
+    if: >-
+      (github.event_name == 'workflow_run'
+        && github.event.workflow_run.conclusion == 'success'
+        && github.event.workflow_run.event == 'push')
+      || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      # Permite pedirle a GitHub un token OIDC para entrar a Azure sin
+      # guardar ninguna contrasena.
+      id-token: write
+    env:
+      # Valores de Settings -> Secrets and variables -> Actions -> Variables.
+      RG: ${{ vars.AZURE_RG }}
+      BACK: ${{ vars.AZURE_BACK }}
+      FRONT: ${{ vars.AZURE_FRONT }}
+      PG: ${{ vars.AZURE_PG }}
+      # El commit que probo el CI (automatico) o la punta de main (manual).
+      SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - name: Revisar la configuracion
+        env:
+          CLIENTE: ${{ secrets.AZURE_CLIENT_ID }}
+          INQUILINO: ${{ secrets.AZURE_TENANT_ID }}
+          SUSCRIPCION: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          faltan=""
+          for nombre in RG BACK FRONT PG CLIENTE INQUILINO SUSCRIPCION; do
+            [ -z "${!nombre}" ] && faltan="$faltan $nombre"
+          done
+          if [ -n "$faltan" ]; then
+            echo "::error::Faltan secretos o variables del repositorio:$faltan (ver LEEME de la Fase 4, Parte C)"
+            exit 1
+          fi
+          # La etiqueta del commit (no `latest`): cada despliegue crea una
+          # revision nueva y se sabe exactamente que version corre.
+          echo "IMG_BACK=ghcr.io/nexo-vital/nexovital-back:$SHA" >> "$GITHUB_ENV"
+          echo "IMG_FRONT=ghcr.io/nexo-vital/nexovital-front:$SHA" >> "$GITHUB_ENV"
+          echo "Commit a desplegar: $SHA"
+
+      - name: Iniciar sesion en Azure (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Preparar la CLI de Container Apps
+        run: az extension add --name containerapp --upgrade --yes --only-show-errors
+
+      # Primero el back: si la API cambio, el front nuevo ya la encuentra.
+      - name: Desplegar el back
+        run: |
+          az containerapp update -g "$RG" -n "$BACK" --image "$IMG_BACK" -o none --only-show-errors
+          echo "Back: revision $(az containerapp show -g "$RG" -n "$BACK" --query properties.latestRevisionName -o tsv)"
+
+      - name: Desplegar el front
+        run: |
+          az containerapp update -g "$RG" -n "$FRONT" --image "$IMG_FRONT" -o none --only-show-errors
+          echo "Front: revision $(az containerapp show -g "$RG" -n "$FRONT" --query properties.latestRevisionName -o tsv)"
+
+      # Las apps pueden estar en escala cero: la primera respuesta tarda.
+      - name: Comprobar que responden
+        run: |
+          FRONT_FQDN=$(az containerapp show -g "$RG" -n "$FRONT" --query properties.configuration.ingress.fqdn -o tsv)
+          {
+            echo "### Despliegue en Azure"
+            echo "- Commit: \`${SHA::7}\`"
+            echo "- Sitio: https://$FRONT_FQDN"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # 1) El front (no depende de la base de datos).
+          for i in $(seq 1 18); do
+            if curl -fsS --max-time 10 "https://$FRONT_FQDN/healthz" > /dev/null; then
+              echo "Front OK"
+              break
+            fi
+            if [ "$i" = 18 ]; then
+              echo "::error::El front no respondio en /healthz"
+              exit 1
+            fi
+            sleep 10
+          done
+
+          # 2) El back, a traves del front. Si la base esta apagada no se
+          #    puede probar: el despliegue igual queda hecho.
+          ESTADO_PG=$(az postgres flexible-server show -g "$RG" -n "$PG" --query state -o tsv)
+          if [ "$ESTADO_PG" != "Ready" ]; then
+            echo "::warning::La base de datos esta en estado '$ESTADO_PG'. El back quedo actualizado, pero se probara cuando la enciendas."
+            echo "- Back: sin probar (base de datos en estado $ESTADO_PG)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # POST /api/v1/sesiones sin credenciales: Spring responde 400.
+          # Ese 400 prueba la cadena completa front -> Nginx -> back.
+          for i in $(seq 1 24); do
+            CODIGO=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+              -X POST "https://$FRONT_FQDN/api/v1/sesiones" \
+              -H 'Content-Type: application/json' -d '{}' || true)
+            echo "Intento $i: HTTP $CODIGO"
+            if [ "$CODIGO" = "400" ]; then
+              echo "Back OK"
+              echo "- Back: OK" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::El back no respondio a /api/v1/sesiones (ultimo codigo: $CODIGO)"
+          exit 1
