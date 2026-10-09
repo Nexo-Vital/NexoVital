@@ -461,9 +461,14 @@ test('ciclo completo de la ambulancia con ciudadano y conductor simultaneos', as
   } finally {
     // Best-effort: never leave an occupied unit behind if an assertion failed
     // after the accept. A repeat call after a successful finish answers 409 and
-    // is ignored.
+    // is ignored. The server only finishes a service whose arrival was declared
+    // (EP-04.F2.US8), so the arrival goes first; it is idempotent.
     if (!finished && driverToken && requestId && assignedUnitId) {
       try {
+        await request.post(`${API}/solicitudes/${requestId}/llegada`, {
+          headers: { Authorization: `Bearer ${driverToken}` },
+          data: { ambulanciaId: assignedUnitId },
+        });
         await request.post(`${API}/solicitudes/${requestId}/finalizar`, {
           headers: { Authorization: `Bearer ${driverToken}` },
           data: { ambulanciaId: assignedUnitId },

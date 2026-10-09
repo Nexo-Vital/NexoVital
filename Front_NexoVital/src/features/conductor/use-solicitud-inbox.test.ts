@@ -1133,8 +1133,13 @@ describe('useSolicitudInbox against the backend (no demo mode)', () => {
 
   it('declares arrival through REST and adopts the server milestone', async () => {
     enableBackend();
+    const recordedAt = '2026-01-01T00:10:00.000Z';
     fetchMock.mockResolvedValue(
-      mockResponse(200, { ...acceptBody(true).solicitud, estado: 'ASIGNADA' }),
+      mockResponse(200, {
+        ...acceptBody(true).solicitud,
+        estado: 'ASIGNADA',
+        llegadaEn: recordedAt,
+      }),
     );
     const { port, result } = setupBackend();
 
@@ -1156,9 +1161,36 @@ describe('useSolicitudInbox against the backend (no demo mode)', () => {
     expect(path).toBe(`/api/v1/solicitudes/${REAL_REQUEST}/llegada`);
     expect(options.method).toBe('POST');
     expect(JSON.parse(options.body as string)).toEqual({ ambulanciaId: REAL_UNIT });
-    // The SERVER confirmed the milestone, so the mission advances locally.
+    // The SERVER confirmed the milestone, so the mission advances locally, and
+    // the time is the one the server recorded, not this device's clock
+    // (EP-04.F2.US8).
     expect(result.current.missionPhase).toBe('arrived');
-    expect(result.current.mission?.arrivedAt).toBeGreaterThan(0);
+    expect(result.current.mission?.arrivedAt).toBe(Date.parse(recordedAt));
+  });
+
+  it('falls back to the device clock when the arrival answer carries no llegadaEn', async () => {
+    enableBackend();
+    fetchMock.mockResolvedValue(
+      mockResponse(200, { ...acceptBody(true).solicitud, estado: 'ASIGNADA' }),
+    );
+    const { port, result } = setupBackend();
+
+    act(() => port.emit(DESTINATIONS.solicitudes, REAL_BROADCAST));
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, {
+        type: 'request.taken',
+        requestId: REAL_REQUEST,
+        winner: REAL_UNIT,
+      }),
+    );
+    const before = Date.now();
+
+    await act(async () => {
+      result.current.declareArrival();
+    });
+
+    expect(result.current.missionPhase).toBe('arrived');
+    expect(result.current.mission?.arrivedAt).toBeGreaterThanOrEqual(before);
   });
 
   it('FIX3: the driver gets the mission when the server winner is its OWN real unit', async () => {
