@@ -2,6 +2,7 @@ package co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in;
 
 import co.edu.escuelaing.nexovital.flota.domain.exception.AmbulanciaNoDisponibleException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudAjenaException;
+import co.edu.escuelaing.nexovital.flota.domain.exception.LlegadaNoDeclaradaException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoAsignableException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoEncontradaException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudYaAsignadaException;
@@ -15,8 +16,10 @@ import co.edu.escuelaing.nexovital.flota.domain.port.in.ConfirmarSolicitudUseCas
 import co.edu.escuelaing.nexovital.flota.domain.port.in.ConsultarDetalleSolicitudUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.DeclararLlegadaUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.FinalizarSolicitudUseCase;
+import co.edu.escuelaing.nexovital.flota.domain.port.in.ListarMisSolicitudesUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.RechazarSolicitudUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.SolicitarAmbulanciaUseCase;
+import co.edu.escuelaing.nexovital.flota.domain.port.out.NombreUsuarioPort;
 import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in.dto.AceptarSolicitudRequest;
 import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in.dto.AceptarSolicitudResponse;
 import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in.dto.RechazarSolicitudRequest;
@@ -35,8 +38,10 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -57,6 +62,9 @@ public class SolicitudController {
 
     private static final String MENSAJE_DATOS_INVALIDOS =
             "La solicitud no es válida: indique la ubicación del pedido.";
+    private static final String MENSAJE_DATOS_CONSULTA = "El estado debe ser activas o atendidas.";
+    private static final String MENSAJE_DIRECCION_LARGA = "La dirección no puede superar 255 caracteres.";
+    private static final int LONGITUD_MAXIMA_DIRECCION = 255;
     private static final String MENSAJE_DATOS_ACEPTACION = "El accept no es válido: indique la ambulancia.";
     private static final String MENSAJE_DATOS_RECHAZO = "El reject no es válido: indique la ambulancia.";
     private static final String MENSAJE_DATOS_LLEGADA = "La llegada no es válida: indique la ambulancia.";
@@ -72,6 +80,8 @@ public class SolicitudController {
             "Esta solicitud no fue notificada a tu ambulancia.";
     private static final String MENSAJE_CAS_PERDIDO = "Solicitud ya asignada a otra ambulancia.";
     private static final String MENSAJE_SOLICITUD_YA_RECHAZADA = "Ya rechazaste esta solicitud.";
+    private static final String MENSAJE_LLEGADA_NO_DECLARADA =
+            "La ambulancia todavía no ha declarado su llegada.";
     private static final String MENSAJE_AMBULANCIA_NO_DISPONIBLE =
             "No hay ambulancias disponibles para atender la solicitud.";
     private static final String MENSAJE_ERROR_SOLICITUD = "No fue posible registrar la solicitud.";
@@ -91,6 +101,8 @@ public class SolicitudController {
     private final ConfirmarSolicitudUseCase confirmarSolicitudUseCase;
     private final CancelarSolicitudUseCase cancelarSolicitudUseCase;
     private final ConsultarDetalleSolicitudUseCase consultarDetalleSolicitudUseCase;
+    private final ListarMisSolicitudesUseCase listarMisSolicitudesUseCase;
+    private final NombreUsuarioPort nombreUsuarioPort;
 
     public SolicitudController(SolicitarAmbulanciaUseCase solicitarAmbulanciaUseCase,
                                AceptarSolicitudUseCase aceptarSolicitudUseCase,
@@ -99,7 +111,9 @@ public class SolicitudController {
                                FinalizarSolicitudUseCase finalizarSolicitudUseCase,
                                ConfirmarSolicitudUseCase confirmarSolicitudUseCase,
                                CancelarSolicitudUseCase cancelarSolicitudUseCase,
-                               ConsultarDetalleSolicitudUseCase consultarDetalleSolicitudUseCase) {
+                               ConsultarDetalleSolicitudUseCase consultarDetalleSolicitudUseCase,
+                               ListarMisSolicitudesUseCase listarMisSolicitudesUseCase,
+                               NombreUsuarioPort nombreUsuarioPort) {
         this.solicitarAmbulanciaUseCase = solicitarAmbulanciaUseCase;
         this.aceptarSolicitudUseCase = aceptarSolicitudUseCase;
         this.rechazarSolicitudUseCase = rechazarSolicitudUseCase;
@@ -108,6 +122,35 @@ public class SolicitudController {
         this.confirmarSolicitudUseCase = confirmarSolicitudUseCase;
         this.cancelarSolicitudUseCase = cancelarSolicitudUseCase;
         this.consultarDetalleSolicitudUseCase = consultarDetalleSolicitudUseCase;
+        this.listarMisSolicitudesUseCase = listarMisSolicitudesUseCase;
+        this.nombreUsuarioPort = nombreUsuarioPort;
+    }
+
+    /** The public projection, with the requester's name. */
+    private SolicitudAmbulanciaDto aDto(SolicitudAmbulancia solicitud) {
+        String solicitante = nombreUsuarioPort.nombreDe(solicitud.getSolicitanteId());
+        return SolicitudAmbulanciaDto.fromDomain(solicitud, solicitante);
+    }
+
+    /** The requester's active (US9) or attended (US11, {@code ?estado=atendidas}) requests. */
+    @GetMapping("/mias")
+    @Operation(summary = "Solicitudes activas o atendidas del solicitante autenticado")
+    public ResponseEntity<Object> mias(@RequestParam(name = "estado", defaultValue = "activas") String estado) {
+        try {
+            List<SolicitudAmbulancia> solicitudes;
+            if ("activas".equals(estado)) {
+                solicitudes = listarMisSolicitudesUseCase.listarActivas(usuarioAutenticadoId());
+            } else if ("atendidas".equals(estado)) {
+                solicitudes = listarMisSolicitudesUseCase.listarAtendidas(usuarioAutenticadoId());
+            } else {
+                return ResponseEntity.badRequest()
+                        .body(ErrorResponse.of("DATOS_INVALIDOS", MENSAJE_DATOS_CONSULTA));
+            }
+            return ResponseEntity.ok(solicitudes.stream().map(this::aDto).toList());
+        } catch (RuntimeException e) {
+            return ResponseEntity.internalServerError()
+                    .body(ErrorResponse.of("ERROR_CONSULTA_SOLICITUD", MENSAJE_ERROR_DETALLE));
+        }
     }
 
     /**
@@ -125,6 +168,10 @@ public class SolicitudController {
     @PostMapping
     @Operation(summary = "Solicitar una ambulancia (broadcast a todas las disponibles)")
     public ResponseEntity<Object> solicitar(@RequestBody SolicitudRequest request) {
+        if (request != null && request.direccion() != null
+                && request.direccion().strip().length() > LONGITUD_MAXIMA_DIRECCION) {
+            return ResponseEntity.badRequest().body(ErrorResponse.of("DATOS_INVALIDOS", MENSAJE_DIRECCION_LARGA));
+        }
         try {
             if (request == null || request.ubicacion() == null) {
                 throw new IllegalArgumentException("La ubicación del pedido es obligatoria.");
@@ -137,8 +184,11 @@ public class SolicitudController {
             UUID solicitanteId = usuarioAutenticadoId();
             SolicitudAmbulancia creada = solicitarAmbulanciaUseCase.solicitar(
                     lat, lng, request.emergenciaId(), request.centroAyudaId(), request.zonaId(),
-                    solicitanteId, request.timeoutEn());
-            return ResponseEntity.status(HttpStatus.CREATED).body(SolicitudAmbulanciaDto.fromDomain(creada));
+                    // The accept window is fixed by the server (EP-04.F2.US6, M-03):
+                    // the client clock is never trusted, so null asks for the
+                    // configured window counted from the server's own clock.
+                    solicitanteId, null, request.direccion());
+            return ResponseEntity.status(HttpStatus.CREATED).body(aDto(creada));
         } catch (AmbulanciaNoDisponibleException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(ErrorResponse.of("AMBULANCIA_NO_DISPONIBLE", MENSAJE_AMBULANCIA_NO_DISPONIBLE));
@@ -170,7 +220,7 @@ public class SolicitudController {
         try {
             SolicitudAmbulancia solicitud =
                     consultarDetalleSolicitudUseCase.consultar(id, usuarioAutenticadoId());
-            return ResponseEntity.ok(SolicitudAmbulanciaDto.fromDomain(solicitud));
+            return ResponseEntity.ok(aDto(solicitud));
         } catch (SolicitudNoEncontradaException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ErrorResponse.of("SOLICITUD_NO_ENCONTRADA", MENSAJE_SOLICITUD_NO_ENCONTRADA));
@@ -219,7 +269,7 @@ public class SolicitudController {
                         .body(ErrorResponse.of("CAS_PERDIDO", MENSAJE_CAS_PERDIDO));
             }
             return ResponseEntity.ok(AceptarSolicitudResponse.of(
-                    true, SolicitudAmbulanciaDto.fromDomain(resultado.solicitud())));
+                    true, aDto(resultado.solicitud())));
         } catch (SolicitudNoEncontradaException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ErrorResponse.of("SOLICITUD_NO_ENCONTRADA", MENSAJE_SOLICITUD_NO_ENCONTRADA));
@@ -276,7 +326,7 @@ public class SolicitudController {
             // them before declining, so the client cannot reject another unit.
             SolicitudAmbulancia rechazada =
                     rechazarSolicitudUseCase.rechazar(id, request.ambulanciaId(), usuarioAutenticadoId());
-            return ResponseEntity.ok(SolicitudAmbulanciaDto.fromDomain(rechazada));
+            return ResponseEntity.ok(aDto(rechazada));
         } catch (SolicitudNoEncontradaException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ErrorResponse.of("SOLICITUD_NO_ENCONTRADA", MENSAJE_SOLICITUD_NO_ENCONTRADA));
@@ -314,7 +364,7 @@ public class SolicitudController {
             }
             SolicitudAmbulancia llegada =
                     declararLlegadaUseCase.declararLlegada(id, request.ambulanciaId(), usuarioAutenticadoId());
-            return ResponseEntity.ok(SolicitudAmbulanciaDto.fromDomain(llegada));
+            return ResponseEntity.ok(aDto(llegada));
         } catch (SolicitudNoEncontradaException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ErrorResponse.of("SOLICITUD_NO_ENCONTRADA", MENSAJE_SOLICITUD_NO_ENCONTRADA));
@@ -343,6 +393,8 @@ public class SolicitudController {
      *         {@code SOLICITUD_NO_ENCONTRADA}; 409 {@code SOLICITUD_NO_ASIGNABLE}
      *         if the request is not in service or the unit is not the caller's;
      *         409 {@code AMBULANCIA_NO_DISPONIBLE} if the unit is not EN_MISION;
+     *         409 {@code LLEGADA_NO_DECLARADA} if the unit has not declared
+     *         its arrival yet (EP-04.F2.US8);
      *         400 {@code DATOS_INVALIDOS}; 500 {@code ERROR_FINALIZACION_SOLICITUD}
      */
     @PostMapping("/{id}/finalizar")
@@ -354,10 +406,13 @@ public class SolicitudController {
             }
             SolicitudAmbulancia finalizada = finalizarSolicitudUseCase.finalizar(
                     id, request.ambulanciaId(), usuarioAutenticadoId());
-            return ResponseEntity.ok(SolicitudAmbulanciaDto.fromDomain(finalizada));
+            return ResponseEntity.ok(aDto(finalizada));
         } catch (SolicitudNoEncontradaException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ErrorResponse.of("SOLICITUD_NO_ENCONTRADA", MENSAJE_SOLICITUD_NO_ENCONTRADA));
+        } catch (LlegadaNoDeclaradaException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ErrorResponse.of("LLEGADA_NO_DECLARADA", MENSAJE_LLEGADA_NO_DECLARADA));
         } catch (SolicitudNoAsignableException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(ErrorResponse.of("SOLICITUD_NO_ASIGNABLE", MENSAJE_SOLICITUD_NO_ASIGNABLE));
@@ -380,7 +435,9 @@ public class SolicitudController {
      *
      * @return 200 with the CONFIRMED request; 404
      *         {@code SOLICITUD_NO_ENCONTRADA}; 409 {@code SOLICITUD_NO_ASIGNABLE}
-     *         if it is not ASIGNADA or the caller is not the requester; 500
+     *         if it is not ASIGNADA or the caller is not the requester; 409
+     *         {@code LLEGADA_NO_DECLARADA} if the unit has not declared its
+     *         arrival yet (EP-04.F2.US8); 500
      *         {@code ERROR_CONFIRMACION_SOLICITUD}
      */
     @PostMapping("/{id}/confirmar")
@@ -389,10 +446,13 @@ public class SolicitudController {
         try {
             UUID solicitanteId = usuarioAutenticadoId();
             SolicitudAmbulancia confirmada = confirmarSolicitudUseCase.confirmar(id, solicitanteId);
-            return ResponseEntity.ok(SolicitudAmbulanciaDto.fromDomain(confirmada));
+            return ResponseEntity.ok(aDto(confirmada));
         } catch (SolicitudNoEncontradaException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ErrorResponse.of("SOLICITUD_NO_ENCONTRADA", MENSAJE_SOLICITUD_NO_ENCONTRADA));
+        } catch (LlegadaNoDeclaradaException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ErrorResponse.of("LLEGADA_NO_DECLARADA", MENSAJE_LLEGADA_NO_DECLARADA));
         } catch (SolicitudNoAsignableException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(ErrorResponse.of("SOLICITUD_NO_ASIGNABLE", MENSAJE_SOLICITUD_NO_ASIGNABLE));
@@ -422,7 +482,7 @@ public class SolicitudController {
         try {
             UUID solicitanteId = usuarioAutenticadoId();
             SolicitudAmbulancia cancelada = cancelarSolicitudUseCase.cancelar(id, solicitanteId);
-            return ResponseEntity.ok(SolicitudAmbulanciaDto.fromDomain(cancelada));
+            return ResponseEntity.ok(aDto(cancelada));
         } catch (SolicitudNoEncontradaException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ErrorResponse.of("SOLICITUD_NO_ENCONTRADA", MENSAJE_SOLICITUD_NO_ENCONTRADA));

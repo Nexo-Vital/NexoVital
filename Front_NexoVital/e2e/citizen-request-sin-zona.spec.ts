@@ -172,6 +172,11 @@ test('sin emergencias: el ciudadano pide y las cinco unidades reciben la notific
     const citizenContext = await newIsolatedContext(browser);
     contexts.push(citizenContext);
     const citizenPage = await citizenContext.newPage();
+    // No geocoder here: the card keeps showing the pickup coordinates this test checks.
+    await citizenPage.route(
+      (url) => url.pathname.endsWith('/reverse'),
+      (route) => route.abort(),
+    );
     await login(citizenPage, CITIZEN);
     await expect(citizenPage.getByRole('button', { name: 'Pedir ambulancia' })).toBeVisible({
       timeout: 30_000,
@@ -250,7 +255,11 @@ test('sin emergencias: el ciudadano pide y las cinco unidades reciben la notific
     }
     console.log(`[sin-zona] ${unitIds[0]} acepto; las otras cuatro siguen DISPONIBLE`);
 
-    // 5. Leave the state clean: finish the service so the unit is released.
+    // 5. Leave the state clean: declare the arrival, then finish (EP-04.F2.US8).
+    await winnerPage.request.post(`${API}/solicitudes/${request.id}/llegada`, {
+      headers: { Authorization: `Bearer ${winnerToken}` },
+      data: { ambulanciaId: unitIds[0] },
+    });
     const finish = await winnerPage.request.post(`${API}/solicitudes/${request.id}/finalizar`, {
       headers: { Authorization: `Bearer ${winnerToken}` },
       data: { ambulanciaId: unitIds[0] },

@@ -35,7 +35,13 @@ function renderFrame(role: RolUsuario = 'CIUDADANO', roleDetail?: string, bellCo
         <Route path="/login" element={<div data-testid="login-screen" />} />
         <Route
           element={
-            <AppFrame nav={NAV} activeKey="map" roleDetail={roleDetail} bellCount={bellCount} />
+            <AppFrame
+              nav={NAV}
+              activeKey="map"
+              roleDetail={roleDetail}
+              bellCount={bellCount}
+              showTopbarTools
+            />
           }
         >
           <Route path="/" element={<div data-testid="outlet-content" />} />
@@ -92,6 +98,7 @@ function renderBellFrame(
               bellCount={notifications.length}
               notifications={notifications}
               onNotificationSelect={onSelect}
+              showTopbarTools
             />
           }
         >

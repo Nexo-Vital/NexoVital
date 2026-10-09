@@ -15,6 +15,7 @@ import {
   MAP_ZOOM,
   MAPLIBRE_WORKER_URL,
 } from './mapConfig';
+import { MARKER_SPACING_PX, metersPerPixel, spreadPositions } from './marker-spread';
 import {
   ambulanceIcon,
   centerIcon,
@@ -183,6 +184,46 @@ function CenterReporter({ onCenterChange }: { onCenterChange?: (ubicacion: Ubica
   return null;
 }
 
+/** Emergency markers; alerts on the same spot are spread so none covers another. */
+function EmergencyMarkers({
+  emergencias,
+  onSelect,
+}: {
+  emergencias: Emergencia[];
+  onSelect: (id: string) => void;
+}) {
+  const map = useMap();
+  const [zoom, setZoom] = useState(() => map.getZoom());
+  useMapEvents({
+    zoomend: () => setZoom(map.getZoom()),
+  });
+  const positions = useMemo(() => {
+    // The oldest alert keeps its real point; later ones step aside.
+    const ordered = [...emergencias].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const lat = ordered[0]?.ubicacion.lat ?? 0;
+    return spreadPositions(ordered, MARKER_SPACING_PX * metersPerPixel(lat, zoom));
+  }, [emergencias, zoom]);
+
+  return (
+    <>
+      {emergencias.map((emergency) => {
+        const position = positions.get(emergency.id) ?? emergency.ubicacion;
+        return (
+          <Marker
+            key={emergency.id}
+            position={[position.lat, position.lng]}
+            icon={emergencyIcon(emergency)}
+            // Native hover tooltip with the reported type and comment
+            // (EP-02.F1.US3); Leaflet omits the attribute when the title is empty.
+            title={emergencyTitle(emergency)}
+            eventHandlers={{ click: () => onSelect(emergency.id) }}
+          />
+        );
+      })}
+    </>
+  );
+}
+
 /**
  * Citizen search radar (mockup `C.c3`). The outer ring's real ground radius is
  * `outerKm`; the icon is re-sized from that distance on every settled zoom, so
@@ -349,17 +390,7 @@ export function MapCanvas({
       <CenterReporter onCenterChange={onCenterChange} />
       <MapClickHandler onMapClick={onMapClick} onClearSelection={onClearSelection} />
 
-      {visibleEmergencies.map((emergency) => (
-        <Marker
-          key={emergency.id}
-          position={[emergency.ubicacion.lat, emergency.ubicacion.lng]}
-          icon={emergencyIcon(emergency)}
-          // Native hover tooltip with the reported type and comment
-          // (EP-02.F1.US3); Leaflet omits the attribute when the title is empty.
-          title={emergencyTitle(emergency)}
-          eventHandlers={{ click: () => onSelectEmergency(emergency.id) }}
-        />
-      ))}
+      <EmergencyMarkers emergencias={visibleEmergencies} onSelect={onSelectEmergency} />
 
       {overlays.ambulancias &&
         ambulancias.map((ambulance) => (

@@ -81,12 +81,14 @@ public final class SolicitudAmbulancia {
      */
     private final Instant llegadaEn;
     private final long version;
+    /** Readable pickup address the citizen sent; null when unknown. */
+    private final String direccion;
 
     private SolicitudAmbulancia(UUID id, double lat, double lng, UUID emergenciaId, EstadoSolicitud estado,
                                 UUID centroAyudaId, String zonaId, Instant solicitadaEn, Instant timeoutEn,
                                 UUID solicitanteId, List<UUID> ambulanciasNotificadas,
                                 List<UUID> ambulanciasRechazaron,
-                                UUID ambulanciaAsignadaId, Instant llegadaEn, long version) {
+                                UUID ambulanciaAsignadaId, Instant llegadaEn, long version, String direccion) {
         this.id = Objects.requireNonNull(id, "id is required");
         this.lat = lat;
         this.lng = lng;
@@ -109,6 +111,7 @@ public final class SolicitudAmbulancia {
         this.ambulanciaAsignadaId = ambulanciaAsignadaId;
         this.llegadaEn = llegadaEn;
         this.version = version;
+        this.direccion = direccion;
     }
 
     /**
@@ -126,7 +129,8 @@ public final class SolicitudAmbulancia {
         }
         Objects.requireNonNull(solicitanteId, "solicitanteId is required");
         return new SolicitudAmbulancia(id, lat, lng, emergenciaId, EstadoSolicitud.PENDIENTE, centroAyudaId,
-                zonaId, solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, List.of(), null, null, 0);
+                zonaId, solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, List.of(), null, null, 0,
+                null);
     }
 
     /**
@@ -155,7 +159,7 @@ public final class SolicitudAmbulancia {
                                                 UUID ambulanciaAsignadaId, Instant llegadaEn, long version) {
         return new SolicitudAmbulancia(id, lat, lng, emergenciaId, estado, centroAyudaId, zonaId,
                 solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, ambulanciasRechazaron,
-                ambulanciaAsignadaId, llegadaEn, version);
+                ambulanciaAsignadaId, llegadaEn, version, null);
     }
 
     private static SolicitudAmbulancia conEstado(SolicitudAmbulancia actual, EstadoSolicitud nuevo,
@@ -163,7 +167,7 @@ public final class SolicitudAmbulancia {
         return new SolicitudAmbulancia(actual.id, actual.lat, actual.lng, actual.emergenciaId, nuevo,
                 actual.centroAyudaId, actual.zonaId, actual.solicitadaEn, actual.timeoutEn, actual.solicitanteId,
                 actual.ambulanciasNotificadas, actual.ambulanciasRechazaron, ambulanciaAsignadaId,
-                actual.llegadaEn, actual.version + 1);
+                actual.llegadaEn, actual.version + 1, actual.direccion);
     }
 
     private static void requiereTransicion(SolicitudAmbulancia solicitud, EstadoSolicitud esperado, String accion) {
@@ -241,7 +245,8 @@ public final class SolicitudAmbulancia {
         requiereTransicion(this, EstadoSolicitud.ASIGNADA, "arrival");
         return new SolicitudAmbulancia(id, lat, lng, emergenciaId, estado, centroAyudaId, zonaId,
                 solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, ambulanciasRechazaron,
-                ambulanciaAsignadaId, Objects.requireNonNull(llegadaEn, "llegadaEn is required"), version + 1);
+                ambulanciaAsignadaId, Objects.requireNonNull(llegadaEn, "llegadaEn is required"), version + 1,
+                direccion);
     }
 
     public boolean estaVencida() {
@@ -285,7 +290,7 @@ public final class SolicitudAmbulancia {
         rechazaron.add(ambulanciaId);
         return new SolicitudAmbulancia(id, lat, lng, emergenciaId, estado, centroAyudaId, zonaId,
                 solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, rechazaron,
-                ambulanciaAsignadaId, llegadaEn, version);
+                ambulanciaAsignadaId, llegadaEn, version, direccion);
     }
 
     public UUID getId() {
@@ -349,6 +354,18 @@ public final class SolicitudAmbulancia {
     /** Arrival milestone instant, or null while the unit has not arrived. */
     public Instant getLlegadaEn() {
         return llegadaEn;
+    }
+
+    /** Same request with the readable address the citizen sent (blank means none). */
+    public SolicitudAmbulancia conDireccion(String direccion) {
+        String limpia = direccion == null || direccion.isBlank() ? null : direccion.strip();
+        return new SolicitudAmbulancia(id, lat, lng, emergenciaId, estado, centroAyudaId, zonaId,
+                solicitadaEn, timeoutEn, solicitanteId, ambulanciasNotificadas, ambulanciasRechazaron,
+                ambulanciaAsignadaId, llegadaEn, version, limpia);
+    }
+
+    public String getDireccion() {
+        return direccion;
     }
 
     public long getVersion() {

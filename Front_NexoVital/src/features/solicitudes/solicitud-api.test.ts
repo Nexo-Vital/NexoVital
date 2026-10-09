@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setToken } from '@/services/apiClient';
-import { fromWireSolicitudAmbulancia, solicitarAmbulancia } from './solicitud-api';
+import {
+  fromWireSolicitudAmbulancia,
+  listarMisSolicitudes,
+  listarMisSolicitudesAtendidas,
+  solicitarAmbulancia,
+} from './solicitud-api';
 
 /** A live-shaped 201 body: server-assigned id/estado/timestamps. */
 const WIRE_RESPONSE = {
@@ -51,6 +56,24 @@ describe('fromWireSolicitudAmbulancia', () => {
       ambulanciasRechazaron: [],
       ambulanciaAsignadaId: null,
     });
+  });
+
+  it('carries the readable address and the requester name when the server sends them', () => {
+    const solicitud = fromWireSolicitudAmbulancia({
+      ...WIRE_RESPONSE,
+      direccion: 'Calle 145 # 91-19, Suba',
+      solicitanteNombre: 'Ana Gómez',
+    });
+    expect(solicitud?.direccion).toBe('Calle 145 # 91-19, Suba');
+    expect(solicitud?.solicitanteNombre).toBe('Ana Gómez');
+    // Null or blank values read as unknown, never as an empty label.
+    const sinDatos = fromWireSolicitudAmbulancia({
+      ...WIRE_RESPONSE,
+      direccion: null,
+      solicitanteNombre: '  ',
+    });
+    expect(sinDatos).not.toHaveProperty('direccion');
+    expect(sinDatos).not.toHaveProperty('solicitanteNombre');
   });
 
   it('carries the units that declined the request (EP-04.F2.US5)', () => {
@@ -201,5 +224,68 @@ describe('solicitarAmbulancia', () => {
       codigo: 'AMBULANCIA_NO_DISPONIBLE',
       message: 'No hay ambulancias disponibles para atender la solicitud.',
     });
+  });
+});
+
+describe('listarMisSolicitudes (EP-04.F2.US9)', () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    localStorage.clear();
+    fetchMock.mockReset();
+    vi.stubGlobal('fetch', fetchMock);
+    setToken('jwt.test');
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('GETs /solicitudes/mias and maps each request, keeping the arrival time', async () => {
+    const llegada = {
+      ...WIRE_RESPONSE,
+      estado: 'ASIGNADA',
+      ambulanciaAsignadaId: 'A-07',
+      llegadaEn: '2026-01-01T00:10:00.000Z',
+    };
+    fetchMock.mockResolvedValue(mockResponse(200, [llegada, { roto: true }]));
+
+    const solicitudes = await listarMisSolicitudes();
+
+    const [path, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe('/api/v1/solicitudes/mias');
+    expect(options.method ?? 'GET').toBe('GET');
+    expect(solicitudes).toHaveLength(1);
+    expect(solicitudes[0]).toMatchObject({
+      id: WIRE_RESPONSE.id,
+      estado: 'ASSIGNED',
+      ambulanciaAsignadaId: 'A-07',
+      llegadaEn: '2026-01-01T00:10:00.000Z',
+    });
+  });
+
+  it('returns an empty list when the body is not a list', async () => {
+    fetchMock.mockResolvedValue(mockResponse(200, { ok: true }));
+
+    await expect(listarMisSolicitudes()).resolves.toEqual([]);
+  });
+
+  it('GETs the attended requests with ?estado=atendidas (EP-04.F2.US11)', async () => {
+    const atendida = {
+      ...WIRE_RESPONSE,
+      estado: 'TOMADA',
+      ambulanciaAsignadaId: 'A-07',
+      llegadaEn: '2026-01-01T00:10:00.000Z',
+    };
+    fetchMock.mockResolvedValue(mockResponse(200, [atendida, { roto: true }]));
+
+    const solicitudes = await listarMisSolicitudesAtendidas();
+
+    const [path, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe('/api/v1/solicitudes/mias?estado=atendidas');
+    expect(options.method ?? 'GET').toBe('GET');
+    expect(solicitudes).toHaveLength(1);
+    expect(solicitudes[0]).toMatchObject({ id: WIRE_RESPONSE.id, estado: 'TAKEN' });
   });
 });

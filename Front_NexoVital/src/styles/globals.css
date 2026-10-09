@@ -216,6 +216,19 @@
     height: 100%;
   }
 
+  /* Hand cursor on every enabled clickable control; disabled ones say so. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="menuitem"],
+  summary,
+  select:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
   body {
     margin: 0;
     background-color: var(--background);

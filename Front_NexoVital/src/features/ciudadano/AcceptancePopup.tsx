@@ -1,5 +1,7 @@
 import { Check } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { unitPlateLabel } from '@/lib/unit-label';
+import type { Ambulancia } from '@/types/domain';
 
 /**
  * How long the citizen acceptance popup stays before closing itself, in ms.
@@ -11,8 +13,19 @@ export const ACCEPTANCE_POPUP_MS = 4000;
 interface AcceptancePopupProps {
   /** Real id of the unit that accepted, as the arbiter reported it. */
   ambulanceId: string;
+  /** That unit as the fleet knows it, for its plate and driver; null if unknown. */
+  unit?: Ambulancia | null;
   /** Closes the popup early; the request itself is untouched. */
   onClose: () => void;
+}
+
+/** Plate, and driver when known: "La ambulancia con placa … y conductor … aceptó". */
+export function acceptanceMessage(ambulanceId: string, unit: Ambulancia | null): string {
+  const plate = unit ? unitPlateLabel(unit) : ambulanceId;
+  const driver = unit?.driverName?.trim();
+  return driver
+    ? `La ambulancia con placa ${plate} y conductor ${driver} aceptó tu solicitud.`
+    : `La ambulancia con placa ${plate} aceptó tu solicitud.`;
 }
 
 /**
@@ -29,7 +42,7 @@ interface AcceptancePopupProps {
  * announcement is the CHANGE of an already-present region's text. The icon, the
  * heading and the "Cerrar" button are static and paint on the first commit.
  */
-export function AcceptancePopup({ ambulanceId, onClose }: AcceptancePopupProps) {
+export function AcceptancePopup({ ambulanceId, unit = null, onClose }: AcceptancePopupProps) {
   useEffect(() => {
     const timer = window.setTimeout(onClose, ACCEPTANCE_POPUP_MS);
     return () => window.clearTimeout(timer);
@@ -38,9 +51,10 @@ export function AcceptancePopup({ ambulanceId, onClose }: AcceptancePopupProps) 
   // Filled after mount, so the message is a text change inside a region that
   // already exists, never the insertion of pre-populated content.
   const [announcement, setAnnouncement] = useState('');
+  const message = acceptanceMessage(ambulanceId, unit);
   useEffect(() => {
-    setAnnouncement(`La unidad ${ambulanceId} aceptó tu solicitud.`);
-  }, [ambulanceId]);
+    setAnnouncement(message);
+  }, [message]);
 
   return (
     <div className="pointer-events-none fixed inset-0 z-[1200] flex items-center justify-center bg-nv-navy/45 p-4">

@@ -25,6 +25,9 @@ vi.mock('@/pages/DriverHistoryPage', () => ({
 vi.mock('@/pages/DriverUnitPage', () => ({
   default: () => <div data-testid="driver-unit" />,
 }));
+vi.mock('@/pages/CitizenRequestsPage', () => ({
+  default: () => <div data-testid="citizen-requests" />,
+}));
 
 // AppFrame (the chrome for every role that has a screen) owns the realtime
 // connection; it is irrelevant to shell selection.
@@ -128,6 +131,25 @@ describe('AppRouter shell selection', () => {
     expect(screen.queryByTestId('login-screen')).not.toBeInTheDocument();
   });
 
+  it('opens Mis solicitudes for the citizen and marks it as the current route', async () => {
+    const user = userEvent.setup();
+    signInAs('CIUDADANO');
+    renderApp();
+
+    const bar = screen.getByRole('complementary', { name: 'Barra lateral' });
+    expect(within(bar).getByText('Mapa')).toHaveAttribute('aria-current', 'page');
+
+    await user.click(within(bar).getByRole('link', { name: 'Mis solicitudes' }));
+
+    expect(screen.getByTestId('citizen-requests')).toBeInTheDocument();
+    expect(within(bar).getByText('Mis solicitudes')).toHaveAttribute('aria-current', 'page');
+    // "Mis donaciones" is hidden until release 1.
+    expect(within(bar).queryByText('Mis donaciones')).not.toBeInTheDocument();
+
+    await user.click(within(bar).getByRole('link', { name: 'Mapa' }));
+    expect(screen.getByTestId('citizen-map')).toBeInTheDocument();
+  });
+
   it('gives the help-center administrator the v2 frame', () => {
     signInAs('ADMIN_CENTRO_AYUDA');
     renderApp();
@@ -200,8 +222,7 @@ describe('AppRouter shell selection', () => {
     expect(within(bar).getByText('Mi unidad')).not.toHaveAttribute('aria-current');
   });
 
-  it('lists the driver pending offers in the shell bell and focuses one on click', async () => {
-    const user = userEvent.setup();
+  it('hides the search hint and the bell from the driver shell', () => {
     signInAs('CONDUCTOR');
     useDriverAlertsStore.setState({
       pending: [
@@ -218,15 +239,8 @@ describe('AppRouter shell selection', () => {
     });
     renderApp();
 
-    await user.click(screen.getByRole('button', { name: 'Notificaciones' }));
-
-    const panel = screen.getByRole('menu', { name: 'Notificaciones' });
-    expect(within(panel).getByText('Trauma')).toBeInTheDocument();
-    expect(within(panel).getByText('Alto')).toBeInTheDocument();
-
-    await user.click(within(panel).getByRole('menuitem', { name: /Trauma/ }));
-
-    expect(useDriverAlertsStore.getState().focusRequestId).toBe('REQ-9');
     expect(screen.getByTestId('driver-console')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Notificaciones' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Buscar centro de acopio o dirección')).not.toBeInTheDocument();
   });
 });

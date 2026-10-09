@@ -84,6 +84,8 @@ export function fromWireSolicitud(value: unknown): SolicitudWireFrame | null {
     ubicacion,
     solicitadaEn,
     timeoutEn,
+    direccion,
+    solicitanteNombre,
   } = value;
 
   if (typeof solicitudId !== 'string' || solicitudId.length === 0) {
@@ -139,6 +141,10 @@ export function fromWireSolicitud(value: unknown): SolicitudWireFrame | null {
     ...(llegada === true ? { llegada: true } : {}),
     ...(solicitada ? { solicitadaEn: solicitada } : {}),
     ...(vence ? { timeoutEn: vence } : {}),
+    ...(typeof direccion === 'string' && direccion.trim() !== '' ? { direccion } : {}),
+    ...(typeof solicitanteNombre === 'string' && solicitanteNombre.trim() !== ''
+      ? { solicitanteNombre }
+      : {}),
   };
 }
 
@@ -215,6 +221,8 @@ export function solicitudFrameFromWire(
         ...(Number.isFinite(deadline) && Number.isFinite(requested) && deadline > requested
           ? { timeoutMs: deadline - requested }
           : {}),
+        ...(frame.direccion ? { direccion: frame.direccion } : {}),
+        ...(frame.solicitanteNombre ? { solicitanteNombre: frame.solicitanteNombre } : {}),
       };
     }
     case 'ASIGNADA':

@@ -1,4 +1,4 @@
-import { Ambulance, Check, Clock, Flag, Info, MapPin, Phone, Radio, X } from 'lucide-react';
+import { Ambulance, Check, Clock, Flag, Info, MapPin, Radio, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import {
   CITIZEN_ARRIVED_STEP,
@@ -102,7 +102,7 @@ function NotifiedRow({ item }: { item: NearbyAmbulance }) {
       </span>
       <span className="min-w-0 flex-1">
         <b className="block truncate font-semibold text-[13.5px]">
-          Ambulancia {unitPlateLabel(item.ambulance)}
+          {unitPlateLabel(item.ambulance)}
         </b>
         <small className="block truncate text-nv-navy-400 text-xs">{item.detail}</small>
       </span>
@@ -238,20 +238,6 @@ function AcceptedTrackingPanel({
 
       <button
         type="button"
-        disabled
-        title="Aún no hay un número de contacto en los datos de la unidad."
-        className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md bg-nv-navy px-5 font-semibold text-sm text-white disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        <Phone className="size-5" aria-hidden />
-        Llamar al conductor
-      </button>
-      <p className="text-nv-navy-400 text-xs">
-        Llamar al conductor se habilitará cuando los datos de la unidad incluyan un número de
-        contacto.
-      </p>
-
-      <button
-        type="button"
         onClick={onCancel}
         className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md border-[1.5px] border-nv-line bg-white px-5 font-semibold text-nv-navy text-sm"
       >
@@ -356,7 +342,7 @@ function CompletedPanel({
     {
       text: driver
         ? `${driver} aceptó con la ambulancia ${unitLabel}`
-        : `La unidad ${unitLabel} aceptó tu solicitud`,
+        : `La ambulancia con placa ${unitLabel} aceptó tu solicitud`,
       at: acceptedAt,
     },
     { text: 'La ambulancia llegó', at: arrivedAt },

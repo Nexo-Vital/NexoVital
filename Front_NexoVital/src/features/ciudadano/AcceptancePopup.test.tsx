@@ -20,12 +20,31 @@ describe('AcceptancePopup live region', () => {
     expect(firstPaint).toContain('role="status"');
     expect(firstPaint).toContain('aria-live="polite"');
     expect(firstPaint).toContain('Una ambulancia aceptó');
-    expect(firstPaint).not.toContain('La unidad A-12 aceptó tu solicitud.');
+    expect(firstPaint).not.toContain('La ambulancia con placa A-12 aceptó tu solicitud.');
 
     // After mount, the message is a text change inside the present region.
     render(<AcceptancePopup ambulanceId="A-12" onClose={() => undefined} />);
     const region = screen.getByRole('status');
-    expect(within(region).getByText('La unidad A-12 aceptó tu solicitud.')).toBeInTheDocument();
+    expect(
+      within(region).getByText('La ambulancia con placa A-12 aceptó tu solicitud.'),
+    ).toBeInTheDocument();
+  });
+
+  it('names the plate and the driver when the unit is known', () => {
+    const unit = {
+      id: 'uuid-1',
+      placa: 'ABC101',
+      estado: 'EN_ROUTE' as const,
+      ubicacion: { lat: 4.7, lng: -74.08 },
+      zona: 'Suba',
+      driverName: 'Ana Ruiz',
+    };
+    render(<AcceptancePopup ambulanceId="uuid-1" unit={unit} onClose={() => undefined} />);
+    expect(
+      within(screen.getByRole('status')).getByText(
+        'La ambulancia con placa ABC101 y conductor Ana Ruiz aceptó tu solicitud.',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('is a non-modal notice: no autofocus and a keyboard-reachable "Cerrar"', () => {

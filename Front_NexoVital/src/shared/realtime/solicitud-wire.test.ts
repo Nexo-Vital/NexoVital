@@ -57,6 +57,21 @@ describe('fromWireSolicitud', () => {
     expect(suelta).toMatchObject({ emergenciaId: null, zonaId: null, ubicacion: null });
   });
 
+  it('carries the address and the requester name into the offer', () => {
+    const frame = fromWireSolicitud({
+      ...PENDIENTE,
+      direccion: 'Calle 145 # 91-19, Suba',
+      solicitanteNombre: 'Ana Gómez',
+    });
+    expect(frame?.direccion).toBe('Calle 145 # 91-19, Suba');
+    const offer = frame ? solicitudFrameFromWire(frame, CONTEXT) : null;
+    expect(offer).toMatchObject({
+      type: 'solicitud.broadcast',
+      direccion: 'Calle 145 # 91-19, Suba',
+      solicitanteNombre: 'Ana Gómez',
+    });
+  });
+
   it('keeps the two instants of a request that is offered late', () => {
     const solicitadaEn = '2026-10-07T07:00:00Z';
     const timeoutEn = '2026-10-07T07:01:00Z';

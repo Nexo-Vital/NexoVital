@@ -1,3 +1,4 @@
+import { renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useToastStore } from '@/components/ui/toast';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
@@ -20,7 +21,11 @@ import {
   searchElapsed,
   searchIntroText,
 } from './citizen-request';
-import { useCitizenRequestStore } from './citizen-request-store';
+import {
+  syncCitizenRequest,
+  useCitizenRequestStore,
+  useCitizenRequestSync,
+} from './citizen-request-store';
 
 /** Origin used by the page as the pickup point (Suba). */
 const ORIGIN = { lat: 4.728, lng: -74.078 };
@@ -416,10 +421,9 @@ describe('useCitizenRequestStore against the backend', () => {
     expect(path).toBe('/api/v1/solicitudes');
     expect(options.method).toBe('POST');
     // Asking for an ambulance no longer depends on an affected zone: the body is
-    // the pickup point and the deadline, nothing else.
+    // only the pickup point. The deadline is the server's (EP-04.F2.US6).
     expect(JSON.parse(options.body as string)).toEqual({
       ubicacion: ORIGIN,
-      timeoutEn: new Date(5000 + 45_000).toISOString(),
     });
 
     // The stored identity and state come from the SERVER response, not the local
@@ -664,5 +668,148 @@ describe('useCitizenRequestStore against the backend', () => {
       'La solicitud ya no admite esa transición.',
     );
     await vi.waitFor(() => expect(useToastStore.getState().toasts).toHaveLength(1));
+  });
+});
+
+describe('useCitizenRequestStore restored from the server (EP-04.F2.US9)', () => {
+  const fetchMock = vi.fn();
+  const ARRIVED_AT = '2026-01-01T00:10:00.000Z';
+  const ASSIGNED = {
+    ...REST_RESPONSE,
+    estado: 'ASIGNADA',
+    ambulanciaAsignadaId: 'A-07',
+  };
+
+  beforeEach(() => {
+    vi.stubEnv('VITE_DEMO_MODE', '0');
+    localStorage.clear();
+    fetchMock.mockReset();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    useCitizenRequestStore.getState().reset();
+    useSolicitudesStore.getState().hydrate([]);
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  it('after a reload, an arrived request comes back as arrived with the server time', async () => {
+    fetchMock.mockResolvedValue(mockResponse(200, [{ ...ASSIGNED, llegadaEn: ARRIVED_AT }]));
+
+    syncCitizenRequest();
+
+    await vi.waitFor(() => expect(useCitizenRequestStore.getState().phase).toBe('arrived'));
+    const state = useCitizenRequestStore.getState();
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/v1/solicitudes/mias');
+    expect(state.requestId).toBe(REST_RESPONSE.id);
+    expect(state.acceptedBy).toBe('A-07');
+    expect(state.arrivedAt).toBe(Date.parse(ARRIVED_AT));
+    expect(state.startedAt).toBe(Date.parse(REST_RESPONSE.solicitadaEn));
+  });
+
+  it('maps a pending request to searching and a confirmed one to closed', () => {
+    const store = useCitizenRequestStore.getState();
+    store.restoreFromServer([
+      {
+        id: 'R-1',
+        emergenciaId: '',
+        centroAyudaId: '',
+        zonaId: '',
+        tipo: '',
+        estado: 'PENDING',
+        solicitadaEn: REST_RESPONSE.solicitadaEn,
+        timeoutEn: REST_RESPONSE.timeoutEn,
+        ambulanciasNotificadas: ['A-07'],
+        notifiedCount: 1,
+      },
+    ]);
+    expect(useCitizenRequestStore.getState().phase).toBe('searching');
+
+    useCitizenRequestStore.getState().reset();
+    useCitizenRequestStore.getState().restoreFromServer([
+      {
+        id: 'R-2',
+        emergenciaId: '',
+        centroAyudaId: '',
+        zonaId: '',
+        tipo: '',
+        estado: 'CONFIRMED',
+        solicitadaEn: REST_RESPONSE.solicitadaEn,
+        timeoutEn: REST_RESPONSE.timeoutEn,
+        ambulanciasNotificadas: ['A-07'],
+        notifiedCount: 1,
+        ambulanciaAsignadaId: 'A-07',
+        llegadaEn: ARRIVED_AT,
+      },
+    ]);
+    expect(useCitizenRequestStore.getState()).toMatchObject({
+      phase: 'closed',
+      requestId: 'R-2',
+      arrivedAt: Date.parse(ARRIVED_AT),
+    });
+  });
+
+  it('never moves our request backwards and keeps a local open request the server does not list', () => {
+    useCitizenRequestStore.setState({
+      phase: 'arrived',
+      requestId: REST_RESPONSE.id,
+      acceptedBy: 'A-07',
+      arrivedAt: 1,
+    });
+    useCitizenRequestStore.getState().restoreFromServer([
+      {
+        id: REST_RESPONSE.id,
+        emergenciaId: '',
+        centroAyudaId: '',
+        zonaId: '',
+        tipo: '',
+        estado: 'ASSIGNED',
+        solicitadaEn: REST_RESPONSE.solicitadaEn,
+        timeoutEn: REST_RESPONSE.timeoutEn,
+        ambulanciasNotificadas: ['A-07'],
+        notifiedCount: 1,
+        ambulanciaAsignadaId: 'A-07',
+      },
+    ]);
+    expect(useCitizenRequestStore.getState().phase).toBe('arrived');
+
+    useCitizenRequestStore.setState({ phase: 'searching', requestId: 'LOCAL-1' });
+    useCitizenRequestStore.getState().restoreFromServer([
+      {
+        id: 'OTHER',
+        emergenciaId: '',
+        centroAyudaId: '',
+        zonaId: '',
+        tipo: '',
+        estado: 'PENDING',
+        solicitadaEn: REST_RESPONSE.solicitadaEn,
+        timeoutEn: REST_RESPONSE.timeoutEn,
+        ambulanciasNotificadas: [],
+        notifiedCount: 0,
+      },
+    ]);
+    expect(useCitizenRequestStore.getState().requestId).toBe('LOCAL-1');
+  });
+
+  it('on the arrival push it rereads the request and shows the time the server recorded', async () => {
+    useCitizenRequestStore.setState({
+      phase: 'accepted',
+      requestId: REST_RESPONSE.id,
+      acceptedBy: 'A-07',
+      acceptedAt: 1,
+    });
+    fetchMock.mockResolvedValue(mockResponse(200, [{ ...ASSIGNED, llegadaEn: ARRIVED_AT }]));
+    const port = new FakeRealtimePort();
+    renderHook(() => useCitizenRequestSync(port));
+
+    port.emit(DESTINATIONS.solicitudes, { type: 'request.arrived', requestId: REST_RESPONSE.id });
+
+    expect(useCitizenRequestStore.getState().phase).toBe('arrived');
+    await vi.waitFor(() =>
+      expect(useCitizenRequestStore.getState().arrivedAt).toBe(Date.parse(ARRIVED_AT)),
+    );
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/v1/solicitudes/mias');
   });
 });

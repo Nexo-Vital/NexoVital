@@ -17,6 +17,9 @@ interface DriverOnlineState {
    * read the unit mirror it here and every other screen sees the same value.
    */
   setOnline: (online: boolean) => void;
+  /** Session (token) whose automatic connection was already attempted. */
+  autoConnectedFor: string | null;
+  markAutoConnected: (session: string | null) => void;
 }
 
 /**
@@ -33,4 +36,6 @@ export const useDriverOnlineStore = create<DriverOnlineState>((set) => ({
   goOnline: () => set({ online: true }),
   goOffline: () => set({ online: false }),
   setOnline: (online) => set((state) => (state.online === online ? state : { online })),
+  autoConnectedFor: null,
+  markAutoConnected: (session) => set({ autoConnectedFor: session }),
 }));

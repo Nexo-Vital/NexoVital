@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Toaster } from '@/components/ui/toast';
+import { useCitizenRequestStore } from '@/features/ciudadano/citizen-request-store';
 import { useEmergencyStore } from '@/features/emergencias/emergency-store';
 import { useFleetStore } from '@/features/flota/fleet-store';
 import type { MapaResponse } from '@/features/mapa/map-api';
@@ -388,6 +389,40 @@ describe('CitizenMapPage emergency/request source off demo mode', () => {
     // the `MOCK_SOLICITUDES` seed.
     expect(useSolicitudesStore.getState().items).toEqual([]);
   });
+
+  it('EP-04.F2.US9: on load it rereads the citizen request and asks to confirm an arrival already declared', async () => {
+    const arrived = {
+      id: '8b6f2f0e-0000-4000-8000-000000000099',
+      ubicacion: { lat: 4.728, lng: -74.078 },
+      emergenciaId: null,
+      estado: 'ASIGNADA',
+      centroAyudaId: null,
+      zonaId: null,
+      solicitadaEn: '2026-01-01T00:00:00.000Z',
+      timeoutEn: '2026-01-01T00:01:00.000Z',
+      ambulanciasNotificadas: [WIRE_FLEET[0].id],
+      ambulanciaAsignadaId: WIRE_FLEET[0].id,
+      llegadaEn: '2026-01-01T00:10:00.000Z',
+    };
+    const routed = fetchMock.getMockImplementation();
+    fetchMock.mockImplementation((input: RequestInfo | URL) =>
+      String(input).endsWith('/solicitudes/mias')
+        ? Promise.resolve(mockResponse(200, [arrived]))
+        : routed?.(input),
+    );
+    try {
+      render(<CitizenMapPage port={new FakeRealtimePort()} />);
+
+      expect(await screen.findByRole('dialog', { name: 'Confirmar llegada' })).toBeInTheDocument();
+      expect(useCitizenRequestStore.getState()).toMatchObject({
+        phase: 'arrived',
+        requestId: arrived.id,
+        arrivedAt: Date.parse(arrived.llegadaEn),
+      });
+    } finally {
+      useCitizenRequestStore.getState().reset();
+    }
+  });
 });
 
 /**
@@ -475,6 +510,52 @@ describe('CitizenMapPage donation off demo mode', () => {
         screen.queryByRole('dialog', { name: 'Donar a Acopio Suba Norte' }),
       ).not.toBeInTheDocument(),
     );
+  });
+
+  it('registers only the first click when "Confirmar donación" is pressed repeatedly', async () => {
+    let answer: (response: Response) => void = () => undefined;
+    mockBackend(mockResponse(200, NEED));
+    const fallback = fetchMock.getMockImplementation();
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/inventario/donacion') && init?.method === 'POST') {
+        return new Promise<Response>((resolve) => {
+          answer = resolve;
+        });
+      }
+      return fallback?.(input, init);
+    });
+    const { container } = render(
+      <CitizenMapPage
+        port={new FakeRealtimePort()}
+        ambulancias={[]}
+        emergencias={[]}
+        solicitudes={[]}
+        centrosAyuda={[]}
+      />,
+    );
+
+    await openDonationDialog(container);
+    const dialog = screen.getByRole('dialog', { name: 'Donar a Acopio Suba Norte' });
+    const confirm = within(dialog).getByRole('button', { name: 'Registrando donación…' });
+    expect(confirm).toBeDisabled();
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+
+    const donations = () =>
+      fetchMock.mock.calls.filter(
+        ([input, init]) =>
+          String(input).includes('/inventario/donacion') &&
+          (init as RequestInit | undefined)?.method === 'POST',
+      );
+    expect(donations()).toHaveLength(1);
+
+    answer(mockResponse(200, { ...NEED, disponible: 5, cantidadAceptada: 5, cantidadOfrecida: 5 }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: 'Donar a Acopio Suba Norte' }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(donations()).toHaveLength(1);
   });
 
   it('tells the donor what really entered when the server accepts less than offered', async () => {

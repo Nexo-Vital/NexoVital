@@ -64,6 +64,8 @@ class OfertaTardiaHttpTest extends SolicitudHttpTestSupport {
         // Citizen 1 asks and amb1 accepts.
         UUID primera = idDe(crearSolicitud(ciudadano));
         responder("accept", primera, amb1, token1).andExpect(status().isOk());
+        // A service is finished only after its arrival (EP-04.F2.US8).
+        responder("llegada", primera, amb1, token1).andExpect(status().isOk());
 
         // Citizen 2 asks while amb1 is busy: only amb2 is notified.
         JsonNode segunda = crearSolicitud(ciudadano);
@@ -115,6 +117,8 @@ class OfertaTardiaHttpTest extends SolicitudHttpTestSupport {
         String ciudadano = tokenCiudadano();
         UUID primera = idDe(crearSolicitud(ciudadano));
         responder("accept", primera, amb1, token1).andExpect(status().isOk());
+        // A service is finished only after its arrival (EP-04.F2.US8).
+        responder("llegada", primera, amb1, token1).andExpect(status().isOk());
         UUID segunda = idDe(crearSolicitud(ciudadano));
         pushPortDePrueba.limpiar();
 

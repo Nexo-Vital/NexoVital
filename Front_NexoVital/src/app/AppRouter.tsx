@@ -1,4 +1,4 @@
-import { Ambulance, ClipboardList, HandHeart, Map as MapIcon } from 'lucide-react';
+import { Ambulance, ClipboardList, Map as MapIcon } from 'lucide-react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { formatCoordinates } from '@/features/ciudadano/citizen-request';
 import { type DriverAlert, useDriverAlertsStore } from '@/features/conductor/driver-alerts-store';
@@ -7,6 +7,7 @@ import { RequireAuth, RequireRole } from '@/features/usuarios/guards';
 import { resolveRoleHome } from '@/features/usuarios/role-home';
 import { useSessionStore } from '@/features/usuarios/session';
 import CitizenMapPage from '@/pages/CitizenMapPage';
+import CitizenRequestsPage from '@/pages/CitizenRequestsPage';
 import DriverConsolePage from '@/pages/DriverConsolePage';
 import DriverHistoryPage from '@/pages/DriverHistoryPage';
 import DriverUnitPage from '@/pages/DriverUnitPage';
@@ -14,15 +15,10 @@ import LoginPage from '@/pages/LoginPage';
 import type { EmergencyLevel } from '@/types/domain';
 import { AppFrame, type AppFrameNavItem, type AppFrameNotification } from './AppFrame';
 
-/**
- * Sidebar navigation for the citizen shell. "Mis solicitudes" and "Mis
- * donaciones" have no screen yet, so their entries are deliberately inert
- * (rendered, never clickable) rather than dead links.
- */
+/** Citizen sidebar; "Mis donaciones" stays hidden until release 1. */
 export const CITIZEN_NAV: AppFrameNavItem[] = [
-  { key: 'map', label: 'Mapa', icon: MapIcon },
-  { key: 'requests', label: 'Mis solicitudes', icon: Ambulance },
-  { key: 'donations', label: 'Mis donaciones', icon: HandHeart },
+  { key: 'map', label: 'Mapa', icon: MapIcon, to: '/' },
+  { key: 'requests', label: 'Mis solicitudes', icon: Ambulance, to: '/ciudadano/solicitudes' },
 ];
 
 /**
@@ -47,12 +43,15 @@ export const CENTER_ADMIN_NAV: AppFrameNavItem[] = [
 ];
 
 /**
- * Maps the current route to the sidebar key it belongs to. The two driver
- * sub-routes have their own item; every other route is the role home (the map),
+ * Maps the current route to the sidebar key it belongs to. The driver and
+ * citizen sub-routes have their own item; every other route is the role home (the map),
  * which is where both shells land.
  */
 function activeNavKey(pathname: string): string {
-  if (pathname.startsWith('/conductor/solicitudes')) {
+  if (
+    pathname.startsWith('/conductor/solicitudes') ||
+    pathname.startsWith('/ciudadano/solicitudes')
+  ) {
     return 'requests';
   }
   if (pathname.startsWith('/conductor/unidad')) {
@@ -135,7 +134,7 @@ export function RoleHome() {
   const role = useSessionStore((state) => state.role);
   switch (resolveRoleHome(role)) {
     case 'DRIVER_CONSOLE':
-      return <DriverConsolePage />;
+      return <DriverConsolePage autoConnect />;
     case 'CITIZEN_MAP':
       return <CitizenMapPage />;
     case 'CENTER_ADMIN_MAP':
@@ -162,6 +161,12 @@ export function AppRouter() {
           >
             <Route path="/conductor/solicitudes" element={<DriverHistoryPage />} />
             <Route path="/conductor/unidad" element={<DriverUnitPage />} />
+          </Route>
+          {/* Citizen-only screen: active and attended requests (EP-04.F2.US11). */}
+          <Route
+            element={<RequireRole roles={['CIUDADANO']} fallback={<Navigate to="/" replace />} />}
+          >
+            <Route path="/ciudadano/solicitudes" element={<CitizenRequestsPage />} />
           </Route>
         </Route>
       </Route>

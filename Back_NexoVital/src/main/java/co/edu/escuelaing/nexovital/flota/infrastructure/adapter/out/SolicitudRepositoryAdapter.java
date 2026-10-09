@@ -44,6 +44,7 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
                 solicitud.getAmbulanciasNotificadas(),
                 solicitud.getAmbulanciaAsignadaId(),
                 solicitud.getLlegadaEn());
+        entity.setDireccion(solicitud.getDireccion());
         return toDomain(jpaRepository.save(entity));
     }
 
@@ -88,6 +89,11 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
     @Override
     public List<SolicitudAmbulancia> listarPorAmbulanciaAsignada(UUID ambulanciaId) {
         return toDomainLista(jpaRepository.findByAmbulanciaAsignadaIdOrderBySolicitadaEnDesc(ambulanciaId));
+    }
+
+    @Override
+    public List<SolicitudAmbulancia> listarDelSolicitante(UUID solicitanteId, Collection<EstadoSolicitud> estados) {
+        return toDomainLista(jpaRepository.findBySolicitanteIdAndEstadoInOrderBySolicitadaEnDesc(solicitanteId, estados));
     }
 
     @Override
@@ -196,6 +202,7 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
                 ambulanciasRechazaron,
                 entity.getAmbulanciaAsignadaId(),
                 entity.getLlegadaEn(),
-                entity.getVersion());
+                entity.getVersion())
+                .conDireccion(entity.getDireccion());
     }
 }

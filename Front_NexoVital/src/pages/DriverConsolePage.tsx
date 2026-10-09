@@ -8,12 +8,14 @@ import {
   countCentersByLevel,
   formatDistance,
 } from '@/features/ciudadano/citizen-view';
-import { DriverRail, REQUEST_CARD_ID } from '@/features/conductor/DriverRail';
+import { DriverRail, REQUEST_CARD_ID, SOLICITUD_DETAIL_ID } from '@/features/conductor/DriverRail';
 import { fetchSolicitudDetalle } from '@/features/conductor/detail-api';
 import { type DriverAlert, useDriverAlertsStore } from '@/features/conductor/driver-alerts-store';
+import { useDriverOnlineStore } from '@/features/conductor/driver-online-store';
 import { resolveDriverAmbulanceId } from '@/features/conductor/driver-session';
 import { DRIVER_STATUS_META, type DriverStatus } from '@/features/conductor/driver-status';
 import { fetchHistorialSolicitudes } from '@/features/conductor/history-api';
+import { MissionWonPopup } from '@/features/conductor/MissionWonPopup';
 import { fetchSolicitudesPendientes } from '@/features/conductor/pending-api';
 import { RequestPopup } from '@/features/conductor/RequestPopup';
 import { enableSoundOnFirstGesture } from '@/features/conductor/request-sound';
@@ -82,6 +84,8 @@ const NO_NOTIFIED_UNITS: readonly string[] = [];
 /** Shown on a pending row while this unit is attending another request. */
 /** Said when the server no longer offers the opened request to this unit. */
 const DETAIL_GONE_MESSAGE = 'Esta solicitud ya no está disponible.';
+// A mission accepted this recently was won live, not restored by a reload.
+const LIVE_WIN_WINDOW_MS = 10_000;
 
 /** Said in the detail when the server's copy of the request could not be read. */
 const DETAIL_STALE_NOTICE =
@@ -120,6 +124,8 @@ interface DriverConsolePageProps {
   emergencias?: Emergencia[];
   /** Requests hydrated into the registry and listed at the bottom. */
   solicitudes?: SolicitudAmbulancia[];
+  /** Connects the unit once per session when the console opens (the app passes true). */
+  autoConnect?: boolean;
 }
 
 /**
@@ -151,6 +157,7 @@ export default function DriverConsolePage({
   centrosAyuda,
   emergencias,
   solicitudes,
+  autoConnect = false,
 }: DriverConsolePageProps) {
   const userId = useSessionStore((state) => state.user?.id);
   /**
@@ -403,6 +410,23 @@ export default function DriverConsolePage({
   // it is read there is nothing to connect and the real state is unknown, so the
   // two buttons wait instead of toggling a state the server is about to replace.
   const awaitingUnit = !demo && ambulanceId === undefined && ownUnit === null;
+
+  // Entering the console connects the unit once per login; a manual disconnect is respected.
+  const sessionToken = useSessionStore((state) => state.token);
+  const autoConnectedFor = useDriverOnlineStore((state) => state.autoConnectedFor);
+  const wantsAutoConnect =
+    autoConnect &&
+    !online &&
+    !connection.pending &&
+    !awaitingUnit &&
+    (demo || connection.serverManaged) &&
+    autoConnectedFor !== (sessionToken ?? '');
+  useEffect(() => {
+    if (wantsAutoConnect) {
+      useDriverOnlineStore.getState().markAutoConnected(sessionToken ?? '');
+      connection.connect();
+    }
+  }, [wantsAutoConnect, sessionToken, connection.connect]);
 
   const fallbackToUnit = location.position === null && ownUnit !== null;
   const effectivePosition = location.position ?? ownUnit?.ubicacion ?? null;
@@ -706,8 +730,8 @@ export default function DriverConsolePage({
     inbox.responseOutcome?.requestId === selectedSolicitud?.id ? inbox.responseOutcome : null;
 
   /*
-    MAP-2: the ONE definition of a solicitud's scene, shared by the inline
-    detail's "Visualizar" and the row click (MAP-3). The fallback order is
+    MAP-2: the ONE definition of a solicitud's scene, shared by the registry
+    row click, the pop-up's "Ver solicitud" and a won mission. The fallback order is
     preserved: the active broadcast only when it IS this request, then the
     request's own pickup point, the emergency, the aid center and finally the
     zone reference point. With none of them it returns null, so no caller can
@@ -735,7 +759,7 @@ export default function DriverConsolePage({
   );
 
   // MAP-3: centre the viewport on a solicitud's scene. An unresolvable scene
-  // leaves the map untouched (no invented point), exactly as "Visualizar" did.
+  // leaves the map untouched (no invented point).
   const centerSolicitudScene = useCallback(
     (solicitud: SolicitudAmbulancia) => {
       const scene = resolveSolicitudScene(solicitud);
@@ -754,6 +778,18 @@ export default function DriverConsolePage({
       centerSolicitudScene(solicitud);
     },
     [centerSolicitudScene],
+  );
+
+  // Clicking the open row again folds its detail; any other row opens.
+  const handleToggleSolicitud = useCallback(
+    (solicitud: SolicitudAmbulancia) => {
+      if (selectedSolicitud?.id === solicitud.id) {
+        setSelectedSolicitud(null);
+        return;
+      }
+      handleSelectSolicitud(solicitud);
+    },
+    [selectedSolicitud, handleSelectSolicitud],
   );
 
   /*
@@ -801,18 +837,6 @@ export default function DriverConsolePage({
     }
     inbox.respondTo(selectedSolicitud, 'reject');
   }, [selectedSolicitud, selectedCanRespond, inbox.respondTo]);
-
-  // "Visualizar": collapse the detail and centre the map on the requester,
-  // reusing the SAME scene resolution as the row click (MAP-2). With no
-  // resolvable scene the map stays put instead of flying to an invented point.
-  const handleViewSelected = useCallback(() => {
-    const solicitud = selectedSolicitud;
-    setSelectedSolicitud(null);
-    if (!solicitud) {
-      return;
-    }
-    centerSolicitudScene(solicitud);
-  }, [selectedSolicitud, centerSolicitudScene]);
 
   // "Cerrar" collapses the inline detail without moving the map.
   const handleCloseSelected = useCallback(() => {
@@ -976,17 +1000,21 @@ export default function DriverConsolePage({
     return () => setPending([]);
   }, [pendingAlerts]);
 
-  // The request has no reverse geocoding: the label is the declared zone, or the
-  // real reported coordinates when the citizen declared none.
+  // The address the citizen sent comes first; then the zone, then the coordinates.
+  const missionRow = inbox.mission
+    ? solicitudesRegistry.find((item) => item.id === inbox.mission?.requestId)
+    : undefined;
+  const missionDireccion = missionRow?.direccion;
   const sceneLabel = activeScene
-    ? (missionActive ? inbox.mission?.zonaId : inbox.broadcast?.zonaId) ||
-      formatCoordinates(activeScene)
+    ? (missionActive
+        ? missionDireccion || inbox.mission?.zonaId
+        : inbox.broadcast?.direccion || inbox.broadcast?.zonaId) || formatCoordinates(activeScene)
     : '';
   // MAP-4: the pin and its label follow the SELECTED solicitud when there is one
   // (its own zone/coordinates and the real distance to it), so selecting a
   // non-active row is never marked with the active scene's zone or distance.
   const mapSceneLabel = selectedScene
-    ? selectedSolicitud?.zonaId || formatCoordinates(selectedScene)
+    ? selectedSolicitud?.direccion || selectedSolicitud?.zonaId || formatCoordinates(selectedScene)
     : sceneLabel;
   const mapSceneDistance =
     mapScene && effectivePosition ? distanceKm(effectivePosition, mapScene) : null;
@@ -1040,10 +1068,17 @@ export default function DriverConsolePage({
   const closeRequestPopup = useCallback(() => {
     setSeenOfferIds(pendingOfferIds);
   }, [pendingOfferIds]);
-  // "Ver solicitud": the pop-up closes, the map centres on the pickup point and
-  // the card is brought into view (on a phone the panel is below the map).
+  // "Ver solicitud": opens the request's registry row, or shows its card.
+  const [scrollToDetail, setScrollToDetail] = useState(false);
   const viewRequestFromPopup = useCallback(() => {
     setSeenOfferIds(pendingOfferIds);
+    const offerId = inbox.broadcast?.requestId;
+    const row = visibleSolicitudes.find((solicitud) => solicitud.id === offerId) ?? null;
+    if (row) {
+      handleSelectSolicitud(row);
+      setScrollToDetail(true);
+      return;
+    }
     const scene = inbox.broadcast?.escena;
     if (scene) {
       setMapFocus({ lat: scene.lat, lng: scene.lng });
@@ -1051,11 +1086,48 @@ export default function DriverConsolePage({
     document
       .getElementById(REQUEST_CARD_ID)
       ?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
-  }, [pendingOfferIds, inbox.broadcast]);
+  }, [pendingOfferIds, inbox.broadcast, visibleSolicitudes, handleSelectSolicitud]);
+  // Brings the opened detail into view once it has rendered.
+  useEffect(() => {
+    if (!scrollToDetail || selectedSolicitud === null) {
+      return;
+    }
+    setScrollToDetail(false);
+    document
+      .getElementById(SOLICITUD_DETAIL_ID)
+      ?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+  }, [scrollToDetail, selectedSolicitud]);
 
-  const missionLocation = inbox.mission
-    ? inbox.mission.zonaId || (inbox.mission.escena ? formatCoordinates(inbox.mission.escena) : '')
+  // A new mission centres the map; a live win also shows the winner notice.
+  const [wonRequestId, setWonRequestId] = useState<string | null>(null);
+  const announcedMissionRef = useRef<string | null>(null);
+  useEffect(() => {
+    const mission = inbox.mission;
+    if (mission === null || announcedMissionRef.current === mission.requestId) {
+      return;
+    }
+    announcedMissionRef.current = mission.requestId;
+    const row = solicitudesRegistry.find((item) => item.id === mission.requestId) ?? null;
+    const scene = mission.escena ?? (row ? resolveSolicitudScene(row) : null);
+    if (scene) {
+      setMapFocus({ lat: scene.lat, lng: scene.lng });
+    }
+    if (Date.now() - mission.acceptedAt < LIVE_WIN_WINDOW_MS) {
+      setWonRequestId(mission.requestId);
+    }
+  }, [inbox.mission, solicitudesRegistry, resolveSolicitudScene]);
+  const closeWonPopup = useCallback(() => setWonRequestId(null), []);
+
+  const missionPlace = inbox.mission
+    ? missionDireccion ||
+      inbox.mission.zonaId ||
+      (inbox.mission.escena ? formatCoordinates(inbox.mission.escena) : '')
     : '';
+  // The mission line names the requester too, when the server sent the name.
+  const missionLocation =
+    missionRow?.solicitanteNombre && missionPlace
+      ? `${missionRow.solicitanteNombre} · ${missionPlace}`
+      : missionPlace;
 
   return (
     <div className="relative flex h-full min-h-0 w-full flex-col gap-3 overflow-y-auto bg-nv-mint text-nv-navy lg:grid lg:grid-cols-[minmax(0,1fr)_344px] lg:grid-rows-[auto_minmax(0,1fr)] lg:gap-5 lg:overflow-hidden">
@@ -1128,7 +1200,7 @@ export default function DriverConsolePage({
         offDuty={online && !declaredAvailable}
         onGoOnline={connection.connect}
         onGoOffline={connection.disconnect}
-        connectionPending={connection.pending || awaitingUnit}
+        connectionPending={connection.pending || awaitingUnit || wantsAutoConnect}
         disconnectBlockedReason={unitBusy ? DISCONNECT_BLOCKED_REASON : null}
         mission={inbox.mission}
         missionDistanceKm={missionActive ? requestDistance : null}
@@ -1164,12 +1236,15 @@ export default function DriverConsolePage({
         selectedOutcome={selectedOutcome}
         selectedNotice={detailNotice}
         selectedDistanceKm={selectedSolicitud ? mapSceneDistance : null}
-        onSelectSolicitud={handleSelectSolicitud}
+        onSelectSolicitud={handleToggleSolicitud}
         onAcceptSelected={handleAcceptSelected}
         onRejectSelected={handleRejectSelected}
-        onViewSelected={handleViewSelected}
         onCloseSelected={handleCloseSelected}
       />
+
+      {wonRequestId !== null && wonRequestId === inbox.mission?.requestId && (
+        <MissionWonPopup unitLabel={selfUnitLabel} onClose={closeWonPopup} />
+      )}
 
       {popupOpen && (
         <RequestPopup
@@ -1179,6 +1254,7 @@ export default function DriverConsolePage({
               : null
           }
           locationLabel={sceneLabel}
+          requesterName={inbox.broadcast?.solicitanteNombre}
           deadlineMs={inbox.deadlineMs}
           queuedCount={inbox.queuedIds.length}
           submitting={inbox.phase === 'submitting'}

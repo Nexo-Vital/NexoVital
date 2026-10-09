@@ -39,6 +39,13 @@ describe('fromWireAmbulancia', () => {
     expect(mapped?.conductorId).toBeUndefined();
   });
 
+  it('names the driver with the conductorNombre the server sends', () => {
+    expect(fromWireAmbulancia({ ...WIRE_UNIT, conductorNombre: 'Carlos Pérez' })?.driverName).toBe(
+      'Carlos Pérez',
+    );
+    expect(fromWireAmbulancia({ ...WIRE_UNIT, conductorNombre: null })?.driverName).toBe('');
+  });
+
   it('returns null on a malformed unit instead of a blind cast', () => {
     expect(fromWireAmbulancia(null)).toBeNull();
     expect(fromWireAmbulancia({ ...WIRE_UNIT, estado: 'DESCONOCIDO' })).toBeNull();
