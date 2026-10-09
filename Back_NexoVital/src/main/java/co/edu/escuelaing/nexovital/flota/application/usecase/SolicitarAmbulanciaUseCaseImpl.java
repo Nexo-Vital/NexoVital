@@ -63,7 +63,8 @@ public class SolicitarAmbulanciaUseCaseImpl implements SolicitarAmbulanciaUseCas
     @Override
     @Transactional
     public SolicitudAmbulancia solicitar(double lat, double lng, UUID emergenciaId, UUID centroAyudaId,
-                                         String zonaId, UUID solicitanteId, Instant timeoutEn) {
+                                         String zonaId, UUID solicitanteId, Instant timeoutEn,
+                                         String direccion) {
         List<Ambulancia> candidatas = ambulanciaRepository.listarCandidatasParaSolicitud();
         if (candidatas.isEmpty()) {
             throw new AmbulanciaNoDisponibleException();
@@ -75,12 +76,12 @@ public class SolicitarAmbulanciaUseCaseImpl implements SolicitarAmbulanciaUseCas
 
         SolicitudAmbulancia solicitud = SolicitudAmbulancia.solicitar(
                 UUID.randomUUID(), lat, lng, emergenciaId, centroAyudaId, zonaId, solicitadaEn, tope,
-                solicitanteId, notificadas);
+                solicitanteId, notificadas).conDireccion(direccion);
         SolicitudAmbulancia guardada = solicitudRepository.guardar(solicitud);
 
         eventPublisher.publishEvent(new SolicitudCreadaEvent(
                 guardada.getId(), guardada.getLat(), guardada.getLng(), emergenciaId, zonaId,
-                notificadas, solicitadaEn, guardada.getSolicitanteId(), tope));
+                notificadas, solicitadaEn, guardada.getSolicitanteId(), tope, guardada.getDireccion()));
         return guardada;
     }
 }

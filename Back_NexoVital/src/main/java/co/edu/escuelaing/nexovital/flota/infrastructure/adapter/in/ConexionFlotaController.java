@@ -4,6 +4,7 @@ import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudEnCursoExcept
 import co.edu.escuelaing.nexovital.flota.domain.model.Ambulancia;
 import co.edu.escuelaing.nexovital.flota.domain.model.SolicitudAmbulancia;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.DeclararDisponibilidadUseCase;
+import co.edu.escuelaing.nexovital.flota.domain.port.out.NombreUsuarioPort;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.GestionarConexionUnidadUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.ListarSolicitudesPendientesDeMiAmbulanciaUseCase;
 import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in.dto.AmbulanciaDto;
@@ -61,13 +62,26 @@ public class ConexionFlotaController {
     private final GestionarConexionUnidadUseCase gestionarConexionUnidadUseCase;
     private final ListarSolicitudesPendientesDeMiAmbulanciaUseCase listarPendientesUseCase;
     private final DeclararDisponibilidadUseCase declararDisponibilidadUseCase;
+    private final NombreUsuarioPort nombreUsuarioPort;
 
     public ConexionFlotaController(GestionarConexionUnidadUseCase gestionarConexionUnidadUseCase,
                                    ListarSolicitudesPendientesDeMiAmbulanciaUseCase listarPendientesUseCase,
-                                   DeclararDisponibilidadUseCase declararDisponibilidadUseCase) {
+                                   DeclararDisponibilidadUseCase declararDisponibilidadUseCase,
+                                   NombreUsuarioPort nombreUsuarioPort) {
         this.gestionarConexionUnidadUseCase = gestionarConexionUnidadUseCase;
         this.listarPendientesUseCase = listarPendientesUseCase;
         this.declararDisponibilidadUseCase = declararDisponibilidadUseCase;
+        this.nombreUsuarioPort = nombreUsuarioPort;
+    }
+
+    /** The public projection of a unit, with its driver's name. */
+    private AmbulanciaDto aDto(Ambulancia ambulancia) {
+        return AmbulanciaDto.fromDomain(ambulancia, nombreUsuarioPort.nombreDe(ambulancia.getConductorId()));
+    }
+
+    /** The public projection of a request, with the requester's name. */
+    private SolicitudAmbulanciaDto aDto(SolicitudAmbulancia solicitud) {
+        return SolicitudAmbulanciaDto.fromDomain(solicitud, nombreUsuarioPort.nombreDe(solicitud.getSolicitanteId()));
     }
 
     /**
@@ -83,7 +97,7 @@ public class ConexionFlotaController {
     public ResponseEntity<Object> conectar() {
         try {
             Optional<Ambulancia> unidad = gestionarConexionUnidadUseCase.conectar(usuarioAutenticadoId());
-            return ResponseEntity.ok(unidad.map(AmbulanciaDto::fromDomain).orElse(null));
+            return ResponseEntity.ok(unidad.map(this::aDto).orElse(null));
         } catch (RuntimeException e) {
             return ResponseEntity.internalServerError()
                     .body(ErrorResponse.of("ERROR_CONEXION_FLOTA", MENSAJE_ERROR_CONEXION));
@@ -104,7 +118,7 @@ public class ConexionFlotaController {
     public ResponseEntity<Object> desconectar() {
         try {
             Optional<Ambulancia> unidad = gestionarConexionUnidadUseCase.desconectar(usuarioAutenticadoId());
-            return ResponseEntity.ok(unidad.map(AmbulanciaDto::fromDomain).orElse(null));
+            return ResponseEntity.ok(unidad.map(this::aDto).orElse(null));
         } catch (SolicitudEnCursoException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(ErrorResponse.of("SOLICITUD_EN_CURSO", MENSAJE_SOLICITUD_EN_CURSO));
@@ -134,7 +148,7 @@ public class ConexionFlotaController {
             }
             Optional<Ambulancia> unidad = declararDisponibilidadUseCase.declarar(
                     usuarioAutenticadoId(), request.disponible());
-            return ResponseEntity.ok(unidad.map(AmbulanciaDto::fromDomain).orElse(null));
+            return ResponseEntity.ok(unidad.map(this::aDto).orElse(null));
         } catch (SolicitudEnCursoException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(ErrorResponse.of("SOLICITUD_EN_CURSO", MENSAJE_SERVICIO_EN_CURSO));
@@ -166,7 +180,7 @@ public class ConexionFlotaController {
                 return ResponseEntity.ok((Object) null);
             }
             List<SolicitudAmbulanciaDto> cuerpo = pendientes.get().stream()
-                    .map(SolicitudAmbulanciaDto::fromDomain)
+                    .map(this::aDto)
                     .toList();
             return ResponseEntity.ok(cuerpo);
         } catch (RuntimeException e) {

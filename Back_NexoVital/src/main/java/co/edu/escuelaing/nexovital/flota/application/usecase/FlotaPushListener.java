@@ -14,6 +14,7 @@ import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoAmbulancia;
 import co.edu.escuelaing.nexovital.flota.domain.enums.FuentePosicion;
 import co.edu.escuelaing.nexovital.flota.domain.model.Ambulancia;
 import co.edu.escuelaing.nexovital.flota.domain.port.out.AmbulanciaRepository;
+import co.edu.escuelaing.nexovital.flota.domain.port.out.NombreUsuarioPort;
 import co.edu.escuelaing.nexovital.shared.domain.port.out.PushPort;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
@@ -76,10 +77,13 @@ public class FlotaPushListener {
 
     private final PushPort pushPort;
     private final AmbulanciaRepository ambulanciaRepository;
+    private final NombreUsuarioPort nombreUsuarioPort;
 
-    public FlotaPushListener(PushPort pushPort, AmbulanciaRepository ambulanciaRepository) {
+    public FlotaPushListener(PushPort pushPort, AmbulanciaRepository ambulanciaRepository,
+                             NombreUsuarioPort nombreUsuarioPort) {
         this.pushPort = pushPort;
         this.ambulanciaRepository = ambulanciaRepository;
+        this.nombreUsuarioPort = nombreUsuarioPort;
     }
 
     /**
@@ -93,7 +97,8 @@ public class FlotaPushListener {
                 evento.solicitudId(), new Ubicacion(evento.lat(), evento.lng()),
                 evento.emergenciaId(), evento.zonaId(),
                 "PENDIENTE", evento.ambulanciasNotificadas(), null, false,
-                textoIso(evento.solicitadaEn()), textoIso(evento.timeoutEn()));
+                textoIso(evento.solicitadaEn()), textoIso(evento.timeoutEn()),
+                evento.direccion(), nombreUsuarioPort.nombreDe(evento.solicitanteId()));
         for (UUID ambulanciaId : evento.ambulanciasNotificadas()) {
             publicarAlConductor(ambulanciaId, payload);
         }
@@ -273,7 +278,17 @@ public class FlotaPushListener {
     public record SolicitudPushPayload(UUID solicitudId, Ubicacion ubicacion, UUID emergenciaId,
                                        String zonaId, String estado, List<UUID> ambulanciasNotificadas,
                                        UUID ambulanciaAsignadaId, boolean llegada,
-                                       String solicitadaEn, String timeoutEn) {
+                                       String solicitadaEn, String timeoutEn,
+                                       String direccion, String solicitanteNombre) {
+
+        /** A frame without the readable address nor the requester's name. */
+        public SolicitudPushPayload(UUID solicitudId, Ubicacion ubicacion, UUID emergenciaId,
+                                    String zonaId, String estado, List<UUID> ambulanciasNotificadas,
+                                    UUID ambulanciaAsignadaId, boolean llegada,
+                                    String solicitadaEn, String timeoutEn) {
+            this(solicitudId, ubicacion, emergenciaId, zonaId, estado, ambulanciasNotificadas,
+                    ambulanciaAsignadaId, llegada, solicitadaEn, timeoutEn, null, null);
+        }
 
         /** A lifecycle frame: it does not restate the accept window. */
         public SolicitudPushPayload(UUID solicitudId, Ubicacion ubicacion, UUID emergenciaId,

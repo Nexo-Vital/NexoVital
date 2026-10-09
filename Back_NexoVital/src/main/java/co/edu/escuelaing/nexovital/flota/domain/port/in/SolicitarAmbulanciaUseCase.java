@@ -26,7 +26,14 @@ public interface SolicitarAmbulanciaUseCase {
      *                      configured window (EP-04.F2.US6); an explicit value is
      *                      only for internal callers, such as tests that need an
      *                      already expired request
+     * @param direccion     optional readable pickup address the citizen sent, or null
      */
     SolicitudAmbulancia solicitar(double lat, double lng, UUID emergenciaId, UUID centroAyudaId,
-                                  String zonaId, UUID solicitanteId, Instant timeoutEn);
+                                  String zonaId, UUID solicitanteId, Instant timeoutEn, String direccion);
+
+    /** A request without a readable address. */
+    default SolicitudAmbulancia solicitar(double lat, double lng, UUID emergenciaId, UUID centroAyudaId,
+                                          String zonaId, UUID solicitanteId, Instant timeoutEn) {
+        return solicitar(lat, lng, emergenciaId, centroAyudaId, zonaId, solicitanteId, timeoutEn, null);
+    }
 }

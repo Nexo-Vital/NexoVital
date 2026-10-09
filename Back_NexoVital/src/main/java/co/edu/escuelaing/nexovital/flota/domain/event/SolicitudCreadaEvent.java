@@ -19,5 +19,13 @@ import java.util.UUID;
  */
 public record SolicitudCreadaEvent(UUID solicitudId, double lat, double lng, UUID emergenciaId,
                                    String zonaId, List<UUID> ambulanciasNotificadas, Instant solicitadaEn,
-                                   UUID solicitanteId, Instant timeoutEn) {
+                                   UUID solicitanteId, Instant timeoutEn, String direccion) {
+
+    /** A request created without a readable address. */
+    public SolicitudCreadaEvent(UUID solicitudId, double lat, double lng, UUID emergenciaId, String zonaId,
+                                List<UUID> ambulanciasNotificadas, Instant solicitadaEn, UUID solicitanteId,
+                                Instant timeoutEn) {
+        this(solicitudId, lat, lng, emergenciaId, zonaId, ambulanciasNotificadas, solicitadaEn, solicitanteId,
+                timeoutEn, null);
+    }
 }

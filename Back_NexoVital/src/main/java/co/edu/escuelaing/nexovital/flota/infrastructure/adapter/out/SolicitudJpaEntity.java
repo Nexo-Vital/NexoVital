@@ -69,6 +69,10 @@ public class SolicitudJpaEntity {
     @Column
     private Instant llegadaEn;
 
+    /** Readable pickup address; nullable so older rows stay valid. */
+    @Column(length = 255)
+    private String direccion;
+
     @Version
     private long version;
 
@@ -146,6 +150,14 @@ public class SolicitudJpaEntity {
 
     public Instant getLlegadaEn() {
         return llegadaEn;
+    }
+
+    public String getDireccion() {
+        return direccion;
+    }
+
+    public void setDireccion(String direccion) {
+        this.direccion = direccion;
     }
 
     public long getVersion() {

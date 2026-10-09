@@ -15,7 +15,13 @@ import java.util.UUID;
  * is not rejected; the unknown property is ignored.
  *
  * @param ubicacion  pickup point {lat, lng}; required and finite
+ * @param direccion  optional readable address of that point, at most 255 characters
  */
 public record SolicitudRequest(UbicacionDto ubicacion, UUID emergenciaId, UUID centroAyudaId,
-                               String zonaId) {
+                               String zonaId, String direccion) {
+
+    /** A body without a readable address. */
+    public SolicitudRequest(UbicacionDto ubicacion, UUID emergenciaId, UUID centroAyudaId, String zonaId) {
+        this(ubicacion, emergenciaId, centroAyudaId, zonaId, null);
+    }
 }

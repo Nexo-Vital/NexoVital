@@ -17,14 +17,21 @@ import java.util.UUID;
  * <p>{@code ambulanciasRechazaron} lists the units that declined the request
  * (EP-04.F2.US5). The request stays PENDIENTE for the rest; a unit that is in
  * this list can still read the request but can no longer accept it.
+ *
+ * <p>{@code direccion} and {@code solicitanteNombre} are null when unknown.
  */
 public record SolicitudAmbulanciaDto(UUID id, UbicacionDto ubicacion, UUID emergenciaId,
                                      EstadoSolicitud estado, UUID centroAyudaId, String zonaId,
                                      Instant solicitadaEn, Instant timeoutEn,
                                      List<UUID> ambulanciasNotificadas, UUID ambulanciaAsignadaId,
-                                     Instant llegadaEn, List<UUID> ambulanciasRechazaron) {
+                                     Instant llegadaEn, List<UUID> ambulanciasRechazaron,
+                                     String direccion, String solicitanteNombre) {
 
     public static SolicitudAmbulanciaDto fromDomain(SolicitudAmbulancia solicitud) {
+        return fromDomain(solicitud, null);
+    }
+
+    public static SolicitudAmbulanciaDto fromDomain(SolicitudAmbulancia solicitud, String solicitanteNombre) {
         return new SolicitudAmbulanciaDto(
                 solicitud.getId(),
                 new UbicacionDto(solicitud.getLat(), solicitud.getLng()),
@@ -37,6 +44,8 @@ public record SolicitudAmbulanciaDto(UUID id, UbicacionDto ubicacion, UUID emerg
                 solicitud.getAmbulanciasNotificadas(),
                 solicitud.getAmbulanciaAsignadaId(),
                 solicitud.getLlegadaEn(),
-                solicitud.getAmbulanciasRechazaron());
+                solicitud.getAmbulanciasRechazaron(),
+                solicitud.getDireccion(),
+                solicitanteNombre);
     }
 }
