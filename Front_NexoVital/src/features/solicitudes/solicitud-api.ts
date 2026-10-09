@@ -248,13 +248,22 @@ export async function cancelarSolicitud(requestId: string): Promise<SolicitudAmb
   return solicitud;
 }
 
-/** The citizen's active requests (`GET /api/v1/solicitudes/mias`), newest first. */
-export async function listarMisSolicitudes(): Promise<SolicitudAmbulancia[]> {
-  const response = await apiFetch<unknown>('/solicitudes/mias');
+/** Maps a list body, dropping malformed rows; a non-list body is an empty list. */
+function toSolicitudes(response: unknown): SolicitudAmbulancia[] {
   if (!Array.isArray(response)) {
     return [];
   }
   return response
     .map(fromWireSolicitudAmbulancia)
     .filter((solicitud): solicitud is SolicitudAmbulancia => solicitud !== null);
+}
+
+/** The citizen's active requests (`GET /api/v1/solicitudes/mias`), newest first. */
+export async function listarMisSolicitudes(): Promise<SolicitudAmbulancia[]> {
+  return toSolicitudes(await apiFetch<unknown>('/solicitudes/mias'));
+}
+
+/** The citizen's attended requests (EP-04.F2.US11), newest first. */
+export async function listarMisSolicitudesAtendidas(): Promise<SolicitudAmbulancia[]> {
+  return toSolicitudes(await apiFetch<unknown>('/solicitudes/mias?estado=atendidas'));
 }

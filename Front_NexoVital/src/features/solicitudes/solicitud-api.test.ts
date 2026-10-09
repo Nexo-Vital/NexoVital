@@ -3,6 +3,7 @@ import { setToken } from '@/services/apiClient';
 import {
   fromWireSolicitudAmbulancia,
   listarMisSolicitudes,
+  listarMisSolicitudesAtendidas,
   solicitarAmbulancia,
 } from './solicitud-api';
 
@@ -250,5 +251,23 @@ describe('listarMisSolicitudes (EP-04.F2.US9)', () => {
     fetchMock.mockResolvedValue(mockResponse(200, { ok: true }));
 
     await expect(listarMisSolicitudes()).resolves.toEqual([]);
+  });
+
+  it('GETs the attended requests with ?estado=atendidas (EP-04.F2.US11)', async () => {
+    const atendida = {
+      ...WIRE_RESPONSE,
+      estado: 'TOMADA',
+      ambulanciaAsignadaId: 'A-07',
+      llegadaEn: '2026-01-01T00:10:00.000Z',
+    };
+    fetchMock.mockResolvedValue(mockResponse(200, [atendida, { roto: true }]));
+
+    const solicitudes = await listarMisSolicitudesAtendidas();
+
+    const [path, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe('/api/v1/solicitudes/mias?estado=atendidas');
+    expect(options.method ?? 'GET').toBe('GET');
+    expect(solicitudes).toHaveLength(1);
+    expect(solicitudes[0]).toMatchObject({ id: WIRE_RESPONSE.id, estado: 'TAKEN' });
   });
 });

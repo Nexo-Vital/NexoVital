@@ -7,6 +7,7 @@ import { RequireAuth, RequireRole } from '@/features/usuarios/guards';
 import { resolveRoleHome } from '@/features/usuarios/role-home';
 import { useSessionStore } from '@/features/usuarios/session';
 import CitizenMapPage from '@/pages/CitizenMapPage';
+import CitizenRequestsPage from '@/pages/CitizenRequestsPage';
 import DriverConsolePage from '@/pages/DriverConsolePage';
 import DriverHistoryPage from '@/pages/DriverHistoryPage';
 import DriverUnitPage from '@/pages/DriverUnitPage';
@@ -15,13 +16,12 @@ import type { EmergencyLevel } from '@/types/domain';
 import { AppFrame, type AppFrameNavItem, type AppFrameNotification } from './AppFrame';
 
 /**
- * Sidebar navigation for the citizen shell. "Mis solicitudes" and "Mis
- * donaciones" have no screen yet, so their entries are deliberately inert
- * (rendered, never clickable) rather than dead links.
+ * Sidebar navigation for the citizen shell. "Mis donaciones" has no screen yet,
+ * so its entry is deliberately inert (rendered, never clickable).
  */
 export const CITIZEN_NAV: AppFrameNavItem[] = [
-  { key: 'map', label: 'Mapa', icon: MapIcon },
-  { key: 'requests', label: 'Mis solicitudes', icon: Ambulance },
+  { key: 'map', label: 'Mapa', icon: MapIcon, to: '/' },
+  { key: 'requests', label: 'Mis solicitudes', icon: Ambulance, to: '/ciudadano/solicitudes' },
   { key: 'donations', label: 'Mis donaciones', icon: HandHeart },
 ];
 
@@ -47,12 +47,15 @@ export const CENTER_ADMIN_NAV: AppFrameNavItem[] = [
 ];
 
 /**
- * Maps the current route to the sidebar key it belongs to. The two driver
- * sub-routes have their own item; every other route is the role home (the map),
+ * Maps the current route to the sidebar key it belongs to. The driver and
+ * citizen sub-routes have their own item; every other route is the role home (the map),
  * which is where both shells land.
  */
 function activeNavKey(pathname: string): string {
-  if (pathname.startsWith('/conductor/solicitudes')) {
+  if (
+    pathname.startsWith('/conductor/solicitudes') ||
+    pathname.startsWith('/ciudadano/solicitudes')
+  ) {
     return 'requests';
   }
   if (pathname.startsWith('/conductor/unidad')) {
@@ -162,6 +165,12 @@ export function AppRouter() {
           >
             <Route path="/conductor/solicitudes" element={<DriverHistoryPage />} />
             <Route path="/conductor/unidad" element={<DriverUnitPage />} />
+          </Route>
+          {/* Citizen-only screen: active and attended requests (EP-04.F2.US11). */}
+          <Route
+            element={<RequireRole roles={['CIUDADANO']} fallback={<Navigate to="/" replace />} />}
+          >
+            <Route path="/ciudadano/solicitudes" element={<CitizenRequestsPage />} />
           </Route>
         </Route>
       </Route>

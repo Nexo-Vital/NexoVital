@@ -25,6 +25,9 @@ vi.mock('@/pages/DriverHistoryPage', () => ({
 vi.mock('@/pages/DriverUnitPage', () => ({
   default: () => <div data-testid="driver-unit" />,
 }));
+vi.mock('@/pages/CitizenRequestsPage', () => ({
+  default: () => <div data-testid="citizen-requests" />,
+}));
 
 // AppFrame (the chrome for every role that has a screen) owns the realtime
 // connection; it is irrelevant to shell selection.
@@ -126,6 +129,25 @@ describe('AppRouter shell selection', () => {
 
     expect(screen.getAllByText('NexoVital').length).toBeGreaterThan(0);
     expect(screen.queryByTestId('login-screen')).not.toBeInTheDocument();
+  });
+
+  it('opens Mis solicitudes for the citizen and marks it as the current route', async () => {
+    const user = userEvent.setup();
+    signInAs('CIUDADANO');
+    renderApp();
+
+    const bar = screen.getByRole('complementary', { name: 'Barra lateral' });
+    expect(within(bar).getByText('Mapa')).toHaveAttribute('aria-current', 'page');
+
+    await user.click(within(bar).getByRole('link', { name: 'Mis solicitudes' }));
+
+    expect(screen.getByTestId('citizen-requests')).toBeInTheDocument();
+    expect(within(bar).getByText('Mis solicitudes')).toHaveAttribute('aria-current', 'page');
+    // "Mis donaciones" still has no screen, so it stays inert.
+    expect(within(bar).queryByRole('link', { name: 'Mis donaciones' })).not.toBeInTheDocument();
+
+    await user.click(within(bar).getByRole('link', { name: 'Mapa' }));
+    expect(screen.getByTestId('citizen-map')).toBeInTheDocument();
   });
 
   it('gives the help-center administrator the v2 frame', () => {

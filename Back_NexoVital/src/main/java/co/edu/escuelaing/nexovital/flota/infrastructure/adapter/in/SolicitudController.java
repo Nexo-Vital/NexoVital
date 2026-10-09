@@ -37,6 +37,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -60,6 +61,7 @@ public class SolicitudController {
 
     private static final String MENSAJE_DATOS_INVALIDOS =
             "La solicitud no es válida: indique la ubicación del pedido.";
+    private static final String MENSAJE_DATOS_CONSULTA = "El estado debe ser activas o atendidas.";
     private static final String MENSAJE_DATOS_ACEPTACION = "El accept no es válido: indique la ambulancia.";
     private static final String MENSAJE_DATOS_RECHAZO = "El reject no es válido: indique la ambulancia.";
     private static final String MENSAJE_DATOS_LLEGADA = "La llegada no es válida: indique la ambulancia.";
@@ -118,16 +120,21 @@ public class SolicitudController {
         this.listarMisSolicitudesUseCase = listarMisSolicitudesUseCase;
     }
 
-    /** The requester's active requests, with the arrival time once declared (EP-04.F2.US9). */
+    /** The requester's active (US9) or attended (US11, {@code ?estado=atendidas}) requests. */
     @GetMapping("/mias")
-    @Operation(summary = "Solicitudes activas del solicitante autenticado")
-    public ResponseEntity<Object> mias() {
+    @Operation(summary = "Solicitudes activas o atendidas del solicitante autenticado")
+    public ResponseEntity<Object> mias(@RequestParam(name = "estado", defaultValue = "activas") String estado) {
         try {
-            List<SolicitudAmbulanciaDto> activas = listarMisSolicitudesUseCase
-                    .listarActivas(usuarioAutenticadoId()).stream()
-                    .map(SolicitudAmbulanciaDto::fromDomain)
-                    .toList();
-            return ResponseEntity.ok(activas);
+            List<SolicitudAmbulancia> solicitudes;
+            if ("activas".equals(estado)) {
+                solicitudes = listarMisSolicitudesUseCase.listarActivas(usuarioAutenticadoId());
+            } else if ("atendidas".equals(estado)) {
+                solicitudes = listarMisSolicitudesUseCase.listarAtendidas(usuarioAutenticadoId());
+            } else {
+                return ResponseEntity.badRequest()
+                        .body(ErrorResponse.of("DATOS_INVALIDOS", MENSAJE_DATOS_CONSULTA));
+            }
+            return ResponseEntity.ok(solicitudes.stream().map(SolicitudAmbulanciaDto::fromDomain).toList());
         } catch (RuntimeException e) {
             return ResponseEntity.internalServerError()
                     .body(ErrorResponse.of("ERROR_CONSULTA_SOLICITUD", MENSAJE_ERROR_DETALLE));
