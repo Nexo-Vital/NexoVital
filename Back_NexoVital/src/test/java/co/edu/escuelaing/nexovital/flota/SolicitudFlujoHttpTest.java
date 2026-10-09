@@ -612,7 +612,19 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
         assertEquals("ASIGNADA", estadoDe(alSolicitante.get(1)));
         assertEquals(segunda.toString(), ambulanciaAsignadaDe(alSolicitante.get(1)));
 
-        // 4) Confirmation (CONFIRMADA) reached the requester. Only the requester
+        // 4) The unit declares its arrival: the citizen can only confirm a unit
+        //    that is already with them (EP-04.F2.US8). The arrival reaches the
+        //    requester as ASIGNADA flagged with llegada=true.
+        mockMvc.perform(post("/api/v1/solicitudes/{id}/llegada", solicitudId)
+                        .header("Authorization", "Bearer " + otro.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpoAmbulancia(segunda)))
+                .andExpect(status().isOk());
+
+        alSolicitante = pushPortDePrueba.haciaUsuario(solicitanteId, FlotaPushListener.DESTINO_SOLICITUDES);
+        assertEquals(3, alSolicitante.size(), "el solicitante recibe la llegada");
+
+        // 5) Confirmation (CONFIRMADA) reached the requester. Only the requester
         //    (the citizen token) may confirm; the request's aid center is an
         //    organization the principal cannot resolve.
         mockMvc.perform(post("/api/v1/solicitudes/{id}/confirmar", solicitudId)
@@ -621,8 +633,8 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
                 .andExpect(jsonPath("$.estado").value("CONFIRMADA"));
 
         alSolicitante = pushPortDePrueba.haciaUsuario(solicitanteId, FlotaPushListener.DESTINO_SOLICITUDES);
-        assertEquals(3, alSolicitante.size(), "el solicitante recibe la confirmación");
-        assertEquals("CONFIRMADA", estadoDe(alSolicitante.get(2)));
+        assertEquals(4, alSolicitante.size(), "el solicitante recibe la confirmación");
+        assertEquals("CONFIRMADA", estadoDe(alSolicitante.get(3)));
     }
 
     // -----------------------------------------------------------------------
@@ -824,6 +836,13 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
                         .content(cuerpoAmbulancia(unidad)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.solicitud.estado").value("ASIGNADA"));
+
+        // A service is finished only after its arrival (EP-04.F2.US8).
+        mockMvc.perform(post("/api/v1/solicitudes/{id}/llegada", solicitudId)
+                        .header("Authorization", "Bearer " + conductor)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cuerpoAmbulancia(unidad)))
+                .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/v1/solicitudes/{id}/finalizar", solicitudId)
                         .header("Authorization", "Bearer " + conductor)

@@ -5,6 +5,7 @@ import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoSolicitud;
 import co.edu.escuelaing.nexovital.flota.domain.event.FlotaActualizadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudFinalizadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.exception.AmbulanciaNoDisponibleException;
+import co.edu.escuelaing.nexovital.flota.domain.exception.LlegadaNoDeclaradaException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoAsignableException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoEncontradaException;
 import co.edu.escuelaing.nexovital.flota.domain.model.Ambulancia;
@@ -58,6 +59,13 @@ public class FinalizarSolicitudUseCaseImpl implements FinalizarSolicitudUseCase 
                 .orElseThrow(() -> new SolicitudNoEncontradaException(solicitudId));
 
         validarUnidadAsignadaDelConductor(solicitud, ambulanciaId, conductorId);
+
+        // A service cannot be finished without its arrival time (EP-04.F2.US8 /
+        // US10, M-04). The arrival is only ever written once (null -> instant),
+        // so this pre-check cannot be invalidated by a race.
+        if (solicitud.getLlegadaEn() == null) {
+            throw new LlegadaNoDeclaradaException(solicitudId);
+        }
 
         int cerrada = solicitudRepository.transicionAtomicaFinalizar(
                 solicitudId, ESTADOS_EN_SERVICIO, EstadoSolicitud.TOMADA);

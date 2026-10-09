@@ -2,6 +2,7 @@ package co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in;
 
 import co.edu.escuelaing.nexovital.flota.domain.exception.AmbulanciaNoDisponibleException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudAjenaException;
+import co.edu.escuelaing.nexovital.flota.domain.exception.LlegadaNoDeclaradaException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoAsignableException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoEncontradaException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudYaAsignadaException;
@@ -72,6 +73,8 @@ public class SolicitudController {
             "Esta solicitud no fue notificada a tu ambulancia.";
     private static final String MENSAJE_CAS_PERDIDO = "Solicitud ya asignada a otra ambulancia.";
     private static final String MENSAJE_SOLICITUD_YA_RECHAZADA = "Ya rechazaste esta solicitud.";
+    private static final String MENSAJE_LLEGADA_NO_DECLARADA =
+            "La ambulancia todavía no ha declarado su llegada.";
     private static final String MENSAJE_AMBULANCIA_NO_DISPONIBLE =
             "No hay ambulancias disponibles para atender la solicitud.";
     private static final String MENSAJE_ERROR_SOLICITUD = "No fue posible registrar la solicitud.";
@@ -346,6 +349,8 @@ public class SolicitudController {
      *         {@code SOLICITUD_NO_ENCONTRADA}; 409 {@code SOLICITUD_NO_ASIGNABLE}
      *         if the request is not in service or the unit is not the caller's;
      *         409 {@code AMBULANCIA_NO_DISPONIBLE} if the unit is not EN_MISION;
+     *         409 {@code LLEGADA_NO_DECLARADA} if the unit has not declared
+     *         its arrival yet (EP-04.F2.US8);
      *         400 {@code DATOS_INVALIDOS}; 500 {@code ERROR_FINALIZACION_SOLICITUD}
      */
     @PostMapping("/{id}/finalizar")
@@ -361,6 +366,9 @@ public class SolicitudController {
         } catch (SolicitudNoEncontradaException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ErrorResponse.of("SOLICITUD_NO_ENCONTRADA", MENSAJE_SOLICITUD_NO_ENCONTRADA));
+        } catch (LlegadaNoDeclaradaException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ErrorResponse.of("LLEGADA_NO_DECLARADA", MENSAJE_LLEGADA_NO_DECLARADA));
         } catch (SolicitudNoAsignableException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(ErrorResponse.of("SOLICITUD_NO_ASIGNABLE", MENSAJE_SOLICITUD_NO_ASIGNABLE));
@@ -383,7 +391,9 @@ public class SolicitudController {
      *
      * @return 200 with the CONFIRMED request; 404
      *         {@code SOLICITUD_NO_ENCONTRADA}; 409 {@code SOLICITUD_NO_ASIGNABLE}
-     *         if it is not ASIGNADA or the caller is not the requester; 500
+     *         if it is not ASIGNADA or the caller is not the requester; 409
+     *         {@code LLEGADA_NO_DECLARADA} if the unit has not declared its
+     *         arrival yet (EP-04.F2.US8); 500
      *         {@code ERROR_CONFIRMACION_SOLICITUD}
      */
     @PostMapping("/{id}/confirmar")
@@ -396,6 +406,9 @@ public class SolicitudController {
         } catch (SolicitudNoEncontradaException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ErrorResponse.of("SOLICITUD_NO_ENCONTRADA", MENSAJE_SOLICITUD_NO_ENCONTRADA));
+        } catch (LlegadaNoDeclaradaException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ErrorResponse.of("LLEGADA_NO_DECLARADA", MENSAJE_LLEGADA_NO_DECLARADA));
         } catch (SolicitudNoAsignableException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(ErrorResponse.of("SOLICITUD_NO_ASIGNABLE", MENSAJE_SOLICITUD_NO_ASIGNABLE));
