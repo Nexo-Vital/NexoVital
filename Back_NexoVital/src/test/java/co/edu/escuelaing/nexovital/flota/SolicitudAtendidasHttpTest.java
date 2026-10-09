@@ -88,6 +88,7 @@ class SolicitudAtendidasHttpTest extends SolicitudHttpTestSupport {
         UUID solicitudId = idDe(crearSolicitud(ciudadano));
         responder("accept", solicitudId, conductor, token).andExpect(status().isOk());
         responder("llegada", solicitudId, conductor, token).andExpect(status().isOk());
+        confirmarLlegada(solicitudId, ciudadano).andExpect(status().isOk());
         responder("finalizar", solicitudId, conductor, token).andExpect(status().isOk());
         return solicitudId;
     }
@@ -105,6 +106,7 @@ class SolicitudAtendidasHttpTest extends SolicitudHttpTestSupport {
         assertNotNull(buscar(mias(ciudadano, null), solicitudId), "antes de finalizar es activa");
         assertNull(buscar(mias(ciudadano, "atendidas"), solicitudId), "y todavía no es atendida");
 
+        confirmarLlegada(solicitudId, ciudadano).andExpect(status().isOk());
         responder("finalizar", solicitudId, conductor, token).andExpect(status().isOk());
 
         assertNull(buscar(mias(ciudadano, null), solicitudId), "deja de figurar como activa");

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { nvButton } from '@/components/ui/button';
 import { DemoProfilesPanel } from '@/features/usuarios/DemoProfilesPanel';
 import { hasRoleHome, roleWithoutHomeMessage } from '@/features/usuarios/role-home';
 import { type DemoUser, useSessionStore } from '@/features/usuarios/session';
@@ -287,11 +288,7 @@ export default function LoginPage() {
               </p>
             )}
 
-            <button
-              type="submit"
-              disabled={disabled}
-              className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md bg-nv-navy font-semibold text-base text-white disabled:cursor-not-allowed disabled:opacity-60"
-            >
+            <button type="submit" disabled={disabled} className={nvButton()}>
               <LogIn className="size-5 shrink-0" aria-hidden />
               {submitting ? 'Ingresando…' : 'Iniciar sesión'}
             </button>

@@ -34,6 +34,15 @@ const API = `${BASE_URL}/api/v1`;
 const TOKEN_KEY = 'nexovital.token';
 
 const CITIZEN = { email: 'ciudadano@nexovital.co', password: 'ciudadano123' };
+
+/** The citizen confirms the arrival; finishing a service requires it. */
+async function confirmArrivalAsCitizen(page: Page, requestId: string): Promise<void> {
+  const session = await page.request.post(`${API}/sesiones`, { data: CITIZEN });
+  const { token } = (await session.json()) as { token: string };
+  await page.request.post(`${API}/solicitudes/${requestId}/confirmar`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
 /** Seeded drivers of the units ABC101 and ABC202 (Back_NexoVital DataSeeder). */
 const DRIVER_1 = { email: 'conductor1@nexovital.co', password: 'conductor123' };
 const DRIVER_2 = { email: 'conductor2@nexovital.co', password: 'conductor123' };
@@ -330,6 +339,7 @@ async function closeRequest(
         headers: { Authorization: `Bearer ${token}` },
         data: { ambulanciaId: unitId },
       });
+      await confirmArrivalAsCitizen(page, requestId);
       await page.request.post(`${API}/solicitudes/${requestId}/finalizar`, {
         headers: { Authorization: `Bearer ${token}` },
         data: { ambulanciaId: unitId },
@@ -611,6 +621,7 @@ test('EP-04.F2.US5 rechazo: un conductor rechaza y la solicitud sigue para otro'
         headers: { Authorization: `Bearer ${driver2Token}` },
         data: { ambulanciaId: unit2Id },
       });
+      await confirmArrivalAsCitizen(driver2Page, requestId);
       const finish = await driver2Page.request.post(`${API}/solicitudes/${requestId}/finalizar`, {
         headers: { Authorization: `Bearer ${driver2Token}` },
         data: { ambulanciaId: unit2Id },
@@ -628,6 +639,7 @@ test('EP-04.F2.US5 rechazo: un conductor rechaza y la solicitud sigue para otro'
           data: { ambulanciaId: unit2Id },
         })
         .catch(() => undefined);
+      await confirmArrivalAsCitizen(driver2Page, requestId).catch(() => undefined);
       await driver2Page.request
         .post(`${API}/solicitudes/${requestId}/finalizar`, {
           headers: { Authorization: `Bearer ${driver2Token}` },

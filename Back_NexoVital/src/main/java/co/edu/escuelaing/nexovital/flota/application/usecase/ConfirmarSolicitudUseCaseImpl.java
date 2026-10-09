@@ -55,6 +55,11 @@ public class ConfirmarSolicitudUseCaseImpl implements ConfirmarSolicitudUseCase 
     public SolicitudAmbulancia confirmar(UUID solicitudId, UUID solicitanteId) {
         SolicitudAmbulancia solicitud = solicitudRepository.buscarPorId(solicitudId)
                 .orElseThrow(() -> new SolicitudNoEncontradaException(solicitudId));
+        // Already confirmed (e.g. automatically): the requester's repeat is a no-op.
+        if (solicitud.getEstado() == EstadoSolicitud.CONFIRMADA
+                && Objects.equals(solicitud.getSolicitanteId(), solicitanteId)) {
+            return solicitud;
+        }
         if (solicitud.getEstado() != EstadoSolicitud.ASIGNADA) {
             throw new SolicitudNoAsignableException(solicitudId, solicitud.getEstado());
         }

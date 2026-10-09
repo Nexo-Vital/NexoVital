@@ -70,6 +70,8 @@ interface CitizenRequestState {
   arrivedAt: number | null;
   /** When the citizen confirmed (epoch ms); null until then. */
   confirmedAt: number | null;
+  /** True once the citizen tapped "Sí, ya llegó"; false for an automatic confirmation. */
+  confirmedBySelf: boolean;
   /**
    * Starts the search. In demo mode it publishes the broadcast on the relay and
    * the local projection is the source of truth; against a backend it creates
@@ -165,6 +167,7 @@ const IDLE_STATE = {
   acceptedAt: null,
   arrivedAt: null,
   confirmedAt: null,
+  confirmedBySelf: false,
 };
 
 /**
@@ -205,6 +208,7 @@ export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => 
         acceptedAt: null,
         arrivedAt: null,
         confirmedAt: null,
+        confirmedBySelf: false,
         startError: null,
         cancelError: null,
       });
@@ -248,6 +252,7 @@ export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => 
         acceptedAt: null,
         arrivedAt: null,
         confirmedAt: null,
+        confirmedBySelf: false,
         startError: null,
         cancelError: null,
       });
@@ -328,6 +333,7 @@ export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => 
     if (!requestId || phase !== 'arrived') {
       return;
     }
+    set({ confirmedBySelf: true });
     // Demo: publish only; the request closes when the relay echoes
     // `request.confirmed`, so the client never decides the outcome on its own.
     if (isDemoMode()) {
@@ -350,6 +356,7 @@ export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => 
         state.endOnConfirmed(requestId);
       })
       .catch((error: unknown) => {
+        set({ confirmedBySelf: false });
         toast(
           error instanceof Error && error.message
             ? error.message
@@ -425,6 +432,7 @@ export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => 
       acceptedAt: winner ? ((same ? state.acceptedAt : null) ?? Date.now()) : null,
       arrivedAt: instantOrNull(chosen.llegadaEn),
       confirmedAt: same ? state.confirmedAt : null,
+      confirmedBySelf: same ? state.confirmedBySelf : false,
     });
   },
 

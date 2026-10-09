@@ -1,5 +1,6 @@
 import { Check, Eye, MapPin, Navigation, Siren, Timer, User, VolumeX, X } from 'lucide-react';
 import { useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { nvButton } from '@/components/ui/button';
 import { useClock } from '@/hooks/use-clock';
 import { formatCountdown } from '@/lib/format';
 import {
@@ -190,7 +191,7 @@ export function RequestPopup({
             type="button"
             onClick={onAccept}
             disabled={submitting || !unitResolved}
-            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md bg-nv-navy px-5 font-semibold text-sm text-white disabled:cursor-not-allowed disabled:opacity-60"
+            className={nvButton({ size: 'tall' })}
           >
             <Check className="size-5" aria-hidden />
             {submitting ? 'Enviando…' : 'Aceptar'}
@@ -199,7 +200,7 @@ export function RequestPopup({
             type="button"
             onClick={onView}
             disabled={submitting}
-            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md border-[1.5px] border-nv-line bg-white px-5 font-semibold text-nv-navy text-sm disabled:cursor-not-allowed disabled:opacity-60"
+            className={nvButton({ tone: 'secondary' })}
           >
             <Eye className="size-5" aria-hidden />
             Ver solicitud

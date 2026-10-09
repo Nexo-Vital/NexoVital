@@ -1,5 +1,6 @@
 import { ArrowLeft, Info, MapPin, Minus, Package, Plus, Warehouse } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { nvButton } from '@/components/ui/button';
 import {
   CENTER_LEVEL_STYLE,
   citizenCenterLevel,
@@ -176,11 +177,7 @@ export function MyCenterRail({ centro, onAddSupply, onWithdraw, onBackToMap }: M
         </div>
       </section>
 
-      <button
-        type="button"
-        onClick={onAddSupply}
-        className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md bg-nv-lime px-5 font-semibold text-nv-navy text-sm"
-      >
+      <button type="button" onClick={onAddSupply} className={nvButton({ tone: 'supply' })}>
         <Plus className="size-5" aria-hidden />
         Agregar insumo
       </button>

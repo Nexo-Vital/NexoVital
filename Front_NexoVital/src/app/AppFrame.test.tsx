@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSessionStore } from '@/features/usuarios/session';
 import type { RolUsuario } from '@/types/domain';
 import { AppFrame, type AppFrameNavItem, type AppFrameNotification } from './AppFrame';
+import { SidebarSlot } from './sidebar-slot';
 
 // The shell owns the realtime connection; it is irrelevant to the chrome here.
 vi.mock('@/shared/realtime/use-realtime-connection', () => ({
@@ -332,5 +333,58 @@ describe('AppFrame', () => {
 
     expect(onOutside).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('menu', { name: 'Notificaciones' })).not.toBeInTheDocument();
+  });
+});
+
+describe('AppFrame: mobile drawer and sidebar slot', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('opens the sidebar from the menu button and closes it with Escape', async () => {
+    const user = userEvent.setup();
+    renderFrame();
+
+    const menuButton = screen.getByRole('button', { name: 'Abrir menú' });
+    expect(menuButton).toHaveAttribute('aria-expanded', 'false');
+
+    await user.click(menuButton);
+    expect(menuButton).toHaveAttribute('aria-expanded', 'true');
+    expect(within(sidebar()).getByRole('button', { name: 'Cerrar menú' })).toHaveFocus();
+
+    await user.keyboard('{Escape}');
+    expect(menuButton).toHaveAttribute('aria-expanded', 'false');
+    expect(menuButton).toHaveFocus();
+  });
+
+  it('renders page content passed to SidebarSlot inside the sidebar', () => {
+    useSessionStore.setState({
+      user: {
+        id: 'usr-citizen',
+        nombre: 'Ciudadano Demo',
+        email: 'c@nexovital.co',
+        rol: 'CIUDADANO',
+      },
+      role: 'CIUDADANO',
+      token: 'jwt.test',
+    });
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <Routes>
+          <Route element={<AppFrame nav={NAV} activeKey="map" />}>
+            <Route
+              path="/"
+              element={
+                <SidebarSlot>
+                  <p>Contenido del panel</p>
+                </SidebarSlot>
+              }
+            />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(within(sidebar()).getByText('Contenido del panel')).toBeInTheDocument();
   });
 });

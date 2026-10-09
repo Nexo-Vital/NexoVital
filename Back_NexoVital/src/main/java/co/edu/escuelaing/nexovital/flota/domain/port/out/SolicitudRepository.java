@@ -52,6 +52,9 @@ public interface SolicitudRepository {
      */
     List<SolicitudAmbulancia> listarPendientesVencidas(Instant ahora);
 
+    /** ASIGNADA requests whose arrival was declared at or before {@code limite}. */
+    List<SolicitudAmbulancia> listarLlegadasSinConfirmar(Instant limite);
+
     /**
      * Services ASSIGNED to {@code ambulanciaId}, newest first (request creation
      * instant descending). Only requests whose assigned unit is that one
