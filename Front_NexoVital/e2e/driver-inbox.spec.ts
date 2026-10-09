@@ -349,6 +349,11 @@ test('EP-04.F2.US3 detalle: el conductor ve el detalle de la solicitud notificad
   const citizenContext = await newIsolatedContext(browser);
   const driverPage = await driverContext.newPage();
   const citizenPage = await citizenContext.newPage();
+  // No geocoder here: the card keeps showing the pickup coordinates this test checks.
+  await citizenPage.route(
+    (url) => url.pathname.endsWith('/reverse'),
+    (route) => route.abort(),
+  );
   const driverCalls = recordApiCalls(driverPage);
 
   let driverToken: string | null = null;

@@ -180,6 +180,10 @@ export interface SolicitudAmbulancia {
    * coordinator can see the milestone without inventing a domain state.
    */
   llegadaEn?: string;
+  /** Readable pickup address the citizen sent; absent when unknown. */
+  direccion?: string;
+  /** Requester's display name; absent when unknown. */
+  solicitanteNombre?: string;
 }
 
 export type TrafficLight = 'RED' | 'AMBER' | 'GREEN' | 'COMPLETE' | 'NOT_DECLARED';

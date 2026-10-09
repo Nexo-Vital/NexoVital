@@ -94,7 +94,8 @@ export default function DriverHistoryPage({
               <div className="flex flex-col gap-1">
                 <span className="font-semibold text-sm">{REQUEST_STATE_LABEL_ES[item.estado]}</span>
                 <span className="text-nv-navy-400 text-sm">
-                  {item.zonaId ||
+                  {item.direccion ||
+                    item.zonaId ||
                     (item.ubicacion ? formatCoordinates(item.ubicacion) : 'Sin ubicación')}
                 </span>
               </div>

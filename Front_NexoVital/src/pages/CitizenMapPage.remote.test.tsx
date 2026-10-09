@@ -512,6 +512,52 @@ describe('CitizenMapPage donation off demo mode', () => {
     );
   });
 
+  it('registers only the first click when "Confirmar donación" is pressed repeatedly', async () => {
+    let answer: (response: Response) => void = () => undefined;
+    mockBackend(mockResponse(200, NEED));
+    const fallback = fetchMock.getMockImplementation();
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/inventario/donacion') && init?.method === 'POST') {
+        return new Promise<Response>((resolve) => {
+          answer = resolve;
+        });
+      }
+      return fallback?.(input, init);
+    });
+    const { container } = render(
+      <CitizenMapPage
+        port={new FakeRealtimePort()}
+        ambulancias={[]}
+        emergencias={[]}
+        solicitudes={[]}
+        centrosAyuda={[]}
+      />,
+    );
+
+    await openDonationDialog(container);
+    const dialog = screen.getByRole('dialog', { name: 'Donar a Acopio Suba Norte' });
+    const confirm = within(dialog).getByRole('button', { name: 'Registrando donación…' });
+    expect(confirm).toBeDisabled();
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+
+    const donations = () =>
+      fetchMock.mock.calls.filter(
+        ([input, init]) =>
+          String(input).includes('/inventario/donacion') &&
+          (init as RequestInit | undefined)?.method === 'POST',
+      );
+    expect(donations()).toHaveLength(1);
+
+    answer(mockResponse(200, { ...NEED, disponible: 5, cantidadAceptada: 5, cantidadOfrecida: 5 }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: 'Donar a Acopio Suba Norte' }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(donations()).toHaveLength(1);
+  });
+
   it('tells the donor what really entered when the server accepts less than offered', async () => {
     mockBackend(
       mockResponse(200, {

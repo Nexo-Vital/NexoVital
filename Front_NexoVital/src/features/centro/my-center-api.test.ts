@@ -168,6 +168,19 @@ describe('my center API', () => {
     expect(item.disponible).toBe(8);
   });
 
+  it('sends the reason of the withdrawal when there is one', async () => {
+    fetchMock.mockResolvedValue(mockResponse(200, { ...AGUA, disponible: 8 }));
+
+    await retirarInsumo(CENTRO_ID, AGUA.id, 12, 'Entrega al albergue');
+
+    const [, options] = fetchMock.mock.calls[0];
+    expect(JSON.parse(options.body)).toEqual({
+      itemId: AGUA.id,
+      cantidad: 12,
+      motivo: 'Entrega al albergue',
+    });
+  });
+
   it('surfaces the 409 when the stock no longer covers the withdrawal', async () => {
     fetchMock.mockResolvedValue(
       mockResponse(409, {

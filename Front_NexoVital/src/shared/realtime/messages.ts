@@ -262,6 +262,10 @@ export interface SolicitudBroadcastPayload {
   notifiedCount?: number;
   /** Accept window length in milliseconds. */
   timeoutMs?: number;
+  /** Readable pickup address the citizen sent, when known. */
+  direccion?: string;
+  /** Requester's display name, when known. */
+  solicitanteNombre?: string;
 }
 
 /** Direct-mode request addressed to exactly one unit. */
@@ -463,4 +467,8 @@ export interface SolicitudWireFrame {
    * instead of a full window.
    */
   timeoutEn?: string;
+  /** Readable pickup address; only on the frames that offer the request. */
+  direccion?: string;
+  /** Requester's display name; only on the frames that offer the request. */
+  solicitanteNombre?: string;
 }

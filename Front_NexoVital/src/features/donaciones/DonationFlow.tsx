@@ -11,7 +11,7 @@ import {
   Warehouse,
   X,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import {
   CENTER_LEVEL_STYLE,
@@ -362,7 +362,7 @@ export function DonationCenterPicker({ centros, onSelect, onCancel }: DonationCe
 
 interface DonationDialogProps {
   centro: CentroAyuda;
-  onConfirm: (itemId: string, amount: number) => void;
+  onConfirm: (itemId: string, amount: number) => void | Promise<void>;
   onClose: () => void;
 }
 
@@ -390,6 +390,23 @@ export function DonationDialog({ centro, onConfirm, onClose }: DonationDialogPro
   const [rawAmount, setRawAmount] = useState<number | null>(DEFAULT_AMOUNT);
   const amount = Math.min(Math.max(1, rawAmount ?? 1), maxAmount);
   const preview = item ? previewDonation(centro, item.id, amount) : null;
+
+  // Only the first click donates; repeated clicks wait for its answer.
+  const submittingRef = useRef(false);
+  const [submitting, setSubmitting] = useState(false);
+  const confirm = async () => {
+    if (item === null || submittingRef.current) {
+      return;
+    }
+    submittingRef.current = true;
+    setSubmitting(true);
+    try {
+      await onConfirm(item.id, amount);
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
+  };
 
   const selectItem = (nextId: string) => {
     setItemId(nextId);
@@ -540,12 +557,13 @@ export function DonationDialog({ centro, onConfirm, onClose }: DonationDialogPro
 
         <button
           type="button"
-          onClick={() => item && onConfirm(item.id, amount)}
-          disabled={item === null}
+          onClick={() => void confirm()}
+          disabled={item === null || submitting}
+          aria-busy={submitting}
           className="inline-flex h-14 w-full items-center justify-center gap-2 rounded-nv-md bg-nv-navy px-5 font-semibold text-sm text-white disabled:cursor-not-allowed disabled:opacity-60"
         >
           <HandHeart className="size-5" aria-hidden />
-          Confirmar donación
+          {submitting ? 'Registrando donación…' : 'Confirmar donación'}
         </button>
         <button
           type="button"

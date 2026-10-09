@@ -1,4 +1,4 @@
-import { Check, Eye, MapPin, Navigation, Siren, Timer, VolumeX, X } from 'lucide-react';
+import { Check, Eye, MapPin, Navigation, Siren, Timer, User, VolumeX, X } from 'lucide-react';
 import { useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useClock } from '@/hooks/use-clock';
 import { formatCountdown } from '@/lib/format';
@@ -16,6 +16,8 @@ interface RequestPopupProps {
   distanceLabel: string | null;
   /** Where to go: the declared zone or the reported point. Empty when unknown. */
   locationLabel: string;
+  /** Requester's name, when the server sent it. */
+  requesterName?: string;
   /** Absolute deadline (epoch ms) of the accept window, or null when unknown. */
   deadlineMs: number | null;
   /** How many more requests wait behind this one. */
@@ -59,6 +61,7 @@ export function RequestPopup({
   onAccept,
   onView,
   onClose,
+  requesterName,
 }: RequestPopupProps) {
   const titleId = useId();
   const now = useClock(250);
@@ -131,6 +134,13 @@ export function RequestPopup({
               {distanceLabel ?? 'Sin ubicación'}
             </dd>
           </div>
+          {requesterName && (
+            <div className="flex items-center gap-3 border-nv-line border-b py-3">
+              <User className="size-[18px] shrink-0 text-nv-navy-600" aria-hidden />
+              <dt className="w-20 shrink-0 text-nv-navy-400 text-xs">Solicitante</dt>
+              <dd className="min-w-0 flex-1 truncate font-medium text-sm">{requesterName}</dd>
+            </div>
+          )}
           <div className="flex items-center gap-3 py-3">
             <MapPin className="size-[18px] shrink-0 text-nv-navy-600" aria-hidden />
             <dt className="w-20 shrink-0 text-nv-navy-400 text-xs">Ubicación</dt>

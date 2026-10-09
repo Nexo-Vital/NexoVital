@@ -196,7 +196,7 @@ describe('DriverConsolePage connection off demo mode', () => {
 
   afterEach(() => {
     cleanup();
-    useDriverOnlineStore.setState({ online: false });
+    useDriverOnlineStore.setState({ online: false, autoConnectedFor: null });
     useFleetStore.getState().hydrate([]);
     useEmergencyStore.getState().hydrate([]);
     useSolicitudesStore.getState().hydrate([]);
@@ -244,6 +244,38 @@ describe('DriverConsolePage connection off demo mode', () => {
     const card = await screen.findByRole('region', { name: 'Solicitud de ambulancia' });
     expect(within(card).getByRole('button', { name: 'Aceptar solicitud' })).toBeEnabled();
     expect(useSolicitudesStore.getState().items.map((item) => item.id)).toEqual([REQUEST]);
+  });
+
+  it('connects the unit by itself when the driver enters the console', async () => {
+    backend.unit = wireUnit({ conectada: false });
+    backend.pendientes = [wirePending()];
+    render(<DriverConsolePage port={new FakeRealtimePort()} autoConnect />);
+
+    expect(await within(unitPanel()).findByText('En línea')).toBeInTheDocument();
+    expect(callsTo('/mia/conectar')).toHaveLength(1);
+    expect(await screen.findByRole('region', { name: 'Solicitud de ambulancia' })).toBeVisible();
+  });
+
+  it('does not connect again in the same session after a manual disconnect', async () => {
+    const user = userEvent.setup();
+    backend.unit = wireUnit({ conectada: false });
+    const first = render(<DriverConsolePage port={new FakeRealtimePort()} autoConnect />);
+    await within(unitPanel()).findByText('En línea');
+
+    await user.click(within(unitPanel()).getByRole('button', { name: 'Desconectarse' }));
+    await within(unitPanel()).findByText('Desconectado');
+    first.unmount();
+
+    render(<DriverConsolePage port={new FakeRealtimePort()} autoConnect />);
+    await screen.findByText('ABC202');
+    expect(await within(unitPanel()).findByText('Desconectado')).toBeInTheDocument();
+    expect(callsTo('/mia/conectar')).toHaveLength(1);
+  });
+
+  it('sends no command when the unit is already connected', async () => {
+    render(<DriverConsolePage port={new FakeRealtimePort()} autoConnect />);
+    expect(await within(unitPanel()).findByText('En línea')).toBeInTheDocument();
+    expect(callsTo('/mia/conectar')).toEqual([]);
   });
 
   it('"Desconectarse" is a REST command; the offer leaves the screen', async () => {
@@ -584,6 +616,23 @@ describe('DriverConsolePage connection off demo mode', () => {
       expect(within(detail).queryByRole('status')).toBeNull();
     });
 
+    it('names the requester and shows the address the citizen sent', async () => {
+      backend.detalle = {
+        status: 200,
+        body: wirePending({
+          ambulanciasNotificadas: [REAL_UNIT],
+          direccion: 'Calle 145 # 91-19, Suba',
+          solicitanteNombre: 'Ana Gómez',
+        }),
+      };
+
+      const detail = await openDetail();
+
+      expect(await within(detail).findByText('Ana Gómez')).toBeInTheDocument();
+      expect(within(detail).getByText('Solicitante')).toBeInTheDocument();
+      expect(within(detail).getByText('Calle 145 # 91-19, Suba')).toBeInTheDocument();
+    });
+
     it('a request another unit already holds leaves the list, with the reason', async () => {
       backend.detalle = {
         status: 200,
@@ -669,8 +718,6 @@ describe('DriverConsolePage connection off demo mode', () => {
       expect(within(detail).getByText(REASON)).toBeInTheDocument();
       expect(within(detail).getByRole('button', { name: 'Aceptar' })).toBeDisabled();
       expect(within(detail).getByRole('button', { name: 'Rechazar' })).toBeDisabled();
-      // Looking at it is still allowed.
-      expect(within(detail).getByRole('button', { name: 'Visualizar' })).toBeEnabled();
       expect(callsTo('/accept')).toHaveLength(0);
     });
 

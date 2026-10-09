@@ -49,7 +49,8 @@ function FilaSolicitud({ solicitud }: { solicitud: SolicitudAmbulancia }) {
           {estadoCiudadano(solicitud)}
         </span>
         <span className="text-nv-navy-400 text-sm">
-          {solicitud.ubicacion ? formatCoordinates(solicitud.ubicacion) : 'Sin ubicación'}
+          {solicitud.direccion ||
+            (solicitud.ubicacion ? formatCoordinates(solicitud.ubicacion) : 'Sin ubicación')}
         </span>
       </div>
       <div className="flex flex-col items-end gap-1 text-right text-sm">

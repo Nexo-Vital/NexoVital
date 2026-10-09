@@ -6,6 +6,9 @@ import {
   SIMULATED_START,
 } from './use-device-location';
 
+/** Simulation is a development aid only: production builds (main) never show it. */
+export const SIMULATION_ENABLED = import.meta.env.DEV;
+
 /** Spanish position hint for the simulation fallback, one per device status. */
 function locationHint(location: DeviceLocationState): { text: string; tone: string } {
   switch (location.status) {

@@ -130,10 +130,11 @@ export async function retirarInsumo(
   centroId: string,
   itemId: string,
   cantidad: number,
+  motivo?: string,
 ): Promise<InventarioItem> {
   const response = await apiFetch<unknown>(`/centros-acopio/${centroId}/inventario/despacho`, {
     method: 'POST',
-    body: JSON.stringify({ itemId, cantidad }),
+    body: JSON.stringify(motivo ? { itemId, cantidad, motivo } : { itemId, cantidad }),
   });
   const item = fromWireInventario(response);
   if (!item) {

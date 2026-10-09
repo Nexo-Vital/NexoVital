@@ -455,9 +455,9 @@ describe('CitizenMapPage', () => {
     expect(screen.getByRole('heading', { name: 'Buscando ambulancia' })).toBeInTheDocument();
     expect(screen.getByText(/Buscando hace/)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Ambulancias avisadas' })).toBeInTheDocument();
-    expect(screen.getByText('Ambulancia OVX-A-07')).toBeInTheDocument();
-    expect(screen.getByText('Ambulancia OVX-A-12')).toBeInTheDocument();
-    expect(screen.getByText('Ambulancia OVX-A-03')).toBeInTheDocument();
+    expect(screen.getByText('OVX-A-07')).toBeInTheDocument();
+    expect(screen.getByText('OVX-A-12')).toBeInTheDocument();
+    expect(screen.getByText('OVX-A-03')).toBeInTheDocument();
     expect(screen.getAllByText('Avisada')).toHaveLength(3);
     expect(screen.getByText(/Las ambulancias ocupadas \(A-09 y A-15\)/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cancelar solicitud' })).toBeInTheDocument();
@@ -509,10 +509,49 @@ describe('CitizenMapPage', () => {
 
       // The rail renders the server-assigned state and its notified units.
       expect(screen.getByRole('heading', { name: 'Buscando ambulancia' })).toBeInTheDocument();
-      expect(screen.getByText('Ambulancia OVX-A-07')).toBeInTheDocument();
+      expect(screen.getByText('OVX-A-07')).toBeInTheDocument();
       expect(useCitizenRequestStore.getState().notifiedIds).toEqual(
         serverResponse.ambulanciasNotificadas,
       );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('sends the readable address of the pickup point and shows it while searching', async () => {
+    vi.stubEnv('VITE_DEMO_MODE', '0');
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockResponse(201, {
+        id: '8b6f2f0e-0000-4000-8000-000000000043',
+        ubicacion: { lat: 4.728, lng: -74.078 },
+        emergenciaId: null,
+        estado: 'PENDIENTE',
+        centroAyudaId: null,
+        zonaId: null,
+        solicitadaEn: '2026-01-01T00:00:00.000Z',
+        timeoutEn: '2026-01-01T00:45:00.000Z',
+        ambulanciasNotificadas: ['A-07'],
+        ambulanciaAsignadaId: null,
+        direccion: REPORT_ADDRESS.etiqueta,
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderPage({ port: new FakeRealtimePort(), ambulancias: SEARCH_FLEET });
+      // The address is resolved ahead, as soon as the pickup point is known.
+      await act(async () => {});
+
+      fireEvent.click(screen.getByRole('button', { name: 'Pedir ambulancia' }));
+
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(JSON.parse(options.body as string)).toEqual({
+        ubicacion: { lat: 4.728, lng: -74.078 },
+        direccion: REPORT_ADDRESS.etiqueta,
+      });
+      expect(
+        await screen.findByText(`Tu ubicación actual · ${REPORT_ADDRESS.etiqueta}`),
+      ).toBeInTheDocument();
     } finally {
       vi.unstubAllGlobals();
     }
@@ -785,7 +824,9 @@ describe('CitizenMapPage', () => {
 
     expect(screen.queryByRole('heading', { name: 'Buscando ambulancia' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Una ambulancia aceptó' })).toBeInTheDocument();
-    expect(screen.getByText(/La unidad A-12 aceptó tu solicitud/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/La ambulancia con placa OVX-A-12 y conductor Driver A-12 aceptó/),
+    ).toBeInTheDocument();
   });
 
   it('announces the acceptance popup through a live region, with the real winner id', () => {
@@ -805,7 +846,11 @@ describe('CitizenMapPage', () => {
     expect(
       within(popup).getByRole('heading', { name: 'Una ambulancia aceptó' }),
     ).toBeInTheDocument();
-    expect(within(popup).getByText('La unidad A-12 aceptó tu solicitud.')).toBeInTheDocument();
+    expect(
+      within(popup).getByText(
+        'La ambulancia con placa OVX-A-12 y conductor Driver A-12 aceptó tu solicitud.',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('closes the acceptance popup by itself after the documented lifetime', () => {
@@ -953,14 +998,8 @@ describe('CitizenMapPage', () => {
       expect(within(rail).getByText(value)).toBeInTheDocument();
     }
 
-    // No phone number exists in the domain yet, so the call action is disabled
-    // with its reason instead of being a button that does nothing.
-    const call = within(rail).getByRole('button', { name: 'Llamar al conductor' });
-    expect(call).toBeDisabled();
-    expect(call).toHaveAttribute(
-      'title',
-      'Aún no hay un número de contacto en los datos de la unidad.',
-    );
+    // The call action is hidden: there is no contact number in the domain.
+    expect(within(rail).queryByText(/Llamar al conductor/)).not.toBeInTheDocument();
     expect(within(rail).getByRole('button', { name: 'Cancelar solicitud' })).toBeEnabled();
   });
 
@@ -1104,7 +1143,7 @@ describe('CitizenMapPage', () => {
     expect(chip?.getAttribute('style')).toContain('var(--nv-red)');
   });
 
-  it('AC2: shows the real hospital count in the legend, without faking a traffic light', () => {
+  it('AC2: leaves hospitals out of the legend, without faking a traffic light', () => {
     renderPage({
       centrosAyuda: [
         centro('CA-1', 'GREEN', 4.728, -74.078),
@@ -1113,8 +1152,8 @@ describe('CitizenMapPage', () => {
       ],
     });
 
-    // The count comes from the data (2 hospitals), never from a constant.
-    expect(legendValue('Hospitales')).toBe('2');
+    // Hospitals are not part of the MVP: the legend no longer lists them.
+    expect(screen.queryByText('Hospitales')).not.toBeInTheDocument();
     // A hospital has no inventory, so it is NOT an undeclared supply center
     // (FH-3): it must not inflate "Sin declarar".
     expect(legendValue('Sin declarar')).toBe('0');
@@ -1132,13 +1171,9 @@ describe('CitizenMapPage', () => {
 
     const rail = screen.getByRole('complementary', { name: 'Panel del ciudadano' });
     const rows = within(rail)
-      .getAllByText(/^Ambulancia /)
+      .getAllByText(/^OVX-/)
       .map((node) => node.textContent);
-    expect(rows).toEqual([
-      'Ambulancia OVX-AMB-NEAR',
-      'Ambulancia OVX-AMB-MID',
-      'Ambulancia OVX-AMB-FAR',
-    ]);
+    expect(rows).toEqual(['OVX-AMB-NEAR', 'OVX-AMB-MID', 'OVX-AMB-FAR']);
     expect(within(rail).getAllByText('Disponible')).toHaveLength(2);
     expect(within(rail).getAllByText('Ocupada')).toHaveLength(1);
   });

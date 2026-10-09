@@ -67,6 +67,8 @@ interface AppFrameProps {
   notifications?: AppFrameNotification[];
   /** Called with the id of the notification the driver opens from the panel. */
   onNotificationSelect?: (id: string) => void;
+  /** Shows the search hint and the bell; hidden by default until release 1. */
+  showTopbarTools?: boolean;
 }
 
 /**
@@ -386,6 +388,7 @@ export function AppFrame({
   bellCount,
   notifications,
   onNotificationSelect,
+  showTopbarTools = false,
 }: AppFrameProps) {
   const navigate = useNavigate();
   const user = useSessionStore((state) => state.user);
@@ -477,19 +480,25 @@ export function AppFrame({
 
           {/* Non-interactive by design: the mockup's `.search` is a div with a
               span, so this is a hint, never a fake input. */}
-          <div className="hidden h-11 max-w-[420px] flex-1 items-center gap-2.5 rounded-nv-pill border-[1.5px] border-nv-line bg-nv-mint px-3.5 lg:flex">
-            <Search className="size-[18px] shrink-0 text-nv-navy-400" aria-hidden />
-            <span className="text-sm text-nv-navy-400">Buscar centro de acopio o dirección</span>
-          </div>
+          {showTopbarTools && (
+            <div className="hidden h-11 max-w-[420px] flex-1 items-center gap-2.5 rounded-nv-pill border-[1.5px] border-nv-line bg-nv-mint px-3.5 lg:flex">
+              <Search className="size-[18px] shrink-0 text-nv-navy-400" aria-hidden />
+              <span className="text-sm text-nv-navy-400">Buscar centro de acopio o dirección</span>
+            </div>
+          )}
 
           <div className="flex-1" />
 
-          <BellMenu
-            count={pendingBellCount}
-            notifications={notifications}
-            onSelect={onNotificationSelect}
-          />
-          <div className="hidden h-8 w-px shrink-0 bg-nv-line lg:block" />
+          {showTopbarTools && (
+            <>
+              <BellMenu
+                count={pendingBellCount}
+                notifications={notifications}
+                onSelect={onNotificationSelect}
+              />
+              <div className="hidden h-8 w-px shrink-0 bg-nv-line lg:block" />
+            </>
+          )}
 
           {user && (
             <UserMenu

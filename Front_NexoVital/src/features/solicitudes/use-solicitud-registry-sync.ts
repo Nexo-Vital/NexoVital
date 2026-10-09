@@ -50,6 +50,8 @@ function solicitudFromWire(frame: SolicitudWireFrame): SolicitudAmbulancia {
     ambulanciasNotificadas: frame.ambulanciasNotificadas,
     notifiedCount: frame.ambulanciasNotificadas.length,
     ambulanciaAsignadaId: frame.ambulanciaAsignadaId,
+    ...(frame.direccion ? { direccion: frame.direccion } : {}),
+    ...(frame.solicitanteNombre ? { solicitanteNombre: frame.solicitanteNombre } : {}),
   };
 }
 

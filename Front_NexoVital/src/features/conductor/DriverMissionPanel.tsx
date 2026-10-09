@@ -1,4 +1,4 @@
-import { Check, Flag, Info, Navigation, Phone } from 'lucide-react';
+import { Check, Flag, Info, Navigation } from 'lucide-react';
 import { formatDistance } from '@/features/ciudadano/citizen-view';
 import {
   DRIVER_ARRIVED_STEP,
@@ -40,8 +40,6 @@ interface DriverMissionPanelProps {
 
 const PRIMARY_BUTTON =
   'inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md bg-nv-navy px-5 font-semibold text-sm text-white disabled:cursor-not-allowed disabled:opacity-60';
-const SECONDARY_BUTTON =
-  'inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md border-[1.5px] border-nv-line bg-white px-5 font-semibold text-nv-navy text-sm disabled:cursor-not-allowed disabled:opacity-60';
 
 /**
  * Driver mission rail. It renders the two live stages of the loop:
@@ -53,9 +51,6 @@ const SECONDARY_BUTTON =
  *     reached), the real timeline ("Aceptaste la solicitud" / "Declaraste la
  *     llegada", plus the citizen's confirmation once it arrives), with
  *     "Finalizar servicio".
- *
- * "Llamar al solicitante" has no contact number in the domain, so it stays
- * disabled with its reason instead of being a button that does nothing.
  */
 export function DriverMissionPanel({
   tipo,
@@ -161,19 +156,6 @@ export function DriverMissionPanel({
           </button>
           <p className="text-nv-navy-400 text-xs">
             Al declarar la llegada, el ciudadano deberá confirmar que estás con él.
-          </p>
-
-          <button
-            type="button"
-            disabled
-            title="Aún no hay un número de contacto del solicitante."
-            className={SECONDARY_BUTTON}
-          >
-            <Phone className="size-5" aria-hidden />
-            Llamar al solicitante
-          </button>
-          <p className="text-nv-navy-400 text-xs">
-            Llamar al solicitante se habilitará cuando los datos incluyan un número de contacto.
           </p>
         </>
       ) : (

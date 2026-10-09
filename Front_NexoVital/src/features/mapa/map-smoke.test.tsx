@@ -131,6 +131,29 @@ describe('MapCanvas smoke', () => {
     expect(ids).not.toContain('EMG-005');
   });
 
+  it('draws two alerts on the same spot apart, the oldest one on its real point', () => {
+    const base = MOCK_EMERGENCIAS[0];
+    const twin = { ...base, id: 'EMG-TWIN', createdAt: new Date().toISOString() };
+    const { container } = render(
+      <MapCanvas
+        ambulancias={[]}
+        emergencias={[twin, base]}
+        onSelectAmbulance={() => undefined}
+        onSelectEmergency={() => undefined}
+      />,
+    );
+    const positionOf = (id: string) => {
+      const icon = Array.from(container.querySelectorAll<HTMLElement>('.leaflet-marker-icon')).find(
+        (element) => element.querySelector(`[data-nv-emergency="${id}"]`) !== null,
+      );
+      return icon ? `${icon.style.left}|${icon.style.top}` : '';
+    };
+
+    expect(positionOf(base.id)).not.toBe('');
+    expect(positionOf('EMG-TWIN')).not.toBe('');
+    expect(positionOf('EMG-TWIN')).not.toBe(positionOf(base.id));
+  });
+
   it('hides ambulances when the overlay is toggled off', () => {
     useLayersStore.setState({ overlays: { ...DEFAULT_OVERLAYS, ambulancias: false } });
 

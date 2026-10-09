@@ -57,11 +57,13 @@ export interface CitizenSceneLabelOptions {
    * never claim a fallback is the citizen's actual location.
    */
   fallback?: boolean;
+  /** Readable address of the position, shown instead of the coordinates. */
+  direccion?: string | null;
 }
 
 /**
- * The citizen scene label. There is no reverse geocoding, so the screen shows
- * the position instead of inventing a street address. A fallback position is
+ * The citizen scene label: the resolved address when there is one, otherwise the
+ * position, never an invented street address. A fallback position is
  * labelled as a reference/demo point, never as "tu ubicación actual".
  */
 export function citizenSceneLabel(
@@ -71,7 +73,7 @@ export function citizenSceneLabel(
   const coordinates = formatCoordinates(position);
   return options.fallback
     ? `Ubicación de referencia (demo) · ${coordinates}`
-    : `Tu ubicación actual · ${coordinates}`;
+    : `Tu ubicación actual · ${options.direccion || coordinates}`;
 }
 
 /**
