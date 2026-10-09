@@ -503,9 +503,10 @@ describe('CitizenMapPage', () => {
       expect(options.method).toBe('POST');
       // The REAL pickup point: a request no longer depends on a zone, so no
       // local `REQ-…`, no `CA-CRUE` and no emergency id travel.
+      // The accept window is SERVER-OWNED: the client only declares the pickup
+      // point and never proposes a deadline.
       expect(JSON.parse(options.body as string)).toEqual({
         ubicacion: { lat: 4.728, lng: -74.078 },
-        timeoutEn: expect.any(String),
       });
 
       // The rail renders the server-assigned state and its notified units.
@@ -605,9 +606,10 @@ describe('CitizenMapPage', () => {
         expect(useCitizenRequestStore.getState().requestId).toBe(serverResponse.id),
       );
       const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+      // The accept window is SERVER-OWNED: the client only declares the pickup
+      // point and never proposes a deadline.
       expect(JSON.parse(options.body as string)).toEqual({
         ubicacion: { lat: 4.728, lng: -74.078 },
-        timeoutEn: expect.any(String),
       });
     } finally {
       vi.unstubAllGlobals();

@@ -4,8 +4,13 @@ import { getToken } from '../../services/apiClient';
 import type { RealtimeEnvelope } from './messages';
 import type { RealtimeHandler, RealtimePort, RealtimeState } from './port';
 
-/** WebSocket/STOMP endpoint exposed by the backend (`/ws`, SockJS fallback). */
-const STOMP_ENDPOINT = '/ws';
+/**
+ * WebSocket/STOMP endpoint exposed by the backend (`/ws`, SockJS fallback).
+ * Same-origin by default: in development the Vite proxy forwards `/ws` to the
+ * backend. Deployments where the API lives on another origin set `VITE_WS_URL`
+ * at build time (e.g. `wss://api.ejemplo.com/ws`).
+ */
+const STOMP_ENDPOINT = (import.meta.env.VITE_WS_URL as string | undefined) ?? '/ws';
 const RECONNECT_DELAY_MS = 5000;
 
 /**

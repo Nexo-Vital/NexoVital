@@ -1,11 +1,14 @@
 package co.edu.escuelaing.nexovital.infrastructure.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
+
+import java.util.Arrays;
 
 /**
  * Canal de tiempo real del mapa: STOMP sobre WebSocket en {@code /ws} (con
@@ -24,14 +27,28 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final StompAuthChannelInterceptor stompAuthChannelInterceptor;
 
-    public WebSocketConfig(StompAuthChannelInterceptor stompAuthChannelInterceptor) {
+    /**
+     * Origenes del handshake WebSocket, la misma lista que CORS usa para el
+     * REST ({@code nexovital.origenes-permitidos}): el front de desarrollo en
+     * local y, en despliegues reales, el dominio que se fije por variable de
+     * entorno.
+     */
+    private final String[] origenesPermitidos;
+
+    public WebSocketConfig(StompAuthChannelInterceptor stompAuthChannelInterceptor,
+                           @Value("${nexovital.origenes-permitidos:http://localhost:5173,http://127.0.0.1:5173}")
+                           String origenesPermitidosCsv) {
         this.stompAuthChannelInterceptor = stompAuthChannelInterceptor;
+        this.origenesPermitidos = Arrays.stream(origenesPermitidosCsv.split(","))
+                .map(String::trim)
+                .filter(origen -> !origen.isEmpty())
+                .toArray(String[]::new);
     }
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws")
-                .setAllowedOriginPatterns("http://localhost:5173", "http://127.0.0.1:5173")
+                .setAllowedOriginPatterns(origenesPermitidos)
                 .withSockJS();
     }
 

@@ -19,6 +19,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -42,9 +43,12 @@ import java.util.List;
 @EnableWebSecurity
 public class SecurityConfig {
 
-    /** Development frontend origin (Vite). */
-    private static final List<String> ORIGENES_PERMITIDOS =
-            List.of("http://localhost:5173", "http://127.0.0.1:5173");
+    /**
+     * Origenes permitidos para CORS y el handshake WebSocket. Provienen de
+     * {@code nexovital.origenes-permitidos} (lista separada por comas); el
+     * default cubre el Vite de desarrollo.
+     */
+    private final List<String> origenesPermitidos;
 
     /**
      * Routes owned by springdoc-openapi: the OpenAPI JSON and the Swagger UI
@@ -91,10 +95,16 @@ public class SecurityConfig {
     private final boolean swaggerHabilitado;
 
     public SecurityConfig(JwtAuthFilter jwtAuthFilter, ObjectMapper objectMapper,
-                          @Value("${nexovital.swagger.enabled:true}") boolean swaggerHabilitado) {
+                          @Value("${nexovital.swagger.enabled:true}") boolean swaggerHabilitado,
+                          @Value("${nexovital.origenes-permitidos:http://localhost:5173,http://127.0.0.1:5173}")
+                          String origenesPermitidosCsv) {
         this.jwtAuthFilter = jwtAuthFilter;
         this.objectMapper = objectMapper;
         this.swaggerHabilitado = swaggerHabilitado;
+        this.origenesPermitidos = Arrays.stream(origenesPermitidosCsv.split(","))
+                .map(String::trim)
+                .filter(origen -> !origen.isEmpty())
+                .toList();
     }
 
     @Bean
@@ -322,7 +332,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(ORIGENES_PERMITIDOS);
+        config.setAllowedOrigins(origenesPermitidos);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
