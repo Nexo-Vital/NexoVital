@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { useRef, useState } from 'react';
+import { nvButton } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import {
   CENTER_LEVEL_STYLE,
@@ -238,17 +239,13 @@ export function CenterDetailRail({
         onClick={onDonate}
         disabled={!canDonate}
         title={canDonate ? undefined : donateBlockedReason}
-        className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md bg-nv-lime px-5 font-semibold text-nv-navy text-sm disabled:cursor-not-allowed disabled:opacity-60"
+        className={nvButton({ tone: 'supply', size: 'tall' })}
       >
         <Warehouse className="size-5" aria-hidden />
         Donar a este centro
       </button>
       {lastDonation && (
-        <button
-          type="button"
-          onClick={onBackToMap}
-          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md border-[1.5px] border-nv-line bg-white px-5 font-semibold text-nv-navy text-sm"
-        >
+        <button type="button" onClick={onBackToMap} className={nvButton({ tone: 'secondary' })}>
           <MapIcon className="size-5" aria-hidden />
           Volver al mapa
         </button>
@@ -347,11 +344,7 @@ export function DonationCenterPicker({ centros, onSelect, onCancel }: DonationCe
             })}
           </ul>
         )}
-        <button
-          type="button"
-          onClick={onCancel}
-          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md border-[1.5px] border-nv-line bg-white px-5 font-semibold text-nv-navy text-sm"
-        >
+        <button type="button" onClick={onCancel} className={nvButton({ tone: 'secondary' })}>
           <X className="size-5" aria-hidden />
           Cancelar
         </button>
@@ -560,16 +553,12 @@ export function DonationDialog({ centro, onConfirm, onClose }: DonationDialogPro
           onClick={() => void confirm()}
           disabled={item === null || submitting}
           aria-busy={submitting}
-          className="inline-flex h-14 w-full items-center justify-center gap-2 rounded-nv-md bg-nv-navy px-5 font-semibold text-sm text-white disabled:cursor-not-allowed disabled:opacity-60"
+          className={nvButton({ size: 'tall' })}
         >
           <HandHeart className="size-5" aria-hidden />
           {submitting ? 'Registrando donación…' : 'Confirmar donación'}
         </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="inline-flex h-14 w-full items-center justify-center gap-2 rounded-nv-md border-[1.5px] border-nv-line bg-white px-5 font-semibold text-nv-navy text-sm"
-        >
+        <button type="button" onClick={onClose} className={nvButton({ tone: 'secondary' })}>
           <X className="size-5" aria-hidden />
           Cancelar
         </button>

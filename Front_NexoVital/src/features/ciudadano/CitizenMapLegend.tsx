@@ -60,8 +60,7 @@ interface CitizenMapLegendProps {
  * other than being busy: a disconnected driver (EP-04.F2.US1) or maintenance.
  * The four rows always add up to the fleet.
  *
- * The card collapses to a single pill so it does not cover the map on a phone:
- * the toggle header is the only interactive part (the rest stays pointer-transparent).
+ * It lives in the shell sidebar, outside the map, and its header collapses it.
  */
 export function CitizenMapLegend({ counts, units }: CitizenMapLegendProps) {
   const [open, setOpen] = useState(true);
@@ -73,25 +72,19 @@ export function CitizenMapLegend({ counts, units }: CitizenMapLegendProps) {
   return (
     <aside
       aria-label="Leyenda del mapa"
-      className={cn(
-        'pointer-events-none absolute bottom-4 left-4 z-[650] flex w-[228px] flex-col gap-2 rounded-nv-md bg-white/95 text-nv-navy shadow-nv-float ring-1 ring-nv-line',
-        open ? 'p-4' : 'p-2',
-      )}
+      className="flex w-full flex-col gap-2 rounded-nv-md border border-nv-line bg-white p-3 text-nv-navy"
     >
       <button
         type="button"
         aria-expanded={open}
         aria-controls={bodyId}
         onClick={() => setOpen((current) => !current)}
-        className={cn(
-          'pointer-events-auto flex items-center gap-2 rounded-nv-md font-bold text-[11px] text-nv-navy-400 uppercase tracking-[0.1em] transition-colors hover:bg-nv-mint hover:text-nv-navy focus-visible:ring-2 focus-visible:ring-nv-teal',
-          open && 'px-1 py-0.5',
-        )}
+        className="flex w-full items-center gap-2 rounded-nv-md px-1 py-0.5 font-bold text-[11px] text-nv-navy-400 uppercase tracking-[0.1em] transition-colors hover:bg-nv-mint hover:text-nv-navy focus-visible:ring-2 focus-visible:ring-nv-teal"
       >
         Leyenda del mapa
         <ChevronDown
           aria-hidden
-          className={cn('size-3.5 shrink-0 transition-transform', !open && '-rotate-90')}
+          className={cn('ml-auto size-3.5 shrink-0 transition-transform', !open && '-rotate-90')}
         />
       </button>
 

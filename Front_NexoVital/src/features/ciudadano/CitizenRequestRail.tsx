@@ -1,5 +1,6 @@
 import { Ambulance, Check, Clock, Flag, Info, MapPin, Radio, X } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { nvButton } from '@/components/ui/button';
 import {
   CITIZEN_ARRIVED_STEP,
   CITIZEN_EN_ROUTE_STEP,
@@ -236,11 +237,7 @@ function AcceptedTrackingPanel({
         </div>
       </RailPanel>
 
-      <button
-        type="button"
-        onClick={onCancel}
-        className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md border-[1.5px] border-nv-line bg-white px-5 font-semibold text-nv-navy text-sm"
-      >
+      <button type="button" onClick={onCancel} className={nvButton({ tone: 'secondary' })}>
         <X className="size-5" aria-hidden />
         Cancelar solicitud
       </button>
@@ -301,11 +298,7 @@ function ArrivedPanel({ arrivedAt, onCancel }: { arrivedAt: number | null; onCan
           label="Progreso de tu solicitud"
         />
       </RailPanel>
-      <button
-        type="button"
-        onClick={onCancel}
-        className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md border-[1.5px] border-nv-line bg-white px-5 font-semibold text-nv-navy text-sm"
-      >
+      <button type="button" onClick={onCancel} className={nvButton({ tone: 'secondary' })}>
         <X className="size-5" aria-hidden />
         Cancelar solicitud
       </button>
@@ -365,11 +358,7 @@ function CompletedPanel({
         </div>
         <TrackingTimeline entries={entries} label="Línea de tiempo de tu solicitud" />
       </RailPanel>
-      <button
-        type="button"
-        onClick={onBackToMap}
-        className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md bg-nv-navy px-5 font-semibold text-sm text-white"
-      >
+      <button type="button" onClick={onBackToMap} className={nvButton()}>
         <MapPin className="size-5" aria-hidden />
         Volver al mapa
       </button>
@@ -397,11 +386,7 @@ function ExpiredPanel({ onBackToMap }: { onBackToMap: () => void }) {
           </div>
         </div>
       </RailPanel>
-      <button
-        type="button"
-        onClick={onBackToMap}
-        className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md bg-nv-navy px-5 font-semibold text-sm text-white"
-      >
+      <button type="button" onClick={onBackToMap} className={nvButton()}>
         <MapPin className="size-5" aria-hidden />
         Volver al mapa
       </button>
@@ -494,11 +479,7 @@ export function CitizenRequestRail({
         out of a search they could not stop. The action that ends the wait has
         to be reachable without scrolling.
       */}
-      <button
-        type="button"
-        onClick={onCancel}
-        className="inline-flex h-12 w-full shrink-0 items-center justify-center gap-2 rounded-nv-md border-[1.5px] border-nv-line bg-white px-5 font-semibold text-nv-navy text-sm"
-      >
+      <button type="button" onClick={onCancel} className={nvButton({ tone: 'secondary' })}>
         <X className="size-5" aria-hidden />
         Cancelar solicitud
       </button>

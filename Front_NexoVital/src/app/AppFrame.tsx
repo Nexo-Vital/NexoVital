@@ -1,4 +1,13 @@
-import { Bell, ChevronDown, HeartPulse, LogOut, type LucideIcon, Search } from 'lucide-react';
+import {
+  Bell,
+  ChevronDown,
+  HeartPulse,
+  LogOut,
+  type LucideIcon,
+  Menu,
+  Search,
+  X,
+} from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { Link, Navigate, Outlet, useNavigate } from 'react-router-dom';
 import { Toaster } from '@/components/ui/toast';
@@ -11,6 +20,7 @@ import { isDemoMode } from '@/services/apiClient';
 import { getRealtimePort } from '@/shared/realtime';
 import { ConnectionBanner } from '@/shared/realtime/ConnectionBanner';
 import { useRealtimeConnection } from '@/shared/realtime/use-realtime-connection';
+import { SidebarSlotProvider } from './sidebar-slot';
 
 /** One entry of the sidebar navigation. The shell renders it, the role config owns it. */
 export interface AppFrameNavItem {
@@ -399,6 +409,28 @@ export function AppFrame({
   // connected.
   useRealtimeConnection();
 
+  // Below lg the sidebar is a drawer opened from the topbar menu button.
+  const [navOpen, setNavOpen] = useState(false);
+  const [slotNode, setSlotNode] = useState<HTMLElement | null>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const sidebarId = useId();
+
+  useEffect(() => {
+    if (!navOpen) {
+      return;
+    }
+    closeButtonRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setNavOpen(false);
+        menuButtonRef.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [navOpen]);
+
   // Defence in depth: never render a role without a screen.
   if (!hasRoleHome(role)) {
     return <Navigate to="/login" replace />;
@@ -410,16 +442,43 @@ export function AppFrame({
   };
 
   const pendingBellCount = bellCount ?? 0;
+  const closeNav = () => setNavOpen(false);
 
   return (
     <div className="flex h-dvh overflow-hidden bg-white text-nv-navy">
+      {navOpen && (
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label="Cerrar menú"
+          onClick={closeNav}
+          className="fixed inset-0 z-[1290] bg-nv-navy/45 lg:hidden"
+        />
+      )}
       <aside
+        id={sidebarId}
         aria-label="Barra lateral"
-        className="hidden w-62 shrink-0 flex-col gap-2 border-nv-line border-r bg-white p-6 px-4 lg:flex"
+        className={cn(
+          'flex w-62 shrink-0 flex-col gap-2 overflow-y-auto border-nv-line border-r bg-white p-6 px-4',
+          'max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:z-[1300] max-lg:w-[min(85vw,288px)] max-lg:shadow-nv-float max-lg:transition-transform',
+          navOpen ? 'max-lg:translate-x-0' : 'max-lg:invisible max-lg:-translate-x-full',
+        )}
       >
         <div className="flex items-center gap-2.5 px-2 pb-5">
           <HeartPulse className="size-[26px] shrink-0 text-nv-navy" aria-hidden />
           <span className="font-bold text-lg tracking-[-0.02em]">NexoVital</span>
+          <button
+            type="button"
+            ref={closeButtonRef}
+            aria-label="Cerrar menú"
+            onClick={closeNav}
+            className={cn(
+              'ml-auto grid size-10 place-items-center rounded-nv-md text-nv-navy-400 hover:bg-nv-mint lg:hidden',
+              FOCUS_RING,
+            )}
+          >
+            <X className="size-5" aria-hidden />
+          </button>
         </div>
 
         <nav aria-label="Navegación del rol" className="flex flex-col gap-1">
@@ -437,6 +496,7 @@ export function AppFrame({
                 <Link
                   key={item.key}
                   to={item.to}
+                  onClick={closeNav}
                   aria-current={active ? 'page' : undefined}
                   className={cn(itemClass, FOCUS_RING)}
                 >
@@ -454,6 +514,9 @@ export function AppFrame({
           })}
         </nav>
 
+        {/* Pages render extra sidebar content here, e.g. the map legend. */}
+        <div ref={setSlotNode} className="mt-4 flex flex-col gap-3 empty:hidden" />
+
         <div className="mt-auto" />
 
         <p className="nv-label px-3 pb-1.5 text-nv-navy-400">Cuenta</p>
@@ -470,9 +533,22 @@ export function AppFrame({
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-19 shrink-0 items-center gap-5 border-nv-line border-b bg-white px-8">
-          {/* Below lg the sidebar (and its brand) is hidden, so the topbar keeps
-              the brand and degrades to brand + avatar. */}
+        <header className="flex h-16 shrink-0 items-center gap-3 border-nv-line border-b bg-white px-4 lg:h-19 lg:gap-5 lg:px-8">
+          {/* Below lg the menu button opens the sidebar drawer. */}
+          <button
+            type="button"
+            ref={menuButtonRef}
+            aria-label="Abrir menú"
+            aria-expanded={navOpen}
+            aria-controls={sidebarId}
+            onClick={() => setNavOpen(true)}
+            className={cn(
+              'grid size-10 shrink-0 place-items-center rounded-nv-md text-nv-navy hover:bg-nv-mint lg:hidden',
+              FOCUS_RING,
+            )}
+          >
+            <Menu className="size-6" aria-hidden />
+          </button>
           <div className="flex items-center gap-2.5 lg:hidden">
             <HeartPulse className="size-[26px] shrink-0 text-nv-navy" aria-hidden />
             <span className="font-bold text-lg tracking-[-0.02em]">NexoVital</span>
@@ -513,8 +589,10 @@ export function AppFrame({
         {/* Off in demo mode: there is no backend channel to lose there. */}
         <ConnectionBanner port={isDemoMode() ? null : getRealtimePort()} />
 
-        <main className="min-h-0 flex-1 overflow-auto bg-nv-mint p-7 px-8">
-          <Outlet />
+        <main className="min-h-0 flex-1 overflow-auto bg-nv-mint p-4 lg:p-7 lg:px-8">
+          <SidebarSlotProvider value={slotNode}>
+            <Outlet />
+          </SidebarSlotProvider>
         </main>
       </div>
 

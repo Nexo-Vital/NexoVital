@@ -1,6 +1,9 @@
 import { Ambulance, Check, Flag, X } from 'lucide-react';
+import { nvButton } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { unitPlateLabel } from '@/features/seguimiento/tracking';
+import { autoConfirmSecondsLeft, formatSecondsLeft } from '@/features/solicitudes/auto-confirm';
+import { useClock } from '@/hooks/use-clock';
 import type { Ambulancia } from '@/types/domain';
 
 interface ArrivalPopupProps {
@@ -8,6 +11,8 @@ interface ArrivalPopupProps {
   unitId: string;
   /** The assigned unit as the live fleet knows it, or null before hydration. */
   unit: Ambulancia | null;
+  /** When the unit declared its arrival (epoch ms), for the auto-confirm countdown. */
+  arrivedAt: number | null;
   /** Publishes the citizen's confirmation; the relay then closes the request. */
   onConfirm: () => void;
   /**
@@ -39,7 +44,9 @@ interface ArrivalPopupProps {
  * so a live button would lie about what the app can do. Dismissing the dialog is
  * the honest interim exit, not a dispute flow.
  */
-export function ArrivalPopup({ unitId, unit, onConfirm, onClose }: ArrivalPopupProps) {
+export function ArrivalPopup({ unitId, unit, arrivedAt, onConfirm, onClose }: ArrivalPopupProps) {
+  const now = useClock(1000).getTime();
+  const left = arrivedAt !== null ? autoConfirmSecondsLeft(arrivedAt, now) : null;
   const unitLabel = unit ? unitPlateLabel(unit) : unitId;
   const modelType = unit?.modelo && unit.tipo ? `${unit.modelo} · ${unit.tipo}` : null;
 
@@ -78,11 +85,7 @@ export function ArrivalPopup({ unitId, unit, onConfirm, onClose }: ArrivalPopupP
           </span>
         </div>
 
-        <button
-          type="button"
-          onClick={onConfirm}
-          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md bg-nv-navy px-5 font-semibold text-sm text-white"
-        >
+        <button type="button" onClick={onConfirm} className={nvButton({ size: 'tall' })}>
           <Check className="size-5" aria-hidden />
           Sí, ya llegó
         </button>
@@ -90,18 +93,19 @@ export function ArrivalPopup({ unitId, unit, onConfirm, onClose }: ArrivalPopupP
           type="button"
           disabled
           title="El flujo de disputa todavía no está construido."
-          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md border-[1.5px] border-nv-line bg-white px-5 font-semibold text-nv-navy text-sm disabled:cursor-not-allowed disabled:opacity-60"
+          className={nvButton({ tone: 'secondary' })}
         >
           No la veo
         </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md border-[1.5px] border-nv-line bg-white px-5 font-semibold text-nv-navy text-sm"
-        >
+        <button type="button" onClick={onClose} className={nvButton({ tone: 'secondary' })}>
           <X className="size-5" aria-hidden />
           Cerrar
         </button>
+        <p role="status" className="font-medium text-nv-navy text-xs">
+          {left === null || left > 0
+            ? `Si no respondes, la llegada se confirmará automáticamente${left !== null ? ` en ${formatSecondsLeft(left)}` : ''}.`
+            : 'Confirmando la llegada automáticamente…'}
+        </p>
         <p className="text-nv-navy-400 text-xs">
           «No la veo» se habilitará cuando el flujo de disputa esté construido. Mientras tanto,
           puedes cerrar este aviso y cancelar tu solicitud desde el panel.

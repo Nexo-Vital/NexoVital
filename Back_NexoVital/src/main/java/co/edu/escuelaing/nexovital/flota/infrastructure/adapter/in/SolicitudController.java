@@ -2,6 +2,7 @@ package co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in;
 
 import co.edu.escuelaing.nexovital.flota.domain.exception.AmbulanciaNoDisponibleException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudAjenaException;
+import co.edu.escuelaing.nexovital.flota.domain.exception.ConfirmacionPendienteException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.LlegadaNoDeclaradaException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoAsignableException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoEncontradaException;
@@ -82,6 +83,8 @@ public class SolicitudController {
     private static final String MENSAJE_SOLICITUD_YA_RECHAZADA = "Ya rechazaste esta solicitud.";
     private static final String MENSAJE_LLEGADA_NO_DECLARADA =
             "La ambulancia todavía no ha declarado su llegada.";
+    private static final String MENSAJE_CONFIRMACION_PENDIENTE =
+            "El ciudadano todavía no ha confirmado la llegada.";
     private static final String MENSAJE_AMBULANCIA_NO_DISPONIBLE =
             "No hay ambulancias disponibles para atender la solicitud.";
     private static final String MENSAJE_ERROR_SOLICITUD = "No fue posible registrar la solicitud.";
@@ -395,6 +398,7 @@ public class SolicitudController {
      *         409 {@code AMBULANCIA_NO_DISPONIBLE} if the unit is not EN_MISION;
      *         409 {@code LLEGADA_NO_DECLARADA} if the unit has not declared
      *         its arrival yet (EP-04.F2.US8);
+     *         409 {@code CONFIRMACION_PENDIENTE} if the arrival is not confirmed yet;
      *         400 {@code DATOS_INVALIDOS}; 500 {@code ERROR_FINALIZACION_SOLICITUD}
      */
     @PostMapping("/{id}/finalizar")
@@ -413,6 +417,9 @@ public class SolicitudController {
         } catch (LlegadaNoDeclaradaException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(ErrorResponse.of("LLEGADA_NO_DECLARADA", MENSAJE_LLEGADA_NO_DECLARADA));
+        } catch (ConfirmacionPendienteException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ErrorResponse.of("CONFIRMACION_PENDIENTE", MENSAJE_CONFIRMACION_PENDIENTE));
         } catch (SolicitudNoAsignableException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(ErrorResponse.of("SOLICITUD_NO_ASIGNABLE", MENSAJE_SOLICITUD_NO_ASIGNABLE));

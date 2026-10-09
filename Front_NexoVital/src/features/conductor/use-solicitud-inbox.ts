@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { notify, toast } from '@/components/ui/toast';
 import { isUuid } from '@/features/ciudadano/citizen-request';
 import { useEmergencyStore } from '@/features/emergencias/emergency-store';
+import { AUTO_CONFIRM_SECONDS } from '@/features/solicitudes/auto-confirm';
 import { useSolicitudesStore } from '@/features/solicitudes/solicitudes-store';
 import { etaMinutes } from '@/lib/geo';
 import { ApiError, isDemoMode } from '@/services/apiClient';
@@ -11,6 +12,7 @@ import {
   type RealtimePort,
   type SolicitudAcceptPayload,
   type SolicitudBroadcastPayload,
+  type SolicitudConfirmarPayload,
   type SolicitudLlegadaPayload,
   type SolicitudPayload,
   type SolicitudRejectPayload,
@@ -1120,6 +1122,25 @@ export function useSolicitudInbox(
     },
     [ambulanceId],
   );
+
+  // Demo has no server sweep: the driver's client confirms an unanswered arrival.
+  useEffect(() => {
+    if (!isDemoMode() || !port || !mission || mission.arrivedAt === null) {
+      return;
+    }
+    if (mission.confirmedAt !== null) {
+      return;
+    }
+    const { requestId } = mission;
+    const wait = Math.max(0, mission.arrivedAt + AUTO_CONFIRM_SECONDS * 1000 - Date.now());
+    const timer = window.setTimeout(() => {
+      port.publish<SolicitudConfirmarPayload>(DESTINATIONS.solicitudes, {
+        type: 'solicitud.confirmar',
+        requestId,
+      });
+    }, wait);
+    return () => window.clearTimeout(timer);
+  }, [port, mission]);
 
   const notifyTimeout = useCallback(() => {
     if (phaseRef.current === 'idle' || phaseRef.current === 'submitting') {

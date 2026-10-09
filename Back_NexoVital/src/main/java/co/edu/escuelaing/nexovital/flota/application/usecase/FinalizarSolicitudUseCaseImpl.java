@@ -5,6 +5,7 @@ import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoSolicitud;
 import co.edu.escuelaing.nexovital.flota.domain.event.FlotaActualizadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudFinalizadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.exception.AmbulanciaNoDisponibleException;
+import co.edu.escuelaing.nexovital.flota.domain.exception.ConfirmacionPendienteException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.LlegadaNoDeclaradaException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoAsignableException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoEncontradaException;
@@ -26,7 +27,7 @@ import java.util.UUID;
  * the SAME atomic operation (EP-04.F2.US6/US11, "misma operación del cierre").
  *
  * <p>Closing and releasing are not two client steps: the request leaves the
- * active set (ASIGNADA/CONFIRMADA → TOMADA) and the unit returns to
+ * active set (CONFIRMADA → TOMADA) and the unit returns to
  * {@code DISPONIBLE} inside one transaction. Both changes are conditional
  * updates, so a double "finalizar" (or a race) resolves to a single winner and
  * the loser receives the contract's 409, never a 500.
@@ -37,8 +38,9 @@ import java.util.UUID;
 @Service
 public class FinalizarSolicitudUseCaseImpl implements FinalizarSolicitudUseCase {
 
+    // Only a confirmed service can be finished (citizen or automatic confirmation).
     private static final List<EstadoSolicitud> ESTADOS_EN_SERVICIO =
-            List.of(EstadoSolicitud.ASIGNADA, EstadoSolicitud.CONFIRMADA);
+            List.of(EstadoSolicitud.CONFIRMADA);
 
     private final SolicitudRepository solicitudRepository;
     private final AmbulanciaRepository ambulanciaRepository;
@@ -65,6 +67,9 @@ public class FinalizarSolicitudUseCaseImpl implements FinalizarSolicitudUseCase 
         // so this pre-check cannot be invalidated by a race.
         if (solicitud.getLlegadaEn() == null) {
             throw new LlegadaNoDeclaradaException(solicitudId);
+        }
+        if (solicitud.getEstado() == EstadoSolicitud.ASIGNADA) {
+            throw new ConfirmacionPendienteException(solicitudId);
         }
 
         int cerrada = solicitudRepository.transicionAtomicaFinalizar(

@@ -1,4 +1,5 @@
 ﻿import { Ambulance, HandHeart, Layers, Siren, User, Warehouse } from 'lucide-react';
+import { nvButton } from '@/components/ui/button';
 import {
   LocationSimulationControls,
   SIMULATION_ENABLED,
@@ -36,9 +37,6 @@ export interface CenterAdminAction {
   /** Why the action is disabled; shown as the tooltip and under the buttons. */
   reason?: string;
 }
-
-const ACTION_BUTTON_CLASS =
-  'inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md px-5 font-semibold text-sm disabled:cursor-not-allowed disabled:opacity-60';
 
 /**
  * The three citizen actions. "Pedir ambulancia" is live and calls the request
@@ -90,7 +88,7 @@ function CitizenRoleActions({
         onClick={onRequest}
         disabled={noUnitsAvailable}
         title={noUnitsAvailable ? CITIZEN_REQUEST_REASONS.noUnits : undefined}
-        className={cn(ACTION_BUTTON_CLASS, 'bg-nv-red-600 text-white')}
+        className={nvButton({ tone: 'emergency', size: 'tall' })}
       >
         <Ambulance className="size-5" aria-hidden />
         Pedir ambulancia
@@ -102,7 +100,7 @@ function CitizenRoleActions({
           onClick={centerAction.onClick}
           disabled={centerAction.disabled}
           title={centerAction.disabled ? centerAction.reason : undefined}
-          className={cn(ACTION_BUTTON_CLASS, 'bg-nv-lime text-nv-navy')}
+          className={nvButton({ tone: 'supply', size: 'tall' })}
         >
           <Warehouse className="size-5" aria-hidden />
           {centerAction.label}
@@ -115,18 +113,14 @@ function CitizenRoleActions({
           title={
             donationEnabled ? undefined : 'Ningún centro declara insumos que necesiten donación.'
           }
-          className={cn(ACTION_BUTTON_CLASS, 'bg-nv-lime text-nv-navy')}
+          className={nvButton({ tone: 'supply', size: 'tall' })}
         >
           <HandHeart className="size-5" aria-hidden />
           Donar suministros
         </button>
       )}
 
-      <button
-        type="button"
-        onClick={onReport}
-        className={cn(ACTION_BUTTON_CLASS, 'bg-nv-navy text-white')}
-      >
+      <button type="button" onClick={onReport} className={nvButton()}>
         <Siren className="size-5" aria-hidden />
         Reportar zona afectada
       </button>

@@ -27,6 +27,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
+import { nvButton } from '@/components/ui/button';
 import { formatCoordinates } from '@/features/ciudadano/citizen-request';
 import {
   CENTER_LEVEL_STYLE,
@@ -225,7 +226,7 @@ function MyUnitPanel({
             onClick={onGoOffline}
             disabled={connectionPending || disconnectBlockedReason !== null}
             title={disconnectBlockedReason ?? undefined}
-            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-nv-md border-[1.5px] border-nv-line bg-white px-4 font-semibold text-nv-navy text-sm disabled:cursor-not-allowed disabled:opacity-60"
+            className={nvButton({ tone: 'secondary' })}
           >
             <Power className="size-4" aria-hidden />
             Desconectarse
@@ -235,7 +236,7 @@ function MyUnitPanel({
             type="button"
             onClick={onGoOnline}
             disabled={connectionPending}
-            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-nv-md bg-nv-navy px-4 font-semibold text-sm text-white disabled:cursor-not-allowed disabled:opacity-60"
+            className={nvButton()}
           >
             <Power className="size-4" aria-hidden />
             Conectarse
@@ -597,7 +598,7 @@ function RequestCard({
             type="button"
             onClick={onAccept}
             disabled={isSubmitting || !unitResolved}
-            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md bg-nv-navy px-5 font-semibold text-sm text-white disabled:cursor-not-allowed disabled:opacity-60"
+            className={nvButton({ size: 'tall' })}
           >
             <Check className="size-5" aria-hidden />
             {isSubmitting ? 'Enviando…' : 'Aceptar solicitud'}
@@ -606,7 +607,7 @@ function RequestCard({
             type="button"
             onClick={onReject}
             disabled={isSubmitting || !unitResolved}
-            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md border-[1.5px] border-nv-line bg-white px-5 font-semibold text-nv-navy text-sm disabled:cursor-not-allowed disabled:opacity-60"
+            className={nvButton({ tone: 'secondary' })}
           >
             <X className="size-5" aria-hidden />
             Rechazar
@@ -845,7 +846,7 @@ function SolicitudDetail({
           type="button"
           onClick={onAccept}
           disabled={!canRespond}
-          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md bg-nv-navy px-5 font-semibold text-sm text-white disabled:cursor-not-allowed disabled:opacity-60"
+          className={nvButton({ size: 'tall' })}
         >
           <Check className="size-5" aria-hidden />
           Aceptar
@@ -854,7 +855,7 @@ function SolicitudDetail({
           type="button"
           onClick={onReject}
           disabled={!canRespond}
-          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md border-[1.5px] border-nv-line bg-white px-5 font-semibold text-nv-navy text-sm disabled:cursor-not-allowed disabled:opacity-60"
+          className={nvButton({ tone: 'secondary' })}
         >
           <X className="size-5" aria-hidden />
           Rechazar

@@ -26,6 +26,15 @@ const API = `${BASE_URL}/api/v1`;
 const TOKEN_KEY = 'nexovital.token';
 
 const CITIZEN = { email: 'ciudadano@nexovital.co', password: 'ciudadano123' };
+
+/** The citizen confirms the arrival; finishing a service requires it. */
+async function confirmArrivalAsCitizen(page: Page, requestId: string): Promise<void> {
+  const session = await page.request.post(`${API}/sesiones`, { data: CITIZEN });
+  const { token } = (await session.json()) as { token: string };
+  await page.request.post(`${API}/solicitudes/${requestId}/confirmar`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
 /** The five seeded drivers, one per unit ABC101..ABC505 (Back_NexoVital DataSeeder). */
 const DRIVERS = [
   { email: 'conductor1@nexovital.co', password: 'conductor123' },
@@ -260,6 +269,7 @@ test('sin emergencias: el ciudadano pide y las cinco unidades reciben la notific
       headers: { Authorization: `Bearer ${winnerToken}` },
       data: { ambulanciaId: unitIds[0] },
     });
+    await confirmArrivalAsCitizen(winnerPage, request.id);
     const finish = await winnerPage.request.post(`${API}/solicitudes/${request.id}/finalizar`, {
       headers: { Authorization: `Bearer ${winnerToken}` },
       data: { ambulanciaId: unitIds[0] },

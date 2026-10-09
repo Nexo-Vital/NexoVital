@@ -1110,6 +1110,13 @@ describe('DriverConsolePage', () => {
     expect(
       within(rail).queryByRole('button', { name: 'Declarar llegada' }),
     ).not.toBeInTheDocument();
+    // Finishing waits for the citizen's confirmation, manual or automatic.
+    expect(within(rail).getByRole('button', { name: 'Finalizar servicio' })).toBeDisabled();
+    expect(within(rail).getByText(/se confirmará automáticamente en 1:00/)).toBeInTheDocument();
+
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, { type: 'request.confirmed', requestId: 'REQ-1' }),
+    );
     expect(within(rail).getByRole('button', { name: 'Finalizar servicio' })).toBeEnabled();
     expect(
       within(rail).getByText(/vuelve a quedar disponible para nuevas solicitudes/),
@@ -1165,6 +1172,9 @@ describe('DriverConsolePage', () => {
         requestId: 'REQ-1',
         ambulanceId: 'A-07',
       }),
+    );
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, { type: 'request.confirmed', requestId: 'REQ-1' }),
     );
 
     await user.click(within(driverRail()).getByRole('button', { name: 'Finalizar servicio' }));

@@ -196,6 +196,12 @@ abstract class SolicitudHttpTestSupport extends LoginTestBase {
                         Map.of("ambulanciaId", conductor.unidad().toString()))));
     }
 
+    /** The requester confirms the arrival, the step that enables finishing. */
+    protected ResultActions confirmarLlegada(UUID solicitudId, String tokenCiudadano) throws Exception {
+        return mockMvc.perform(post("/api/v1/solicitudes/{id}/confirmar", solicitudId)
+                .header("Authorization", "Bearer " + tokenCiudadano));
+    }
+
     /** {@code POST /api/v1/flota/ambulancias/mia/{comando}} without a body. */
     protected ResultActions comandoDeMiUnidad(String comando, String token) throws Exception {
         return mockMvc.perform(post("/api/v1/flota/ambulancias/mia/" + comando)

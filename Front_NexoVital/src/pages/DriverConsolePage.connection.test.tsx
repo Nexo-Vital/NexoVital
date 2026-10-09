@@ -824,7 +824,7 @@ describe('DriverConsolePage connection off demo mode', () => {
     backend.unit = wireUnit({ estado: 'EN_MISION' });
     backend.historial = [
       wirePending({
-        estado: 'ASIGNADA',
+        estado: 'CONFIRMADA',
         ambulanciaAsignadaId: REAL_UNIT,
         llegadaEn: new Date().toISOString(),
       }),
@@ -853,7 +853,7 @@ describe('DriverConsolePage connection off demo mode', () => {
     backend.unit = wireUnit({ estado: 'EN_MISION' });
     backend.historial = [
       wirePending({
-        estado: 'ASIGNADA',
+        estado: 'CONFIRMADA',
         ambulanciaAsignadaId: REAL_UNIT,
         llegadaEn: new Date().toISOString(),
       }),

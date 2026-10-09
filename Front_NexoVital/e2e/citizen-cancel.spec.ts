@@ -33,6 +33,15 @@ const API = `${BASE_URL}/api/v1`;
 const TOKEN_KEY = 'nexovital.token';
 
 const CITIZEN = { email: 'ciudadano@nexovital.co', password: 'ciudadano123' };
+
+/** The citizen confirms the arrival; finishing a service requires it. */
+async function confirmArrivalAsCitizen(page: Page, requestId: string): Promise<void> {
+  const session = await page.request.post(`${API}/sesiones`, { data: CITIZEN });
+  const { token } = (await session.json()) as { token: string };
+  await page.request.post(`${API}/solicitudes/${requestId}/confirmar`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
 /** Seeded driver of the unit ABC101 (Back_NexoVital DataSeeder). */
 const DRIVER = { email: 'conductor1@nexovital.co', password: 'conductor123' };
 
@@ -382,6 +391,7 @@ test('AC-refused: cancelar una solicitud ya asignada muestra el motivo del backe
           headers: { Authorization: `Bearer ${driverToken}` },
           data: { ambulanciaId: unitId },
         });
+        await confirmArrivalAsCitizen(driverPage, requestId);
         await driverPage.request.post(`${API}/solicitudes/${requestId}/finalizar`, {
           headers: { Authorization: `Bearer ${driverToken}` },
           data: { ambulanciaId: unitId },
