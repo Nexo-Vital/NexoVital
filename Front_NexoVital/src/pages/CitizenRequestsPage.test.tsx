@@ -68,6 +68,24 @@ describe('CitizenRequestsPage (EP-04.F2.US11)', () => {
     expect(screen.getByText('Todavía no tienes solicitudes atendidas.')).toBeInTheDocument();
   });
 
+  it('shows the real address of the request, and the coordinates only without one', async () => {
+    render(
+      <CitizenRequestsPage
+        fetchActivas={vi
+          .fn()
+          .mockResolvedValue([
+            { ...solicitud('S-DIR', 'PENDING'), direccion: 'Calle 145 # 91-19' },
+          ])}
+        fetchAtendidas={vi.fn().mockResolvedValue([solicitud('S-SIN', 'TAKEN')])}
+      />,
+    );
+
+    const activas = await screen.findByRole('region', { name: 'Solicitudes activas' });
+    expect(within(activas).getByText('Calle 145 # 91-19')).toBeInTheDocument();
+    const atendidas = screen.getByRole('region', { name: 'Solicitudes atendidas' });
+    expect(within(atendidas).getByText('4.7300, -74.0800')).toBeInTheDocument();
+  });
+
   it('shows both empty states when the citizen has no requests', async () => {
     render(
       <CitizenRequestsPage

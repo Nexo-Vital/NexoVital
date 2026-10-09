@@ -9,6 +9,7 @@ import co.edu.escuelaing.nexovital.flota.domain.model.Ambulancia;
 import co.edu.escuelaing.nexovital.flota.domain.model.SolicitudAmbulancia;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.IncorporarUnidadASolicitudesAbiertasUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.out.AmbulanciaRepository;
+import co.edu.escuelaing.nexovital.flota.domain.port.out.NombreUsuarioPort;
 import co.edu.escuelaing.nexovital.shared.domain.port.out.PushPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -61,13 +62,16 @@ public class SolicitudAbiertaPushListener {
     private final IncorporarUnidadASolicitudesAbiertasUseCase incorporarUseCase;
     private final AmbulanciaRepository ambulanciaRepository;
     private final PushPort pushPort;
+    private final NombreUsuarioPort nombreUsuarioPort;
 
     public SolicitudAbiertaPushListener(IncorporarUnidadASolicitudesAbiertasUseCase incorporarUseCase,
                                         AmbulanciaRepository ambulanciaRepository,
-                                        PushPort pushPort) {
+                                        PushPort pushPort,
+                                        NombreUsuarioPort nombreUsuarioPort) {
         this.incorporarUseCase = incorporarUseCase;
         this.ambulanciaRepository = ambulanciaRepository;
         this.pushPort = pushPort;
+        this.nombreUsuarioPort = nombreUsuarioPort;
     }
 
     /** The unit finished its service or declared itself available again. */
@@ -107,7 +111,8 @@ public class SolicitudAbiertaPushListener {
             }
             for (SolicitudAmbulancia solicitud : incorporadas) {
                 pushPort.publicarAUsuario(conductorId.toString(),
-                        FlotaPushListener.DESTINO_SOLICITUDES, SolicitudAbiertaPushPayload.desde(solicitud));
+                        FlotaPushListener.DESTINO_SOLICITUDES, SolicitudAbiertaPushPayload.desde(
+                                solicitud, nombreUsuarioPort.nombreDe(solicitud.getSolicitanteId())));
             }
         } catch (RuntimeException e) {
             LOG.warn("No se pudieron ofrecer las solicitudes abiertas a la unidad {}", ambulanciaId, e);
@@ -123,9 +128,10 @@ public class SolicitudAbiertaPushListener {
                                               String zonaId, String estado,
                                               List<UUID> ambulanciasNotificadas,
                                               UUID ambulanciaAsignadaId, boolean llegada,
-                                              String solicitadaEn, String timeoutEn) {
+                                              String solicitadaEn, String timeoutEn,
+                                              String direccion, String solicitanteNombre) {
 
-        static SolicitudAbiertaPushPayload desde(SolicitudAmbulancia solicitud) {
+        static SolicitudAbiertaPushPayload desde(SolicitudAmbulancia solicitud, String solicitanteNombre) {
             return new SolicitudAbiertaPushPayload(
                     solicitud.getId(),
                     new Ubicacion(solicitud.getLat(), solicitud.getLng()),
@@ -136,7 +142,9 @@ public class SolicitudAbiertaPushListener {
                     null,
                     false,
                     solicitud.getSolicitadaEn() == null ? null : solicitud.getSolicitadaEn().toString(),
-                    solicitud.getTimeoutEn() == null ? null : solicitud.getTimeoutEn().toString());
+                    solicitud.getTimeoutEn() == null ? null : solicitud.getTimeoutEn().toString(),
+                    solicitud.getDireccion(),
+                    solicitanteNombre);
         }
     }
 }

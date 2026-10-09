@@ -45,7 +45,7 @@ function isEstado(value: unknown): value is AmbulanceState {
  * `null` on a malformed unit and NEVER throws, so one bad row cannot drop the
  * whole fleet (the boundary convention shared with `fromWireInventario`).
  *
- * `modelo`/`tipo`/`driverName` are not part of the DTO: they stay absent (the UI
+ * `modelo`/`tipo` are not part of the DTO: they stay absent (the UI
  * omits them) instead of being invented. The signal fields are carried only
  * when the server sends them with the right type, so a backend that predates
  * them still maps to the same unit as before. The same holds for `conectada`.
@@ -54,8 +54,18 @@ export function fromWireAmbulancia(value: unknown): Ambulancia | null {
   if (!isRecord(value)) {
     return null;
   }
-  const { id, placa, estado, ubicacion, zona, sinSenal, ultimaPosicionEn, version, conectada } =
-    value;
+  const {
+    id,
+    placa,
+    estado,
+    ubicacion,
+    zona,
+    sinSenal,
+    ultimaPosicionEn,
+    version,
+    conectada,
+    conductorNombre,
+  } = value;
   if (typeof id !== 'string' || id.length === 0) {
     return null;
   }
@@ -78,7 +88,8 @@ export function fromWireAmbulancia(value: unknown): Ambulancia | null {
     estado: ESTADO_TO_AMBULANCE_STATE[estado],
     ubicacion: { lat: ubicacion.lat, lng: ubicacion.lng },
     zona,
-    driverName: '',
+    // The driver's display name the server now sends; empty when unknown.
+    driverName: typeof conductorNombre === 'string' ? conductorNombre : '',
   };
   if (typeof sinSenal === 'boolean') {
     unidad.sinSenal = sinSenal;

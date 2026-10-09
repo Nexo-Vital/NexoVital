@@ -7,11 +7,14 @@ import co.edu.escuelaing.nexovital.recursos.domain.model.ItemInventario;
 import co.edu.escuelaing.nexovital.recursos.domain.port.in.DespacharStockUseCase;
 import co.edu.escuelaing.nexovital.recursos.domain.port.out.CentroAcopioQueryPort;
 import co.edu.escuelaing.nexovital.recursos.domain.port.out.InventarioRepository;
+import co.edu.escuelaing.nexovital.recursos.domain.model.RetiroInventario;
+import co.edu.escuelaing.nexovital.recursos.domain.port.out.RetiroInventarioRepository;
 import co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.in.dto.ItemInventarioDto;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -41,18 +44,28 @@ public class DespacharStockUseCaseImpl implements DespacharStockUseCase {
     private final InventarioRepository inventarioRepository;
     private final CentroAcopioQueryPort centroAcopioQueryPort;
     private final ApplicationEventPublisher eventPublisher;
+    private final RetiroInventarioRepository retiroInventarioRepository;
 
     public DespacharStockUseCaseImpl(InventarioRepository inventarioRepository,
                                      CentroAcopioQueryPort centroAcopioQueryPort,
-                                     ApplicationEventPublisher eventPublisher) {
+                                     ApplicationEventPublisher eventPublisher,
+                                     RetiroInventarioRepository retiroInventarioRepository) {
         this.inventarioRepository = inventarioRepository;
         this.centroAcopioQueryPort = centroAcopioQueryPort;
         this.eventPublisher = eventPublisher;
+        this.retiroInventarioRepository = retiroInventarioRepository;
     }
 
     @Override
     @Transactional
     public ItemInventario despachar(UUID centroAcopioId, UUID itemId, int cantidad) {
+        return despachar(centroAcopioId, itemId, cantidad, null, null);
+    }
+
+    @Override
+    @Transactional
+    public ItemInventario despachar(UUID centroAcopioId, UUID itemId, int cantidad, String motivo,
+                                    UUID usuarioId) {
         if (cantidad < 1) {
             throw new IllegalArgumentException("La cantidad a despachar debe ser un entero positivo.");
         }
@@ -79,6 +92,9 @@ public class DespacharStockUseCaseImpl implements DespacharStockUseCase {
         // stock the database now holds, never a Java calculation.
         ItemInventario despachado = inventarioRepository.buscar(centroAcopioId, itemId)
                 .orElseThrow(() -> new ItemInventarioNoEncontradoException(centroAcopioId, itemId));
+        // The reason is stored with the withdrawal, in the same transaction.
+        retiroInventarioRepository.registrar(RetiroInventario.nuevo(
+                centroAcopioId, itemId, cantidad, motivo, usuarioId, Instant.now()));
         eventPublisher.publishEvent(new StockDespachadoEvento(ItemInventarioDto.fromDomain(despachado)));
         return despachado;
     }

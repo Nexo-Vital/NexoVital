@@ -11,5 +11,10 @@ import java.util.UUID;
  * missing quantity arrives as {@code null} and the controller rejects it
  * explicitly instead of a primitive masking it as {@code 0}.
  */
-public record DespachoRequest(UUID itemId, Integer cantidad) {
+public record DespachoRequest(UUID itemId, Integer cantidad, String motivo) {
+
+    /** A body without the reason of the withdrawal. */
+    public DespachoRequest(UUID itemId, Integer cantidad) {
+        this(itemId, cantidad, null);
+    }
 }

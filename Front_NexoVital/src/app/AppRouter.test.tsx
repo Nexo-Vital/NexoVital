@@ -143,8 +143,8 @@ describe('AppRouter shell selection', () => {
 
     expect(screen.getByTestId('citizen-requests')).toBeInTheDocument();
     expect(within(bar).getByText('Mis solicitudes')).toHaveAttribute('aria-current', 'page');
-    // "Mis donaciones" still has no screen, so it stays inert.
-    expect(within(bar).queryByRole('link', { name: 'Mis donaciones' })).not.toBeInTheDocument();
+    // "Mis donaciones" is hidden until release 1.
+    expect(within(bar).queryByText('Mis donaciones')).not.toBeInTheDocument();
 
     await user.click(within(bar).getByRole('link', { name: 'Mapa' }));
     expect(screen.getByTestId('citizen-map')).toBeInTheDocument();
@@ -222,8 +222,7 @@ describe('AppRouter shell selection', () => {
     expect(within(bar).getByText('Mi unidad')).not.toHaveAttribute('aria-current');
   });
 
-  it('lists the driver pending offers in the shell bell and focuses one on click', async () => {
-    const user = userEvent.setup();
+  it('hides the search hint and the bell from the driver shell', () => {
     signInAs('CONDUCTOR');
     useDriverAlertsStore.setState({
       pending: [
@@ -240,15 +239,8 @@ describe('AppRouter shell selection', () => {
     });
     renderApp();
 
-    await user.click(screen.getByRole('button', { name: 'Notificaciones' }));
-
-    const panel = screen.getByRole('menu', { name: 'Notificaciones' });
-    expect(within(panel).getByText('Trauma')).toBeInTheDocument();
-    expect(within(panel).getByText('Alto')).toBeInTheDocument();
-
-    await user.click(within(panel).getByRole('menuitem', { name: /Trauma/ }));
-
-    expect(useDriverAlertsStore.getState().focusRequestId).toBe('REQ-9');
     expect(screen.getByTestId('driver-console')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Notificaciones' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Buscar centro de acopio o dirección')).not.toBeInTheDocument();
   });
 });

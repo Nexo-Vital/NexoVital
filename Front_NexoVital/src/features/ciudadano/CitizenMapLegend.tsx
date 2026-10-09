@@ -2,7 +2,6 @@ import {
   ChevronDown,
   CircleCheck,
   Clock,
-  Cross,
   OctagonAlert,
   PowerOff,
   TriangleAlert,
@@ -127,26 +126,6 @@ export function CitizenMapLegend({ counts, units }: CitizenMapLegendProps) {
               />
               Sin declarar
               <b className="tabular ml-auto font-bold">{counts.notDeclared}</b>
-            </li>
-          </ul>
-
-          <span className="h-px bg-nv-line" aria-hidden />
-
-          {/*
-            Hospitals have no inventory, so they get no traffic-light state: a
-            plain count read from the data (FH-3). The swatch shares the map
-            pin's `.nv-hospital-shape` so the legend cannot drift from the map.
-          */}
-          <ul className="flex list-none flex-col gap-1.5 p-0">
-            <li className="flex items-center gap-2.5 font-medium text-[13px]">
-              <span
-                className="nv-hospital-shape grid size-[18px] shrink-0 place-items-center"
-                aria-hidden
-              >
-                <Cross className="size-3 -rotate-45" aria-hidden />
-              </span>
-              Hospitales
-              <b className="tabular ml-auto font-bold">{counts.hospitals}</b>
             </li>
           </ul>
 

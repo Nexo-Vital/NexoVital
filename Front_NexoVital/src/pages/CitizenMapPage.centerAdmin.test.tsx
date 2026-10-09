@@ -265,6 +265,11 @@ describe('CitizenMapPage as the help-center administrator', () => {
       target: { value: '12' },
     });
     expect(within(dialog).getByTestId('withdraw-preview')).toHaveTextContent('Quedarán 8 de 60.');
+    // The reason is required: without it the withdrawal cannot be confirmed.
+    expect(within(dialog).getByRole('button', { name: 'Retirar 12' })).toBeDisabled();
+    fireEvent.change(within(dialog).getByLabelText('Motivo del retiro'), {
+      target: { value: '  Entrega al albergue de Suba  ' },
+    });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Retirar 12' }));
 
     // The rail is hidden from the accessibility tree while the modal is open,
@@ -273,7 +278,7 @@ describe('CitizenMapPage as the help-center administrator', () => {
     expect(posts(fetchMock)).toEqual([
       [
         `/api/v1/centros-acopio/${CENTRO_ID}/inventario/despacho`,
-        { itemId: AGUA.id, cantidad: 12 },
+        { itemId: AGUA.id, cantidad: 12, motivo: 'Entrega al albergue de Suba' },
       ],
     ]);
     await waitFor(() =>

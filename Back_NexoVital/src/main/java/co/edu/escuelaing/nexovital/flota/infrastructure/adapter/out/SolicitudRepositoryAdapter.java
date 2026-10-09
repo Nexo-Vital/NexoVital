@@ -44,6 +44,7 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
                 solicitud.getAmbulanciasNotificadas(),
                 solicitud.getAmbulanciaAsignadaId(),
                 solicitud.getLlegadaEn());
+        entity.setDireccion(solicitud.getDireccion());
         return toDomain(jpaRepository.save(entity));
     }
 
@@ -201,6 +202,7 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
                 ambulanciasRechazaron,
                 entity.getAmbulanciaAsignadaId(),
                 entity.getLlegadaEn(),
-                entity.getVersion());
+                entity.getVersion())
+                .conDireccion(entity.getDireccion());
     }
 }

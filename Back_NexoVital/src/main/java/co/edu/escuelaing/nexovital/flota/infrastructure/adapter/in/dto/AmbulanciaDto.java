@@ -28,13 +28,19 @@ import java.util.UUID;
  * <p><b>Connection.</b> {@code conectada} is {@code true} while the driver is
  * connected to the service (EP-04.F2.US1). Only a unit that is available,
  * connected and has signal receives a new request.
+ *
+ * <p>{@code conductorNombre} is the driver's display name, never the id.
  */
 public record AmbulanciaDto(UUID id, String placa, EstadoAmbulancia estado,
                             UbicacionDto ubicacion, String zona,
                             boolean sinSenal, Instant ultimaPosicionEn, long version,
-                            boolean conectada) {
+                            boolean conectada, String conductorNombre) {
 
     public static AmbulanciaDto fromDomain(Ambulancia ambulancia) {
+        return fromDomain(ambulancia, null);
+    }
+
+    public static AmbulanciaDto fromDomain(Ambulancia ambulancia, String conductorNombre) {
         return new AmbulanciaDto(
                 ambulancia.getId(),
                 ambulancia.getPlaca(),
@@ -44,6 +50,7 @@ public record AmbulanciaDto(UUID id, String placa, EstadoAmbulancia estado,
                 ambulancia.isSinSenal(),
                 ambulancia.getUltimaPosicionEn(),
                 ambulancia.getVersion(),
-                ambulancia.isConectada());
+                ambulancia.isConectada(),
+                conductorNombre);
     }
 }

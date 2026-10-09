@@ -768,7 +768,7 @@ describe('DriverConsolePage', () => {
       expect(within(dialog).getByText(/Hay 1 solicitud más en la lista/)).toBeInTheDocument();
     });
 
-    it('"Ver solicitud" closes it and centres the map on the pickup point', async () => {
+    it('"Ver solicitud" closes it, opens its registry row and centres the map', async () => {
       const user = userEvent.setup();
       const port = new FakeRealtimePort();
       render(<DriverConsolePage port={port} ambulanceId="A-07" />);
@@ -784,6 +784,8 @@ describe('DriverConsolePage', () => {
       const map = screen.getByTestId('map-canvas');
       expect(map).toHaveAttribute('data-focus-lat', '4.628');
       expect(map).toHaveAttribute('data-focus-lng', '-74.148');
+      expect(within(driverRail()).getByTestId('solicitud-detail')).toBeInTheDocument();
+      expect(solicitudRowButton('REQ-1')).toHaveAttribute('aria-expanded', 'true');
     });
 
     it('closes when another unit takes the request', () => {
@@ -960,7 +962,36 @@ describe('DriverConsolePage', () => {
       }),
     );
 
-    expect(screen.getByRole('status')).toHaveTextContent('Te la asignaron');
+    expect(screen.getByText('Te la asignaron')).toBeInTheDocument();
+    expect(screen.getByText('Misión actual')).toBeInTheDocument();
+  });
+
+  it('tells the winner the request is theirs and centres the map on the requester', async () => {
+    const user = userEvent.setup();
+    const port = new FakeRealtimePort();
+    render(<DriverConsolePage port={port} ambulanceId="A-07" />);
+    connectDriver();
+
+    act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
+    await user.click(screen.getByRole('button', { name: 'Aceptar solicitud' }));
+    act(() =>
+      port.emit(DESTINATIONS.solicitudes, {
+        type: 'request.taken',
+        requestId: 'REQ-1',
+        winner: 'A-07',
+      }),
+    );
+
+    const popup = screen.getByRole('status', { name: 'Solicitud ganada' });
+    expect(within(popup).getByText('¡La solicitud es tuya!')).toBeInTheDocument();
+    expect(popup).toHaveTextContent('Tu solicitud fue aceptada');
+    const map = screen.getByTestId('map-canvas');
+    expect(Number(map.getAttribute('data-focus-lat'))).toBeCloseTo(4.628, 3);
+    expect(Number(map.getAttribute('data-focus-lng'))).toBeCloseTo(-74.148, 3);
+
+    // The notice closes on demand and leaves the mission rail in place.
+    await user.click(within(popup).getByRole('button', { name: 'Entendido' }));
+    expect(screen.queryByRole('status', { name: 'Solicitud ganada' })).not.toBeInTheDocument();
     expect(screen.getByText('Misión actual')).toBeInTheDocument();
   });
 
@@ -1027,10 +1058,8 @@ describe('DriverConsolePage', () => {
 
     const declare = within(driverRail()).getByRole('button', { name: 'Declarar llegada' });
     expect(declare).toBeEnabled();
-    // The other action still has no contact data, so it stays disabled with reason.
-    const call = within(driverRail()).getByRole('button', { name: 'Llamar al solicitante' });
-    expect(call).toBeDisabled();
-    expect(call).toHaveAttribute('title', 'Aún no hay un número de contacto del solicitante.');
+    // The call action is hidden: there is no contact number in the domain.
+    expect(within(driverRail()).queryByText(/Llamar al solicitante/)).not.toBeInTheDocument();
 
     await user.click(declare);
 
@@ -1264,7 +1293,8 @@ describe('DriverConsolePage', () => {
     const detail = within(driverRail()).getByTestId('solicitud-detail');
     expect(within(detail).getByRole('button', { name: 'Aceptar' })).toBeInTheDocument();
     expect(within(detail).getByRole('button', { name: 'Rechazar' })).toBeInTheDocument();
-    expect(within(detail).getByRole('button', { name: 'Visualizar' })).toBeInTheDocument();
+    // "Visualizar" is gone: the row itself folds the detail back.
+    expect(within(detail).queryByRole('button', { name: 'Visualizar' })).not.toBeInTheDocument();
     // The detail keeps the facts the sheet showed.
     for (const label of ['Emergencia', 'Tipo', 'Ubicación', 'Distancia', 'Unidades avisadas']) {
       expect(within(detail).getByText(label)).toBeInTheDocument();
@@ -1321,12 +1351,10 @@ describe('DriverConsolePage', () => {
     const detail = within(driverRail()).getByTestId('solicitud-detail');
     expect(within(detail).getByRole('button', { name: 'Aceptar' })).toBeDisabled();
     expect(within(detail).getByRole('button', { name: 'Rechazar' })).toBeDisabled();
-    // "Visualizar" never acts on the inbox, so it stays available.
-    expect(within(detail).getByRole('button', { name: 'Visualizar' })).toBeEnabled();
     expect(within(detail).getByText(/No fuiste avisado de esta solicitud/)).toBeInTheDocument();
   });
 
-  it('U7: "Visualizar" collapses the detail and focuses the map on the requester', async () => {
+  it('U7: clicking the open row again folds its detail and leaves the map put', async () => {
     const user = userEvent.setup();
     const port = new FakeRealtimePort();
     render(
@@ -1334,19 +1362,14 @@ describe('DriverConsolePage', () => {
     );
     connectDriver();
 
-    // Open REQ-1001 (its emergency EMG-002 sits at the fixture position 4.628/-74.148).
     await user.click(solicitudRowButton('REQ-1001'));
-    const detail = within(driverRail()).getByTestId('solicitud-detail');
+    expect(within(driverRail()).getByTestId('solicitud-detail')).toBeInTheDocument();
+    expect(solicitudRowButton('REQ-1001')).toHaveAttribute('aria-expanded', 'true');
 
-    await user.click(within(detail).getByRole('button', { name: 'Visualizar' }));
+    await user.click(solicitudRowButton('REQ-1001'));
 
-    // The detail is collapsed and the map was handed the requester's real coordinates.
-    await waitFor(() =>
-      expect(within(driverRail()).queryByTestId('solicitud-detail')).not.toBeInTheDocument(),
-    );
-    const map = screen.getByTestId('map-canvas');
-    expect(Number(map.getAttribute('data-focus-lat'))).toBeCloseTo(4.628, 3);
-    expect(Number(map.getAttribute('data-focus-lng'))).toBeCloseTo(-74.148, 3);
+    expect(within(driverRail()).queryByTestId('solicitud-detail')).not.toBeInTheDocument();
+    expect(solicitudRowButton('REQ-1001')).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('MAP-3: clicking a solicitud row centres the map on its location', async () => {
@@ -1357,8 +1380,7 @@ describe('DriverConsolePage', () => {
     );
     connectDriver();
 
-    // REQ-1001 points at EMG-002 (fixture 4.628 / -74.148). The ROW click alone —
-    // no "Visualizar" — must move the viewport there.
+    // REQ-1001 points at EMG-002 (fixture 4.628 / -74.148): the row click moves the viewport.
     await user.click(solicitudRowButton('REQ-1001'));
 
     const map = screen.getByTestId('map-canvas');

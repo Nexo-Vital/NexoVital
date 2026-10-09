@@ -7,6 +7,8 @@ import co.edu.escuelaing.nexovital.flota.domain.model.Ambulancia;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.ConsultarFlotaUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.ListarSolicitudesDeMiAmbulanciaUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.ReportarPosicionUseCase;
+import co.edu.escuelaing.nexovital.flota.domain.port.out.NombreUsuarioPort;
+import co.edu.escuelaing.nexovital.flota.domain.model.SolicitudAmbulancia;
 import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in.dto.AmbulanciaDto;
 import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in.dto.ReportarPosicionRequest;
 import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in.dto.SolicitudAmbulanciaDto;
@@ -60,13 +62,26 @@ public class FlotaController {
     private final ConsultarFlotaUseCase consultarFlotaUseCase;
     private final ListarSolicitudesDeMiAmbulanciaUseCase listarSolicitudesDeMiAmbulanciaUseCase;
     private final ReportarPosicionUseCase reportarPosicionUseCase;
+    private final NombreUsuarioPort nombreUsuarioPort;
 
     public FlotaController(ConsultarFlotaUseCase consultarFlotaUseCase,
                            ListarSolicitudesDeMiAmbulanciaUseCase listarSolicitudesDeMiAmbulanciaUseCase,
-                           ReportarPosicionUseCase reportarPosicionUseCase) {
+                           ReportarPosicionUseCase reportarPosicionUseCase,
+                           NombreUsuarioPort nombreUsuarioPort) {
         this.consultarFlotaUseCase = consultarFlotaUseCase;
         this.listarSolicitudesDeMiAmbulanciaUseCase = listarSolicitudesDeMiAmbulanciaUseCase;
         this.reportarPosicionUseCase = reportarPosicionUseCase;
+        this.nombreUsuarioPort = nombreUsuarioPort;
+    }
+
+    /** The public projection of a unit, with its driver's name. */
+    private AmbulanciaDto aDto(Ambulancia ambulancia) {
+        return AmbulanciaDto.fromDomain(ambulancia, nombreUsuarioPort.nombreDe(ambulancia.getConductorId()));
+    }
+
+    /** The public projection of a request, with the requester's name. */
+    private SolicitudAmbulanciaDto aDto(SolicitudAmbulancia solicitud) {
+        return SolicitudAmbulanciaDto.fromDomain(solicitud, nombreUsuarioPort.nombreDe(solicitud.getSolicitanteId()));
     }
 
     /**
@@ -78,7 +93,7 @@ public class FlotaController {
     public ResponseEntity<Object> ambulancias() {
         try {
             List<AmbulanciaDto> flota = consultarFlotaUseCase.consultarFlota().stream()
-                    .map(AmbulanciaDto::fromDomain)
+                    .map(this::aDto)
                     .toList();
             return ResponseEntity.ok(flota);
         } catch (RuntimeException e) {
@@ -102,7 +117,7 @@ public class FlotaController {
         try {
             UUID conductorId = usuarioAutenticadoId();
             Optional<Ambulancia> propia = consultarFlotaUseCase.consultarPropia(conductorId);
-            return ResponseEntity.ok(propia.map(AmbulanciaDto::fromDomain).orElse(null));
+            return ResponseEntity.ok(propia.map(this::aDto).orElse(null));
         } catch (RuntimeException e) {
             return ResponseEntity.internalServerError()
                     .body(ErrorResponse.of("ERROR_CONSULTA_FLOTA", MENSAJE_ERROR_CONSULTA_PROPIA));
@@ -131,7 +146,7 @@ public class FlotaController {
             }
             List<SolicitudAmbulanciaDto> historial =
                     listarSolicitudesDeMiAmbulanciaUseCase.listar(propia.get().getId()).stream()
-                            .map(SolicitudAmbulanciaDto::fromDomain)
+                            .map(this::aDto)
                             .toList();
             return ResponseEntity.ok(historial);
         } catch (RuntimeException e) {
@@ -167,7 +182,7 @@ public class FlotaController {
                     id, usuarioAutenticadoId(),
                     request.ubicacion().lat(), request.ubicacion().lng(),
                     request.heading(), FuentePosicion.DEVICE);
-            return ResponseEntity.ok(AmbulanciaDto.fromDomain(actualizada));
+            return ResponseEntity.ok(aDto(actualizada));
         } catch (AmbulanciaAjenaException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(ErrorResponse.of("AMBULANCIA_AJENA", MENSAJE_AMBULANCIA_AJENA));

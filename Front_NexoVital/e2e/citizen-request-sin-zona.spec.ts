@@ -172,6 +172,11 @@ test('sin emergencias: el ciudadano pide y las cinco unidades reciben la notific
     const citizenContext = await newIsolatedContext(browser);
     contexts.push(citizenContext);
     const citizenPage = await citizenContext.newPage();
+    // No geocoder here: the card keeps showing the pickup coordinates this test checks.
+    await citizenPage.route(
+      (url) => url.pathname.endsWith('/reverse'),
+      (route) => route.abort(),
+    );
     await login(citizenPage, CITIZEN);
     await expect(citizenPage.getByRole('button', { name: 'Pedir ambulancia' })).toBeVisible({
       timeout: 30_000,

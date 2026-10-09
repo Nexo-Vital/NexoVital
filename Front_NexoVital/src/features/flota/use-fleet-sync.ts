@@ -108,7 +108,7 @@ function applyLivePosition(
       estado,
       ubicacion: incoming,
       zona: 'Unassigned',
-      driverName: 'Unassigned',
+      driverName: '',
       heading,
       source,
       sinSenal,

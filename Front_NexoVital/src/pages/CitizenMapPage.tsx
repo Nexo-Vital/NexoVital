@@ -53,6 +53,7 @@ import { useEmergencySync } from '@/features/emergencias/use-emergency-sync';
 import { fetchFlota } from '@/features/flota/fleet-api';
 import { useFleetStore } from '@/features/flota/fleet-store';
 import { useFleetSync } from '@/features/flota/use-fleet-sync';
+import { reverseGeocode } from '@/features/geocodificacion/geocoding-api';
 import { LocationPermissionDialog } from '@/features/geolocalizacion/LocationPermissionDialog';
 import { useDeviceLocation } from '@/features/geolocalizacion/use-device-location';
 import { MapCanvas, type RequestConnector, type SelfMarker } from '@/features/mapa/MapCanvas';
@@ -470,6 +471,30 @@ export default function CitizenMapPage({
     setPickedPoint(punto);
   }, []);
 
+  // Readable address of the pickup point, resolved ahead so the request sends it at once.
+  const [pickupAddress, setPickupAddress] = useState<string | null>(null);
+  const pickupKey = pickupPoint
+    ? `${pickupPoint.lat.toFixed(4)},${pickupPoint.lng.toFixed(4)}`
+    : '';
+  useEffect(() => {
+    setPickupAddress(null);
+    if (!pickupKey) {
+      return;
+    }
+    const [lat, lng] = pickupKey.split(',').map(Number);
+    let active = true;
+    reverseGeocode({ lat, lng })
+      .then((address) => {
+        if (active) {
+          setPickupAddress(address);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [pickupKey]);
+
   const counts = useMemo(() => countCentersByLevel(centros), [centros]);
   const nearby = useMemo(() => nearbyAmbulances(fleet, selfPosition), [fleet, selfPosition]);
   const availableCount = useMemo(() => countAvailableUnits(fleet), [fleet]);
@@ -505,8 +530,9 @@ export default function CitizenMapPage({
       port,
       units: useFleetStore.getState().units,
       origin: pickupPoint,
+      direccion: pickupAddress,
     });
-  }, [port, pickupPoint]);
+  }, [port, pickupPoint, pickupAddress]);
 
   const handleCancel = useCallback(() => {
     // `cancel` decides the transport (relay in demo, REST against a backend) and
@@ -636,11 +662,11 @@ export default function CitizenMapPage({
   // Withdrawing is the existing dispatch (atomic decrement). The response is the
   // item after the decrement, and the realtime upsert repeats it idempotently.
   const handleWithdrawSupply = useCallback(
-    async (item: InventarioItem, cantidad: number) => {
+    async (item: InventarioItem, cantidad: number, motivo: string) => {
       if (!myCentroId) {
         return;
       }
-      const actualizado = await retirarInsumo(myCentroId, item.id, cantidad);
+      const actualizado = await retirarInsumo(myCentroId, item.id, cantidad, motivo);
       useInventarioStore.getState().upsert(actualizado);
       toast(
         `Retiraste ${cantidad} de ${actualizado.nombre}. Quedan ${actualizado.disponible} de ${actualizado.requerido}.`,
@@ -820,7 +846,10 @@ export default function CitizenMapPage({
         ? `El semáforo de ${detailCentro.nombre} se actualizó para todos`
         : `Seleccionaste ${detailCentro.nombre} en el mapa`
       : searching || accepted || arrived
-        ? citizenSceneLabel(selfPosition, { fallback: usingFallbackPosition })
+        ? citizenSceneLabel(selfPosition, {
+            fallback: usingFallbackPosition,
+            direccion: usingFallbackPosition ? null : pickupAddress,
+          })
         : 'Suba, Bogotá · en vivo';
 
   return (
@@ -1009,7 +1038,7 @@ export default function CitizenMapPage({
       )}
 
       {acceptanceOpen && acceptedBy && (
-        <AcceptancePopup ambulanceId={acceptedBy} onClose={closeAcceptance} />
+        <AcceptancePopup ambulanceId={acceptedBy} unit={assignedUnit} onClose={closeAcceptance} />
       )}
 
       {/*

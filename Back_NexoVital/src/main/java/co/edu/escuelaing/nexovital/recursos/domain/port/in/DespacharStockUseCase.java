@@ -28,4 +28,7 @@ public interface DespacharStockUseCase {
      *         when the available stock is below {@code cantidad}
      */
     ItemInventario despachar(UUID centroAcopioId, UUID itemId, int cantidad);
+
+    /** Same withdrawal, recording who did it and why. */
+    ItemInventario despachar(UUID centroAcopioId, UUID itemId, int cantidad, String motivo, UUID usuarioId);
 }

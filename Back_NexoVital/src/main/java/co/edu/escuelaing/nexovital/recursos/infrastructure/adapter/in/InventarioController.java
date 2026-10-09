@@ -8,6 +8,7 @@ import co.edu.escuelaing.nexovital.recursos.domain.model.DonacionAceptada;
 import co.edu.escuelaing.nexovital.recursos.domain.model.ItemInventario;
 import co.edu.escuelaing.nexovital.recursos.domain.port.in.ConsultarInventarioUseCase;
 import co.edu.escuelaing.nexovital.recursos.domain.port.in.DespacharStockUseCase;
+import co.edu.escuelaing.nexovital.recursos.domain.model.RetiroInventario;
 import co.edu.escuelaing.nexovital.recursos.domain.port.in.RegistrarDonacionUseCase;
 import co.edu.escuelaing.nexovital.recursos.domain.port.out.CentroPropioPort;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.Usuario;
@@ -65,6 +66,7 @@ public class InventarioController {
     private static final String MENSAJE_NO_ES_DUENO =
             "Solo el administrador del centro puede retirar insumos de él.";
     private static final String MENSAJE_ERROR_DESPACHO = "No fue posible despachar el recurso.";
+    private static final String MENSAJE_MOTIVO_LARGO = "El motivo del retiro no puede superar 255 caracteres.";
 
     private final ConsultarInventarioUseCase consultarInventarioUseCase;
     private final RegistrarDonacionUseCase registrarDonacionUseCase;
@@ -189,7 +191,12 @@ public class InventarioController {
             if (request.cantidad() == null) {
                 throw new IllegalArgumentException("La cantidad es obligatoria.");
             }
-            ItemInventario despachado = despacharStockUseCase.despachar(id, request.itemId(), request.cantidad());
+            if (request.motivo() != null
+                    && request.motivo().strip().length() > RetiroInventario.LONGITUD_MAXIMA_MOTIVO) {
+                return ResponseEntity.badRequest().body(ErrorResponse.of("DATOS_INVALIDOS", MENSAJE_MOTIVO_LARGO));
+            }
+            ItemInventario despachado = despacharStockUseCase.despachar(
+                    id, request.itemId(), request.cantidad(), request.motivo(), usuarioAutenticadoId());
             return ResponseEntity.ok(ItemInventarioDto.fromDomain(despachado));
         } catch (CentroAcopioNoEncontradoException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -214,6 +221,14 @@ public class InventarioController {
      * centro; los administradores de centro de ayuda y de acopio solo del suyo.
      * La cadena de seguridad ya dejó pasar únicamente a esos tres roles.
      */
+    /** Id of the signed-in user, or null when the principal is not a user. */
+    private static UUID usuarioAutenticadoId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication != null && authentication.getPrincipal() instanceof Usuario usuario
+                ? usuario.getId()
+                : null;
+    }
+
     private boolean puedeRetirarDe(UUID centroId) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         boolean administrador = authentication.getAuthorities().stream()

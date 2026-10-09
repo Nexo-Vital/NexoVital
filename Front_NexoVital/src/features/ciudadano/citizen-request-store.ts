@@ -120,6 +120,8 @@ interface CitizenRequestStart {
    * is the honest "no pickup point yet" case the screen must report.
    */
   origin: Ubicacion | null;
+  /** Readable address of the pickup point, when the geocoder found one. */
+  direccion?: string | null;
   now?: number;
 }
 
@@ -173,7 +175,7 @@ const IDLE_STATE = {
 export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => ({
   ...IDLE_STATE,
 
-  start: async ({ port, units, origin, now }) => {
+  start: async ({ port, units, origin, direccion, now }) => {
     const startedAt = now ?? Date.now();
 
     // No pickup point means no honest request: with the GPS denied and no point
@@ -231,6 +233,7 @@ export const useCitizenRequestStore = create<CitizenRequestState>((set, get) => 
       const solicitud = await solicitarAmbulancia({
         // No deadline travels: the server fixes the accept window (EP-04.F2.US6).
         ubicacion: origin,
+        ...(direccion ? { direccion } : {}),
       });
       useSolicitudesStore.getState().upsert({
         ...solicitud,

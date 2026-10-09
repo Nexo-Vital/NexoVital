@@ -1,4 +1,4 @@
-import { Ambulance, ClipboardList, HandHeart, Map as MapIcon } from 'lucide-react';
+import { Ambulance, ClipboardList, Map as MapIcon } from 'lucide-react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { formatCoordinates } from '@/features/ciudadano/citizen-request';
 import { type DriverAlert, useDriverAlertsStore } from '@/features/conductor/driver-alerts-store';
@@ -15,14 +15,10 @@ import LoginPage from '@/pages/LoginPage';
 import type { EmergencyLevel } from '@/types/domain';
 import { AppFrame, type AppFrameNavItem, type AppFrameNotification } from './AppFrame';
 
-/**
- * Sidebar navigation for the citizen shell. "Mis donaciones" has no screen yet,
- * so its entry is deliberately inert (rendered, never clickable).
- */
+/** Citizen sidebar; "Mis donaciones" stays hidden until release 1. */
 export const CITIZEN_NAV: AppFrameNavItem[] = [
   { key: 'map', label: 'Mapa', icon: MapIcon, to: '/' },
   { key: 'requests', label: 'Mis solicitudes', icon: Ambulance, to: '/ciudadano/solicitudes' },
-  { key: 'donations', label: 'Mis donaciones', icon: HandHeart },
 ];
 
 /**
@@ -138,7 +134,7 @@ export function RoleHome() {
   const role = useSessionStore((state) => state.role);
   switch (resolveRoleHome(role)) {
     case 'DRIVER_CONSOLE':
-      return <DriverConsolePage />;
+      return <DriverConsolePage autoConnect />;
     case 'CITIZEN_MAP':
       return <CitizenMapPage />;
     case 'CENTER_ADMIN_MAP':

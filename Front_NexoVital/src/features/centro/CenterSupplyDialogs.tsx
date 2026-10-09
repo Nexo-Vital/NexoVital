@@ -200,8 +200,11 @@ interface WithdrawSupplyDialogProps {
   item: InventarioItem | null;
   onClose: () => void;
   /** Withdraws the units. A rejection keeps the dialog open and shows its message. */
-  onSubmit: (item: InventarioItem, cantidad: number) => Promise<void>;
+  onSubmit: (item: InventarioItem, cantidad: number, motivo: string) => Promise<void>;
 }
+
+/** Longest withdrawal reason the server stores. */
+export const MAX_MOTIVO_RETIRO = 255;
 
 /**
  * "Retirar": units of a supply that left the center (delivered, handed to
@@ -213,6 +216,7 @@ export function WithdrawSupplyDialog({ item, onClose, onSubmit }: WithdrawSupply
   const [rawAmount, setRawAmount] = useState<number | null>(1);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [motivo, setMotivo] = useState('');
   const itemId = item?.id ?? null;
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset only when another supply opens.
@@ -220,6 +224,7 @@ export function WithdrawSupplyDialog({ item, onClose, onSubmit }: WithdrawSupply
     setRawAmount(1);
     setSubmitting(false);
     setSubmitError(null);
+    setMotivo('');
   }, [itemId]);
 
   if (!item) {
@@ -229,16 +234,17 @@ export function WithdrawSupplyDialog({ item, onClose, onSubmit }: WithdrawSupply
   const disponible = item.disponible;
   const amount = clampWithdrawal(rawAmount ?? 1, disponible);
   const remaining = disponible - amount;
+  const motivoLimpio = motivo.trim();
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (amount < 1) {
+    if (amount < 1 || motivoLimpio === '' || submitting) {
       return;
     }
     setSubmitting(true);
     setSubmitError(null);
     try {
-      await onSubmit(item, amount);
+      await onSubmit(item, amount, motivoLimpio);
       onClose();
     } catch (error) {
       setSubmitError(
@@ -313,6 +319,26 @@ export function WithdrawSupplyDialog({ item, onClose, onSubmit }: WithdrawSupply
             Quedarán <b>{remaining}</b> de {item.requerido}.
           </p>
 
+          <div className="flex flex-col gap-2">
+            <label htmlFor="withdraw-motivo" className="nv-label text-muted-foreground">
+              Motivo del retiro
+            </label>
+            <textarea
+              id="withdraw-motivo"
+              aria-describedby="withdraw-motivo-hint"
+              value={motivo}
+              onChange={(event) => setMotivo(event.target.value.slice(0, MAX_MOTIVO_RETIRO))}
+              maxLength={MAX_MOTIVO_RETIRO}
+              rows={3}
+              required
+              placeholder="Ej.: entrega al albergue de Suba"
+              className="min-h-20 rounded-nv-md border-[1.5px] border-nv-line px-3 py-2 text-sm outline-none focus:border-nv-navy"
+            />
+            <span id="withdraw-motivo-hint" className="text-muted-foreground text-xs">
+              Obligatorio. {motivo.length}/{MAX_MOTIVO_RETIRO} caracteres.
+            </span>
+          </div>
+
           {submitError && (
             <p role="alert" className="text-critical text-[11px]">
               {submitError}
@@ -323,7 +349,7 @@ export function WithdrawSupplyDialog({ item, onClose, onSubmit }: WithdrawSupply
             <Button type="button" variant="ghost" onClick={onClose}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={submitting || amount < 1}>
+            <Button type="submit" disabled={submitting || amount < 1 || motivoLimpio === ''}>
               {submitting ? 'Retirando…' : `Retirar ${amount}`}
             </Button>
           </DialogFooter>

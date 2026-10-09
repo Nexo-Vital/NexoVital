@@ -58,6 +58,24 @@ describe('fromWireSolicitudAmbulancia', () => {
     });
   });
 
+  it('carries the readable address and the requester name when the server sends them', () => {
+    const solicitud = fromWireSolicitudAmbulancia({
+      ...WIRE_RESPONSE,
+      direccion: 'Calle 145 # 91-19, Suba',
+      solicitanteNombre: 'Ana Gómez',
+    });
+    expect(solicitud?.direccion).toBe('Calle 145 # 91-19, Suba');
+    expect(solicitud?.solicitanteNombre).toBe('Ana Gómez');
+    // Null or blank values read as unknown, never as an empty label.
+    const sinDatos = fromWireSolicitudAmbulancia({
+      ...WIRE_RESPONSE,
+      direccion: null,
+      solicitanteNombre: '  ',
+    });
+    expect(sinDatos).not.toHaveProperty('direccion');
+    expect(sinDatos).not.toHaveProperty('solicitanteNombre');
+  });
+
   it('carries the units that declined the request (EP-04.F2.US5)', () => {
     const mapped = fromWireSolicitudAmbulancia({
       ...WIRE_RESPONSE,

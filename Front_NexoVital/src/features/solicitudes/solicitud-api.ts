@@ -17,6 +17,8 @@ export interface SolicitudRequestBody {
   emergenciaId?: string;
   centroAyudaId?: string;
   zonaId?: string;
+  /** Readable address of the pickup point (at most 255 characters). */
+  direccion?: string;
 }
 
 /** Contract estado (Spanish) -> UI `RequestState` (English). */
@@ -100,6 +102,8 @@ export function fromWireSolicitudAmbulancia(value: unknown): SolicitudAmbulancia
     ambulanciaAsignadaId,
     llegadaEn,
     ambulanciasRechazaron,
+    direccion,
+    solicitanteNombre,
   } = value;
 
   if (typeof id !== 'string' || id.length === 0) {
@@ -171,6 +175,10 @@ export function fromWireSolicitudAmbulancia(value: unknown): SolicitudAmbulancia
     ambulanciasRechazaron: Array.isArray(ambulanciasRechazaron) ? [...ambulanciasRechazaron] : [],
     ambulanciaAsignadaId: typeof ambulanciaAsignadaId === 'string' ? ambulanciaAsignadaId : null,
     ...(typeof llegadaEn === 'string' ? { llegadaEn } : {}),
+    ...(typeof direccion === 'string' && direccion.trim() !== '' ? { direccion } : {}),
+    ...(typeof solicitanteNombre === 'string' && solicitanteNombre.trim() !== ''
+      ? { solicitanteNombre }
+      : {}),
   };
 }
 

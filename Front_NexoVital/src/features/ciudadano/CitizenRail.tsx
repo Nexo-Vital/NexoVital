@@ -1,5 +1,8 @@
 ﻿import { Ambulance, HandHeart, Layers, Siren, User, Warehouse } from 'lucide-react';
-import { LocationSimulationControls } from '@/features/geolocalizacion/LocationSimulationControls';
+import {
+  LocationSimulationControls,
+  SIMULATION_ENABLED,
+} from '@/features/geolocalizacion/LocationSimulationControls';
 import type { DeviceLocationState } from '@/features/geolocalizacion/use-device-location';
 import {
   MAP_FILTER_LAYERS,
@@ -167,7 +170,7 @@ function NearbyAmbulanceRow({ item }: { item: NearbyAmbulance }) {
       </span>
       <span className="min-w-0 flex-1">
         <b className="block truncate font-semibold text-[13.5px]">
-          Ambulancia {unitPlateLabel(item.ambulance)}
+          {unitPlateLabel(item.ambulance)}
         </b>
         <small className="block truncate text-nv-navy-400 text-xs">{item.detail}</small>
       </span>
@@ -351,15 +354,17 @@ export function CitizenRail({
         through the shared control, so no backlogged GPS blocks the multi-user
         demo.
       */}
-      <section
-        aria-label="Mi posición"
-        className="flex flex-col gap-2 rounded-nv-lg bg-white p-4 shadow-nv-card"
-      >
-        <LocationSimulationControls
-          location={location}
-          note="Toca el mapa o arrastra el marcador SIM para moverte."
-        />
-      </section>
+      {SIMULATION_ENABLED && (
+        <section
+          aria-label="Mi posición"
+          className="flex flex-col gap-2 rounded-nv-lg bg-white p-4 shadow-nv-card"
+        >
+          <LocationSimulationControls
+            location={location}
+            note="Toca el mapa o arrastra el marcador SIM para moverte."
+          />
+        </section>
+      )}
 
       <CitizenRoleActions
         onRequest={onRequest}

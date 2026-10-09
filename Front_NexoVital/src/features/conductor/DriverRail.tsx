@@ -6,7 +6,6 @@ import {
   ChevronUp,
   ClipboardList,
   Clock,
-  Eye,
   Info,
   MapPin,
   Navigation,
@@ -39,7 +38,10 @@ import {
   citizenUnitStatus,
   formatDistance,
 } from '@/features/ciudadano/citizen-view';
-import { LocationSimulationControls } from '@/features/geolocalizacion/LocationSimulationControls';
+import {
+  LocationSimulationControls,
+  SIMULATION_ENABLED,
+} from '@/features/geolocalizacion/LocationSimulationControls';
 import type { DeviceLocationState } from '@/features/geolocalizacion/use-device-location';
 import { unitPlateLabel } from '@/features/seguimiento/tracking';
 import {
@@ -250,8 +252,8 @@ function MyUnitPanel({
             console says what is missing and how to fix it. */}
         {online && unit?.sinSenal === true && (
           <p role="status" className="text-critical text-xs">
-            Tu ambulancia está sin señal y no recibirá solicitudes. Activa tu ubicación o pulsa
-            «Simular posición».
+            Tu ambulancia está sin señal y no recibirá solicitudes. Activa tu ubicación
+            {SIMULATION_ENABLED ? ' o pulsa «Simular posición».' : '.'}
           </p>
         )}
       </div>
@@ -304,12 +306,14 @@ function MyUnitPanel({
         here would show the same data twice.
       */}
 
-      <div className="flex flex-col gap-2 rounded-nv-md border border-nv-line p-3">
-        <LocationSimulationControls
-          location={location}
-          note="Toca el mapa o arrastra el marcador SIM para moverte."
-        />
-      </div>
+      {SIMULATION_ENABLED && (
+        <div className="flex flex-col gap-2 rounded-nv-md border border-nv-line p-3">
+          <LocationSimulationControls
+            location={location}
+            note="Toca el mapa o arrastra el marcador SIM para moverte."
+          />
+        </div>
+      )}
     </RailPanel>
   );
 }
@@ -454,6 +458,8 @@ function SoundToggle() {
 
 /** DOM id of the open request card, so the pop-up's "Ver solicitud" can reach it. */
 export const REQUEST_CARD_ID = 'solicitud-abierta';
+/** DOM id of the opened registry detail, so the pop-up can bring it into view. */
+export const SOLICITUD_DETAIL_ID = 'solicitud-detalle';
 
 interface RequestCardProps {
   broadcast: SolicitudBroadcastPayload;
@@ -556,9 +562,13 @@ function RequestCard({
             reported (`escena`) are shown instead of an empty zone slot. A CRUE
             request keeps its declared zone. A backend frame may carry neither,
             and then the row says so instead of inventing a location. */}
+        {broadcast.solicitanteNombre && (
+          <RequestDataRow label="Solicitante" value={broadcast.solicitanteNombre} icon={User} />
+        )}
         <RequestDataRow
           label="Ubicación"
           value={
+            broadcast.direccion ||
             broadcast.zonaId ||
             (broadcast.escena ? formatCoordinates(broadcast.escena) : 'Sin ubicación')
           }
@@ -656,6 +666,7 @@ function solicitudLabel(solicitud: SolicitudAmbulancia): string {
  */
 function solicitudSceneLabel(solicitud: SolicitudAmbulancia): string {
   return (
+    solicitud.direccion ||
     solicitud.zonaId ||
     (solicitud.ubicacion ? formatCoordinates(solicitud.ubicacion) : '') ||
     solicitud.emergenciaId ||
@@ -711,7 +722,7 @@ function SolicitudRow({
 /**
  * Inline detail of the selected registry row. It replaces the retired bottom
  * sheet with the same facts (title, emergency, type, location, distance and the
- * notified units) and the same three actions.
+ * notified units) and its two actions; the row itself folds it back.
  *
  * Aceptar/Rechazar act on THIS row by its id: any request the server would
  * accept — still PENDING and notified to this unit — is actionable, regardless
@@ -730,7 +741,6 @@ function SolicitudDetail({
   notice,
   onAccept,
   onReject,
-  onView,
   onClose,
 }: {
   solicitud: SolicitudAmbulancia;
@@ -747,12 +757,12 @@ function SolicitudDetail({
   notice: string | null;
   onAccept: () => void;
   onReject: () => void;
-  onView: () => void;
   onClose: () => void;
 }) {
   const notified = solicitud.ambulanciasNotificadas;
   return (
     <div
+      id={SOLICITUD_DETAIL_ID}
       data-testid="solicitud-detail"
       className="flex flex-col gap-3 rounded-nv-md border border-nv-line bg-white p-3.5"
     >
@@ -779,6 +789,9 @@ function SolicitudDetail({
           <RequestDataRow label="Emergencia" value={solicitud.emergenciaId} icon={User} />
         )}
         {solicitud.tipo && <RequestDataRow label="Tipo" value={solicitud.tipo} icon={Info} />}
+        {solicitud.solicitanteNombre && (
+          <RequestDataRow label="Solicitante" value={solicitud.solicitanteNombre} icon={User} />
+        )}
         {/* A citizen request declares no zone; its own reported coordinates are
             the honest location, never an invented zone. */}
         <RequestDataRow label="Ubicación" value={solicitudSceneLabel(solicitud)} icon={MapPin} />
@@ -846,14 +859,6 @@ function SolicitudDetail({
           <X className="size-5" aria-hidden />
           Rechazar
         </button>
-        <button
-          type="button"
-          onClick={onView}
-          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-nv-md border-[1.5px] border-nv-line bg-white px-5 font-semibold text-nv-navy text-sm"
-        >
-          <Eye className="size-5" aria-hidden />
-          Visualizar
-        </button>
       </div>
     </div>
   );
@@ -894,7 +899,6 @@ function SolicitudesPanel({
   onSelectSolicitud,
   onAcceptSelected,
   onRejectSelected,
-  onViewSelected,
   onCloseSelected,
   offDuty,
   ...request
@@ -922,7 +926,6 @@ function SolicitudesPanel({
     onSelectSolicitud: (solicitud: SolicitudAmbulancia) => void;
     onAcceptSelected: () => void;
     onRejectSelected: () => void;
-    onViewSelected: () => void;
     onCloseSelected: () => void;
   }) {
   // An open offer takes over the panel only while connected: disconnected, the
@@ -1033,7 +1036,6 @@ function SolicitudesPanel({
           notice={selectedNotice}
           onAccept={onAcceptSelected}
           onReject={onRejectSelected}
-          onView={onViewSelected}
           onClose={onCloseSelected}
         />
       )}
@@ -1284,8 +1286,6 @@ interface DriverRailProps extends MissionPanelProps {
   onAcceptSelected: () => void;
   /** Answers the selected row (by its id) with a reject. */
   onRejectSelected: () => void;
-  /** Collapses the detail and centres the map on the selected scene. */
-  onViewSelected: () => void;
   /** Collapses the detail without moving the map. */
   onCloseSelected: () => void;
 }
@@ -1327,7 +1327,6 @@ export function DriverRail({
   onSelectSolicitud,
   onAcceptSelected,
   onRejectSelected,
-  onViewSelected,
   onCloseSelected,
 }: DriverRailProps) {
   // `units` is the REST of the fleet (the self marker stands in for the own unit
@@ -1379,7 +1378,6 @@ export function DriverRail({
         onSelectSolicitud={onSelectSolicitud}
         onAcceptSelected={onAcceptSelected}
         onRejectSelected={onRejectSelected}
-        onViewSelected={onViewSelected}
         onCloseSelected={onCloseSelected}
       />
       <AidCentersPanel centros={centros} />
