@@ -137,7 +137,10 @@ public class SolicitudController {
             UUID solicitanteId = usuarioAutenticadoId();
             SolicitudAmbulancia creada = solicitarAmbulanciaUseCase.solicitar(
                     lat, lng, request.emergenciaId(), request.centroAyudaId(), request.zonaId(),
-                    solicitanteId, request.timeoutEn());
+                    // The accept window is fixed by the server (EP-04.F2.US6, M-03):
+                    // the client clock is never trusted, so null asks for the
+                    // configured window counted from the server's own clock.
+                    solicitanteId, null);
             return ResponseEntity.status(HttpStatus.CREATED).body(SolicitudAmbulanciaDto.fromDomain(creada));
         } catch (AmbulanciaNoDisponibleException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT)

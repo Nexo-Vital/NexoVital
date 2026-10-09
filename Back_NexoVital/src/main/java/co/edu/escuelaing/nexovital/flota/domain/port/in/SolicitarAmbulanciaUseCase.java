@@ -21,6 +21,11 @@ public interface SolicitarAmbulanciaUseCase {
      * @param zonaId        optional zone context, or null
      * @param solicitanteId id of the user who raises the request; the lifecycle
      *                      is delivered to this user so they can track it
+     * @param timeoutEn     accept deadline. The HTTP layer always passes null, so
+     *                      the server fixes it from its own clock and its
+     *                      configured window (EP-04.F2.US6); an explicit value is
+     *                      only for internal callers, such as tests that need an
+     *                      already expired request
      */
     SolicitudAmbulancia solicitar(double lat, double lng, UUID emergenciaId, UUID centroAyudaId,
                                   String zonaId, UUID solicitanteId, Instant timeoutEn);
