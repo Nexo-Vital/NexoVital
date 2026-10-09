@@ -16,6 +16,7 @@ import co.edu.escuelaing.nexovital.flota.domain.port.in.ConfirmarSolicitudUseCas
 import co.edu.escuelaing.nexovital.flota.domain.port.in.ConsultarDetalleSolicitudUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.DeclararLlegadaUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.FinalizarSolicitudUseCase;
+import co.edu.escuelaing.nexovital.flota.domain.port.in.ListarMisSolicitudesUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.RechazarSolicitudUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.SolicitarAmbulanciaUseCase;
 import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in.dto.AceptarSolicitudRequest;
@@ -38,6 +39,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -94,6 +96,7 @@ public class SolicitudController {
     private final ConfirmarSolicitudUseCase confirmarSolicitudUseCase;
     private final CancelarSolicitudUseCase cancelarSolicitudUseCase;
     private final ConsultarDetalleSolicitudUseCase consultarDetalleSolicitudUseCase;
+    private final ListarMisSolicitudesUseCase listarMisSolicitudesUseCase;
 
     public SolicitudController(SolicitarAmbulanciaUseCase solicitarAmbulanciaUseCase,
                                AceptarSolicitudUseCase aceptarSolicitudUseCase,
@@ -102,7 +105,8 @@ public class SolicitudController {
                                FinalizarSolicitudUseCase finalizarSolicitudUseCase,
                                ConfirmarSolicitudUseCase confirmarSolicitudUseCase,
                                CancelarSolicitudUseCase cancelarSolicitudUseCase,
-                               ConsultarDetalleSolicitudUseCase consultarDetalleSolicitudUseCase) {
+                               ConsultarDetalleSolicitudUseCase consultarDetalleSolicitudUseCase,
+                               ListarMisSolicitudesUseCase listarMisSolicitudesUseCase) {
         this.solicitarAmbulanciaUseCase = solicitarAmbulanciaUseCase;
         this.aceptarSolicitudUseCase = aceptarSolicitudUseCase;
         this.rechazarSolicitudUseCase = rechazarSolicitudUseCase;
@@ -111,6 +115,23 @@ public class SolicitudController {
         this.confirmarSolicitudUseCase = confirmarSolicitudUseCase;
         this.cancelarSolicitudUseCase = cancelarSolicitudUseCase;
         this.consultarDetalleSolicitudUseCase = consultarDetalleSolicitudUseCase;
+        this.listarMisSolicitudesUseCase = listarMisSolicitudesUseCase;
+    }
+
+    /** The requester's active requests, with the arrival time once declared (EP-04.F2.US9). */
+    @GetMapping("/mias")
+    @Operation(summary = "Solicitudes activas del solicitante autenticado")
+    public ResponseEntity<Object> mias() {
+        try {
+            List<SolicitudAmbulanciaDto> activas = listarMisSolicitudesUseCase
+                    .listarActivas(usuarioAutenticadoId()).stream()
+                    .map(SolicitudAmbulanciaDto::fromDomain)
+                    .toList();
+            return ResponseEntity.ok(activas);
+        } catch (RuntimeException e) {
+            return ResponseEntity.internalServerError()
+                    .body(ErrorResponse.of("ERROR_CONSULTA_SOLICITUD", MENSAJE_ERROR_DETALLE));
+        }
     }
 
     /**

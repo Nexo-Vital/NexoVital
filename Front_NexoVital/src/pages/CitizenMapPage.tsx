@@ -20,6 +20,7 @@ import { CitizenRequestRail } from '@/features/ciudadano/CitizenRequestRail';
 import { CitizenSummaryChips } from '@/features/ciudadano/CitizenSummaryChips';
 import { citizenSceneLabel, countAvailableUnits } from '@/features/ciudadano/citizen-request';
 import {
+  syncCitizenRequest,
   useCitizenRequestStore,
   useCitizenRequestSync,
 } from '@/features/ciudadano/citizen-request-store';
@@ -276,6 +277,15 @@ export default function CitizenMapPage({
   useEmergencySync(port);
   useSolicitudRegistrySync(port);
   useCitizenRequestSync(port);
+
+  // Recovers the citizen's active request after a reload or a dropped channel (EP-04.F2.US9).
+  const readOwnRequest = solicitudes === undefined && !demo;
+  useEffect(() => {
+    if (readOwnRequest) {
+      syncCitizenRequest();
+    }
+  }, [readOwnRequest]);
+  useRealtimeReconnect(readOwnRequest ? port : null, syncCitizenRequest);
 
   // Another tab of the same origin can replace the shared token/session while
   // this screen stays mounted (the `storage` event fires here, in the other

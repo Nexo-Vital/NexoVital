@@ -91,6 +91,11 @@ public class SolicitudRepositoryAdapter implements SolicitudRepository {
     }
 
     @Override
+    public List<SolicitudAmbulancia> listarDelSolicitante(UUID solicitanteId, Collection<EstadoSolicitud> estados) {
+        return toDomainLista(jpaRepository.findBySolicitanteIdAndEstadoInOrderBySolicitadaEnDesc(solicitanteId, estados));
+    }
+
+    @Override
     @Transactional
     public int transicionAtomicaExpirar(UUID idSolicitud, EstadoSolicitud estadoEsperado,
                                         EstadoSolicitud nuevoEstado, Instant ahora) {
