@@ -55,8 +55,7 @@ public class DataSeeder implements CommandLineRunner {
 
     private static final Logger LOG = LoggerFactory.getLogger(DataSeeder.class);
 
-    private static final String PASSWORD_CONDUCTOR = "conductor123";
-
+    private static final String PASSWORD_CONDUCTOR = "conductor123"; // NOSONAR credencial de demo publica, no es un secreto
     private record UsuarioSemilla(String nombre, String email, String password, RolUsuario rol) {
     }
 
