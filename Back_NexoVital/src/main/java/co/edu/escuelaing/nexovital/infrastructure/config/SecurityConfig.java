@@ -306,7 +306,14 @@ public class SecurityConfig {
                         // (403 otherwise). Declared explicitly because the chain
                         // is fail-closed; without it, /cancelar would be denied.
                         .requestMatchers(HttpMethod.POST, "/api/v1/solicitudes/*/cancelar")
-                                .hasAnyAuthority(ROLES_SOLICITANTES);
+                                .hasAnyAuthority(ROLES_SOLICITANTES)
+                        // Bitácora de auditoría (Maintain Audit Trail): solo el
+                        // administrador de plataforma consulta la traza. El
+                        // administrador de centro NO entra todavía: vería eventos
+                        // de otros centros, porque el endpoint aún no resuelve el
+                        // centro del llamante. Se restringe antes que exponer de más.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/auditoria/**")
+                                .hasAuthority("ROLE_ADMIN_PLATAFORMA");
 
                     // Swagger UI and the OpenAPI JSON. These routes must be
                     // declared explicitly: the chain is fail-closed, so without

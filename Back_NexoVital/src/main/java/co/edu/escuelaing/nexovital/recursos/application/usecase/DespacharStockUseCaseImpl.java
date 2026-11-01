@@ -1,5 +1,8 @@
 package co.edu.escuelaing.nexovital.recursos.application.usecase;
 
+import co.edu.escuelaing.nexovital.auditoria.domain.model.AccionCritica;
+import co.edu.escuelaing.nexovital.auditoria.domain.model.EventoAuditoria;
+import co.edu.escuelaing.nexovital.auditoria.domain.port.out.RegistroAuditoriaPort;
 import co.edu.escuelaing.nexovital.recursos.domain.exception.CentroAcopioNoEncontradoException;
 import co.edu.escuelaing.nexovital.recursos.domain.exception.ItemInventarioNoEncontradoException;
 import co.edu.escuelaing.nexovital.recursos.domain.exception.StockInsuficienteException;
@@ -45,15 +48,18 @@ public class DespacharStockUseCaseImpl implements DespacharStockUseCase {
     private final CentroAcopioQueryPort centroAcopioQueryPort;
     private final ApplicationEventPublisher eventPublisher;
     private final RetiroInventarioRepository retiroInventarioRepository;
+    private final RegistroAuditoriaPort registroAuditoriaPort;
 
     public DespacharStockUseCaseImpl(InventarioRepository inventarioRepository,
                                      CentroAcopioQueryPort centroAcopioQueryPort,
                                      ApplicationEventPublisher eventPublisher,
-                                     RetiroInventarioRepository retiroInventarioRepository) {
+                                     RetiroInventarioRepository retiroInventarioRepository,
+                                     RegistroAuditoriaPort registroAuditoriaPort) {
         this.inventarioRepository = inventarioRepository;
         this.centroAcopioQueryPort = centroAcopioQueryPort;
         this.eventPublisher = eventPublisher;
         this.retiroInventarioRepository = retiroInventarioRepository;
+        this.registroAuditoriaPort = registroAuditoriaPort;
     }
 
     @Override
@@ -95,7 +101,32 @@ public class DespacharStockUseCaseImpl implements DespacharStockUseCase {
         // The reason is stored with the withdrawal, in the same transaction.
         retiroInventarioRepository.registrar(RetiroInventario.nuevo(
                 centroAcopioId, itemId, cantidad, motivo, usuarioId, Instant.now()));
+        // Auditoría en la MISMA transacción: si el decremento commitea y esto no,
+        // la bitácora mentiría por omisión. El motivo viaja en el detalle porque
+        // es lo que el escenario pide poder leer después.
+        registroAuditoriaPort.registrar(EventoAuditoria.nuevo(
+                AccionCritica.INSUMO_DESPACHADO,
+                EventoAuditoria.TIPO_CENTRO,
+                centroAcopioId,
+                usuarioId,
+                detalleDespacho(itemId, despachado.getNombre(), cantidad, motivo),
+                Instant.now()));
         eventPublisher.publishEvent(new StockDespachadoEvento(ItemInventarioDto.fromDomain(despachado)));
         return despachado;
+    }
+
+    /**
+     * Detalle legible que queda en la bitácora. El motivo es opcional: un
+     * despacho sin motivo registrado se anota igual, solo que sin esa clave.
+     */
+    private static String detalleDespacho(UUID itemId, String nombre, int cantidad, String motivo) {
+        StringBuilder detalle = new StringBuilder()
+                .append("item=").append(itemId)
+                .append(" nombre=").append(nombre)
+                .append(" cantidad=").append(cantidad);
+        if (motivo != null && !motivo.isBlank()) {
+            detalle.append(" motivo=").append(motivo);
+        }
+        return detalle.toString();
     }
 }
