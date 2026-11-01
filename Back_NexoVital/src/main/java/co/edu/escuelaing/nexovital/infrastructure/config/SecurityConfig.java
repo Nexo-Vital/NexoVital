@@ -93,12 +93,20 @@ public class SecurityConfig {
      */
     private final List<String> origenesPermitidos;
 
+    /**
+     * Bitácora de intentos denegados. Un 403 sin registro deja el ataque
+     * invisible: cien intentos se ven igual que cero.
+     */
+    private final RegistroAccesoDenegado registroAccesoDenegado;
+
     public SecurityConfig(JwtAuthFilter jwtAuthFilter, ObjectMapper objectMapper,
+                          RegistroAccesoDenegado registroAccesoDenegado,
                           @Value("${nexovital.swagger.enabled:true}") boolean swaggerHabilitado,
                           @Value("${nexovital.cors.origenes-permitidos:http://localhost:5173,http://127.0.0.1:5173}")
                           String[] origenesPermitidos) {
         this.jwtAuthFilter = jwtAuthFilter;
         this.objectMapper = objectMapper;
+        this.registroAccesoDenegado = registroAccesoDenegado;
         this.swaggerHabilitado = swaggerHabilitado;
         this.origenesPermitidos = List.of(origenesPermitidos);
     }
@@ -227,7 +235,7 @@ public class SecurityConfig {
                         // Report the live position of the caller's OWN unit
                         // (EP-04.F1.US1): only a driver reports telemetry, and
                         // the use case additionally verifies the unit belongs to
-                        // the caller (409 otherwise). Declared explicitly because
+                        // the caller (403 otherwise). Declared explicitly because
                         // the chain is fail-closed; without it, POST
                         // /flota/ambulancias/{id}/posicion would be denied.
                         .requestMatchers(HttpMethod.POST, "/api/v1/flota/ambulancias/*/posicion")
@@ -331,9 +339,14 @@ public class SecurityConfig {
                         .authenticationEntryPoint((request, response, authException) ->
                                 escribirError(response, HttpServletResponse.SC_UNAUTHORIZED,
                                         "NO_AUTENTICADO", "Token ausente, inválido o expirado"))
-                        .accessDeniedHandler((request, response, deniedException) ->
-                                escribirError(response, HttpServletResponse.SC_FORBIDDEN,
-                                        "ACCESO_DENEGADO", "No tiene permisos para este recurso")))
+                        .accessDeniedHandler((request, response, deniedException) -> {
+                            // Todo rechazo por rol queda registrado antes de
+                            // responder: es la evidencia que exige el escenario
+                            // de autorización.
+                            registroAccesoDenegado.registrar("rol_insuficiente");
+                            escribirError(response, HttpServletResponse.SC_FORBIDDEN,
+                                    "ACCESO_DENEGADO", "No tiene permisos para este recurso");
+                        }))
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
