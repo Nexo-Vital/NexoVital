@@ -1,0 +1,14 @@
+# Los tableros se cargan desde el directorio montado: al levantar Grafana ya
+# estan disponibles, sin importar nada por la interfaz.
+apiVersion: 1
+
+providers:
+  - name: nexovital
+    orgId: 1
+    folder: NexoVital
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards

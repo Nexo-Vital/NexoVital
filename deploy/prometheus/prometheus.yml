@@ -1,0 +1,27 @@
+# ==========================================================================
+# Raspado de Prometheus (ADR-0010).
+#
+# Raspa cada instancia del backend por separado: con el balanceador delante no
+# se puede apuntar al puerto publico, porque caeria en una instancia distinta en
+# cada intento y las metricas se mezclarian sin control. Cada target conserva su
+# etiqueta `instancia` y los tableros pueden agregar o desglosar.
+# ==========================================================================
+
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+
+scrape_configs:
+  - job_name: nexovital-backend
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["backend-1:8080"]
+        labels:
+          instancia: backend-1
+      - targets: ["backend-2:8080"]
+        labels:
+          instancia: backend-2
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

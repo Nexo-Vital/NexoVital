@@ -1,15 +1,23 @@
 # ==========================================================================
-# NexoVital completo en contenedores, para tu maquina:
+# NexoVital completo en contenedores, con la topología del ADR-0004/0009.
 #
-# Uso (desde la raiz del repo, con Docker Desktop abierto):
-#   docker compose up -d --build     construye las imagenes y levanta todo
-#   docker compose ps                estado de los tres contenedores
-#   docker compose logs -f backend   log del back en vivo (Ctrl+C para salir)
+# Uso (desde la raíz del repo, con Docker Desktop abierto):
+#   docker compose up -d --build     construye y levanta todo
+#   docker compose ps                estado de los contenedores
+#   docker compose logs -f nginx     log del balanceador en vivo
 #   docker compose down              apaga todo y CONSERVA los datos
 #   docker compose down -v           apaga todo y BORRA los datos
 #
-# Usa los mismos puertos que el arranque manual (5173 y 8080): apaga antes el
-# back y el front que tenga corriendo con mvnw / npm run dev.
+# Topología:
+#
+#   cliente -> nginx (frontend + balanceador, :8080)
+#                 |-- backend-1 (sin estado)
+#                 |-- backend-2 (sin estado)
+#                        |-- db       (PostgreSQL, autoritativa)
+#                        |-- rabbitmq (eventos entre instancias)
+#
+# El backend NO se publica al host: la única entrada es nginx. Es lo que hace
+# que el balanceo sea real y no decorativo.
 # ==========================================================================
 name: nexovital
 
@@ -28,42 +36,112 @@ services:
       timeout: 3s
       retries: 12
 
-  backend:
+  # Broker de eventos (ADR-0009). Un exchange fanout y una cola por instancia:
+  # asi un evento publicado en una instancia alcanza a los clientes de la otra.
+  rabbitmq:
+    image: rabbitmq:4-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-nexovital}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-nexovital}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 10s
+      retries: 12
+
+  # Dos instancias del mismo backend: mismo jar, misma base, misma cola de
+  # eventos, distinto identificador de instancia (que es el sufijo de su cola).
+  backend-1:
     build:
       context: ./Back_NexoVital
-    environment:
+    environment: &backend-env
       SPRING_PROFILES_ACTIVE: docker
       NEXOVITAL_DB_URL: jdbc:postgresql://db:5432/nexovital
       NEXOVITAL_DB_USER: nexovital
       NEXOVITAL_DB_PASSWORD: ${POSTGRES_PASSWORD}
       NEXOVITAL_JWT_SECRET: ${NEXOVITAL_JWT_SECRET:-}
-      # El navegador entra por http://localhost:5173, igual que en desarrollo.
-      NEXOVITAL_CORS_ORIGENES: http://localhost:5173,http://127.0.0.1:5173
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER:-nexovital}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-nexovital}
+      NEXOVITAL_EVENTOS_BROKER_ENABLED: "true"
     depends_on:
       db:
         condition: service_healthy
-    ports:
-      - "8080:8080"
-    healthcheck:
-      # Sano cuando el puerto 8080 acepta conexiones (Tomcat abre el puerto al
-      # final del arranque). No depende de curl ni wget dentro de la imagen.
+      rabbitmq:
+        condition: service_healthy
+    healthcheck: &backend-health
       test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8080'"]
       interval: 5s
       timeout: 3s
       retries: 12
       start_period: 40s
 
+  backend-2:
+    build:
+      context: ./Back_NexoVital
+    environment:
+      <<: *backend-env
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck: *backend-health
+
+  # Frontend compilado, servido por su propio nginx.
   frontend:
     build:
       context: ./Front_NexoVital
     environment:
-      # A donde reenvia Nginx las rutas /api y /ws. Sin barra al final.
-      BACKEND_URL: http://backend:8080
+      BACKEND_URL: http://backend-1:8080
     depends_on:
-      backend:
+      backend-1:
         condition: service_healthy
+
+  # Punto único de entrada: sirve el frontend y balancea la API y el WebSocket
+  # entre las dos instancias. Configuracion en deploy/nginx/nginx.conf.
+  nginx:
+    image: nginx:alpine
     ports:
-      - "5173:80"
+      - "8080:80"
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend-1
+      - backend-2
+      - frontend
+
+  # --- Observabilidad (ADR-0010) ---------------------------------------
+  # Prometheus raspa cada instancia por separado: con el balanceador delante,
+  # apuntar al puerto publico mezclaria metricas de instancias distintas.
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - backend-1
+      - backend-2
+
+  # Grafana arranca con la fuente de datos y los dos tableros ya provisionados.
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-nexovital}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
 
 volumes:
   nexovital-db:
+  prometheus-data:
+  grafana-data:

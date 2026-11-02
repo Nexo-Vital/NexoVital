@@ -1,0 +1,95 @@
+{
+  "uid": "nexovital-negocio",
+  "title": "NexoVital — Métricas de negocio",
+  "tags": ["nexovital", "negocio"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Operadores conectados (STOMP)",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        { "expr": "sum(nexovital_usuarios_stomp)", "legendFormat": "sesiones", "refId": "A" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Emergencias reportadas (30 min)",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum(increase(http_server_requests_seconds_count{uri=\"/api/v1/emergencias\",method=\"POST\"}[30m]))",
+          "legendFormat": "reportes",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Solicitudes de ambulancia creadas (30 min)",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum(increase(http_server_requests_seconds_count{uri=\"/api/v1/solicitudes\",method=\"POST\"}[30m]))",
+          "legendFormat": "solicitudes",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Tasa de error 5xx",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 0.01 } ] } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_requests_seconds_count{status=~\"5..\"}[5m])) / clamp_min(sum(rate(http_server_requests_seconds_count[5m])), 0.0001)",
+          "legendFormat": "errores",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Acciones ejecutadas en tiempo real, por destino",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 6 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (destino) (rate(nexovital_eventos_realtime_total[2m]))",
+          "legendFormat": "{{destino}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Tiempo medio de interacción por endpoint de negocio",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 15 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (uri) (rate(http_server_requests_seconds_sum{uri=~\"/api/v1/(emergencias|solicitudes|centros-acopio).*\"}[5m])) / clamp_min(sum by (uri) (rate(http_server_requests_seconds_count{uri=~\"/api/v1/(emergencias|solicitudes|centros-acopio).*\"}[5m])), 0.0001)",
+          "legendFormat": "{{uri}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

@@ -126,6 +126,13 @@ public class SecurityConfig {
                         // without it the probe would get 403 and the app would be
                         // restarted as unhealthy.
                         .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
+                        // Raspado de Prometheus para el tablero tecnico (ADR-0010).
+                        // Es publico porque el recolector no lleva token y en el
+                        // despliegue vive en la red de monitoreo, no en internet.
+                        // Si el backend quedara expuesto directo, esta ruta debe
+                        // restringirse por red: las metricas no son secretas, pero
+                        // tampoco conviene regalarlas.
+                        .requestMatchers(HttpMethod.GET, "/actuator/prometheus").permitAll()
                         // WebSocket/STOMP handshake (US2 D7): the HTTP handshake carries no
                         // Bearer (the token travels in the STOMP CONNECT frame) and SockJS
                         // issues GET /ws/info over HTTP, so the handshake is permitted. This

@@ -1,0 +1,12 @@
+# Fuente de datos provisionada: Grafana arranca ya apuntando a Prometheus, sin
+# que nadie tenga que configurarlo a mano en la interfaz.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: nexovital-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
