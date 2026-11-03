@@ -23,6 +23,7 @@ name: nexovital
 
 services:
   db:
+    restart: unless-stopped
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: nexovital
@@ -39,6 +40,7 @@ services:
   # Broker de eventos (ADR-0009). Un exchange fanout y una cola por instancia:
   # asi un evento publicado en una instancia alcanza a los clientes de la otra.
   rabbitmq:
+    restart: unless-stopped
     image: rabbitmq:4-alpine
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-nexovital}
@@ -52,10 +54,16 @@ services:
   # Dos instancias del mismo backend: mismo jar, misma base, misma cola de
   # eventos, distinto identificador de instancia (que es el sufijo de su cola).
   backend-1:
+    restart: unless-stopped
     build:
       context: ./Back_NexoVital
     environment: &backend-env
       SPRING_PROFILES_ACTIVE: docker
+      NEXOVITAL_INSTANCIA_ID: backend-1
+      # Pool por instancia. PostgreSQL admite 100 conexiones: con 20 por nodo
+      # entran 4 instancias con margen. Con el default de 40, la tercera no
+      # arranca. La formula es pool <= (max_connections - reservadas) / N.
+      NEXOVITAL_DB_POOL_MAX: "20"
       NEXOVITAL_DB_URL: jdbc:postgresql://db:5432/nexovital
       NEXOVITAL_DB_USER: nexovital
       NEXOVITAL_DB_PASSWORD: ${POSTGRES_PASSWORD}
@@ -71,17 +79,23 @@ services:
       rabbitmq:
         condition: service_healthy
     healthcheck: &backend-health
-      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8080'"]
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080; printf \"GET /actuator/health HTTP/1.0\r\n\r\n\" >&3; head -1 <&3 | grep -q 200'"]
       interval: 5s
       timeout: 3s
       retries: 12
       start_period: 40s
+    stop_grace_period: 30s
 
   backend-2:
+    restart: unless-stopped
     build:
       context: ./Back_NexoVital
     environment:
       <<: *backend-env
+      NEXOVITAL_INSTANCIA_ID: backend-2
+      # El seeder comprueba-y-inserta, no es atomico: con dos instancias
+      # sembrando a la vez chocan contra la clave unica del email. Siembra una.
+      NEXOVITAL_SEED_ENABLED: "false"
     depends_on:
       db:
         condition: service_healthy
@@ -91,8 +105,15 @@ services:
 
   # Frontend compilado, servido por su propio nginx.
   frontend:
+    restart: unless-stopped
     build:
       context: ./Front_NexoVital
+      args:
+        # Configuracion publica de Firebase (ADR-0008). Vite la incrusta en el
+        # bundle; sin estos args el front cae al login local.
+        VITE_FIREBASE_API_KEY: ${NEXOVITAL_FIREBASE_API_KEY:-AIzaSyAKWFuJh7CK9r7v0Ko01KLA3GKAGChhIRg}
+        VITE_FIREBASE_AUTH_DOMAIN: ${NEXOVITAL_FIREBASE_AUTH_DOMAIN:-nexovital-c96cf.firebaseapp.com}
+        VITE_FIREBASE_PROJECT_ID: ${NEXOVITAL_FIREBASE_PROJECT_ID:-nexovital-c96cf}
     environment:
       BACKEND_URL: http://backend-1:8080
     depends_on:
@@ -102,20 +123,25 @@ services:
   # Punto único de entrada: sirve el frontend y balancea la API y el WebSocket
   # entre las dos instancias. Configuracion en deploy/nginx/nginx.conf.
   nginx:
+    restart: unless-stopped
     image: nginx:alpine
     ports:
       - "8080:80"
     volumes:
       - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
-      - backend-1
-      - backend-2
-      - frontend
+      backend-1:
+        condition: service_healthy
+      backend-2:
+        condition: service_healthy
+      frontend:
+        condition: service_started
 
   # --- Observabilidad (ADR-0010) ---------------------------------------
   # Prometheus raspa cada instancia por separado: con el balanceador delante,
   # apuntar al puerto publico mezclaria metricas de instancias distintas.
   prometheus:
+    restart: unless-stopped
     image: prom/prometheus:latest
     volumes:
       - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
@@ -128,6 +154,7 @@ services:
 
   # Grafana arranca con la fuente de datos y los dos tableros ya provisionados.
   grafana:
+    restart: unless-stopped
     image: grafana/grafana:latest
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-nexovital}
