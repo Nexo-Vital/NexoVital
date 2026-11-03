@@ -23,7 +23,7 @@ import java.util.List;
  * en la tabla hija {@code zona_vertices}, ordenada por {@code posicion}.
  */
 @Entity
-@Table(name = "zonas")
+@Table(name = "zonas", schema = "mapa")
 public class ZonaJpaEntity {
 
     @Id
@@ -45,7 +45,7 @@ public class ZonaJpaEntity {
      * cargado en la misma consulta.
      */
     @ElementCollection(fetch = FetchType.EAGER)
-    @CollectionTable(name = "zona_vertices", joinColumns = @JoinColumn(name = "zona_id"))
+    @CollectionTable(name = "zona_vertices", schema = "mapa", joinColumns = @JoinColumn(name = "zona_id"))
     @OrderColumn(name = "posicion")
     private List<VerticeZonaJpa> contorno = new ArrayList<>();
 

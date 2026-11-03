@@ -17,7 +17,7 @@ import java.util.UUID;
  * Two units declining at the same instant write two different rows.
  */
 @Entity
-@Table(name = "solicitud_ambulancia_rechazos")
+@Table(name = "solicitud_ambulancia_rechazos", schema = "flota")
 public class RechazoSolicitudJpaEntity {
 
     @EmbeddedId

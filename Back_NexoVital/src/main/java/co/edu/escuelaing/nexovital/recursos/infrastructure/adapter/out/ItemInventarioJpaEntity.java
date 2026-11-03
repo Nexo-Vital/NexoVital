@@ -20,7 +20,7 @@ import java.util.UUID;
  * opcionales que el contrato no publica.
  */
 @Entity
-@Table(name = "inventario_items")
+@Table(name = "inventario_items", schema = "recursos")
 public class ItemInventarioJpaEntity {
 
     @Id

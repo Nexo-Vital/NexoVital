@@ -27,7 +27,7 @@ import java.util.UUID;
  * starts connected.
  */
 @Entity
-@Table(name = "ambulancias")
+@Table(name = "ambulancias", schema = "flota")
 public class AmbulanciaJpaEntity {
 
     @Id

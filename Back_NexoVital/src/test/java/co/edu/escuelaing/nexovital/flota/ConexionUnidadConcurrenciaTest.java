@@ -318,7 +318,7 @@ class ConexionUnidadConcurrenciaTest {
 
     private int vecesNotificada(UUID solicitudId, UUID unidad) {
         Integer veces = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM solicitud_ambulancia_notificadas WHERE solicitud_id = '" + solicitudId
+                "SELECT COUNT(*) FROM flota.solicitud_ambulancia_notificadas WHERE solicitud_id = '" + solicitudId
                         + "' AND ambulancia_id = '" + unidad + "'", Integer.class);
         return veces == null ? 0 : veces;
     }
