@@ -22,8 +22,21 @@ public class UsuarioRepositoryAdapter implements UsuarioRepository {
     }
 
     @Override
+    public Optional<Usuario> buscarPorFirebaseUid(String firebaseUid) {
+        return jpaRepository.findByFirebaseUid(firebaseUid).map(UsuarioRepositoryAdapter::toDomain);
+    }
+
+    @Override
     public Optional<Usuario> buscarPorId(UUID id) {
         return jpaRepository.findById(id).map(UsuarioRepositoryAdapter::toDomain);
+    }
+
+    @Override
+    public void enlazarFirebaseUid(UUID id, String firebaseUid) {
+        jpaRepository.findById(id).ifPresent(entity -> {
+            entity.enlazarFirebaseUid(firebaseUid);
+            jpaRepository.save(entity);
+        });
     }
 
     @Override

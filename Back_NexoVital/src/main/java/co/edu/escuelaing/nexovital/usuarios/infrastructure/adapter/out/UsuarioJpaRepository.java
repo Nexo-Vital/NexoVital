@@ -16,6 +16,13 @@ public interface UsuarioJpaRepository extends JpaRepository<UsuarioJpaEntity, UU
     boolean existsByEmail(String email);
 
     /**
+     * Resuelve el usuario a partir del {@code sub} del token del IdP externo
+     * (ADR-0008). Es la búsqueda que usa el filtro de seguridad: el token
+     * identifica, la base autoriza.
+     */
+    Optional<UsuarioJpaEntity> findByFirebaseUid(String firebaseUid);
+
+    /**
      * Increments the failure counter and triggers the lockout in <b>a single</b>
      * statement (design D6). In SQL the {@code SET} expressions read the row's
      * previous value, so {@code u.intentosFallidos + 1} is what the counter will

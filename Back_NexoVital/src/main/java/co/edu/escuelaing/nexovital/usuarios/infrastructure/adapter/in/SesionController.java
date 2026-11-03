@@ -23,7 +23,10 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Adaptador de entrada de sesiones. El recurso es {@code sesiones} (sustantivo
@@ -35,6 +38,8 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/sesiones")
+// Con IdP externo activo el login propio se apaga: el curso lo prohibe y ya no
+// hay nada que emitir. La propiedad vive en application-docker.properties.
 @Tag(name = "usuarios")
 public class SesionController {
 
@@ -45,9 +50,12 @@ public class SesionController {
     private static final String MENSAJE_CREDENCIALES_INVALIDAS = "Credenciales inválidas.";
 
     private final AuthenticationUseCase authenticationUseCase;
+    private final boolean loginLocalHabilitado;
 
-    public SesionController(AuthenticationUseCase authenticationUseCase) {
+    public SesionController(AuthenticationUseCase authenticationUseCase,
+                          @Value("${nexovital.auth.local.enabled:true}") boolean loginLocalHabilitado) {
         this.authenticationUseCase = authenticationUseCase;
+        this.loginLocalHabilitado = loginLocalHabilitado;
     }
 
     /**
@@ -60,6 +68,11 @@ public class SesionController {
     @Operation(summary = "Crear una sesion (autenticacion por email y contrasena)")
     @SecurityRequirements
     public ResponseEntity<Object> crearSesion(@Valid @RequestBody SesionRequest request) {
+        if (!loginLocalHabilitado) {
+            // Con IdP externo activo el login propio no existe: 404, no 401.
+            // Un 401 haria pensar que las credenciales son validas en algun lado.
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "El login local esta deshabilitado");
+        }
         try {
             SesionAuth sesion = authenticationUseCase.login(
                     new CredencialesLogin(request.email(), request.password()));

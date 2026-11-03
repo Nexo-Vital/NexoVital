@@ -20,7 +20,7 @@ import java.util.UUID;
  * atómicas, no con setters de Java.
  */
 @Entity
-@Table(name = "usuarios")
+@Table(name = "usuarios", schema = "usuarios")
 public class UsuarioJpaEntity {
 
     @Id
@@ -31,6 +31,15 @@ public class UsuarioJpaEntity {
 
     @Column(nullable = false, unique = true, length = 255)
     private String email;
+
+    /**
+     * UID del usuario en el IdP externo (ADR-0008). El {@code sub} del token
+     * resuelve a esta columna; el rol se sigue leyendo de la base, no del token.
+     * Es nulo mientras el usuario no esté enlazado, y esa es la señal de que
+     * todavía no puede autenticarse.
+     */
+    @Column(name = "firebase_uid", unique = true, length = 128)
+    private String firebaseUid;
 
     @Column(name = "password_hash", nullable = false, length = 255)
     private String passwordHash;
@@ -65,6 +74,15 @@ public class UsuarioJpaEntity {
 
     public String getNombre() {
         return nombre;
+    }
+
+    public String getFirebaseUid() {
+        return firebaseUid;
+    }
+
+    /** Enlaza esta fila con su cuenta del IdP externo (ADR-0008). */
+    public void enlazarFirebaseUid(String firebaseUid) {
+        this.firebaseUid = firebaseUid;
     }
 
     public String getEmail() {

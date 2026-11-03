@@ -3,7 +3,7 @@ package co.edu.escuelaing.nexovital.infrastructure.config;
 import co.edu.escuelaing.nexovital.usuarios.domain.exception.CredencialesInvalidasException;
 import co.edu.escuelaing.nexovital.usuarios.domain.exception.UsuarioNoEncontradoException;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.Usuario;
-import co.edu.escuelaing.nexovital.usuarios.domain.port.in.AuthenticationUseCase;
+import co.edu.escuelaing.nexovital.usuarios.domain.port.in.ResolutorSesion;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.messaging.Message;
@@ -26,7 +26,7 @@ import java.util.List;
  *
  * <ul>
  *   <li>{@code CONNECT}: exige {@code Authorization: Bearer <jwt>}; valida con el
- *       {@link AuthenticationUseCase#validarToken(String)} ya existente (la misma
+ *       {@link ResolutorSesion#resolver(String)} ya existente (la misma
  *       lógica que usa {@link JwtAuthFilter}), publica el {@code Principal} y la
  *       autoridad {@code ROLE_<ROL>} en la sesión STOMP y RECHAZA el frame si el
  *       token falta o es inválido.</li>
@@ -59,10 +59,10 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
     /** Único prefijo al que un cliente puede enviar: los destinos de aplicación. */
     private static final String PREFIJO_APLICACION = "/app";
 
-    private final AuthenticationUseCase authenticationUseCase;
+    private final ResolutorSesion resolutorSesion;
 
-    public StompAuthChannelInterceptor(AuthenticationUseCase authenticationUseCase) {
-        this.authenticationUseCase = authenticationUseCase;
+    public StompAuthChannelInterceptor(ResolutorSesion resolutorSesion) {
+        this.resolutorSesion = resolutorSesion;
     }
 
     @Override
@@ -98,7 +98,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
         String token = header.substring(PREFIJO_BEARER.length());
         Usuario usuario;
         try {
-            usuario = authenticationUseCase.validarToken(token);
+            usuario = resolutorSesion.resolver(token);
         } catch (CredencialesInvalidasException | UsuarioNoEncontradoException e) {
             throw new AccessDeniedException("Token inválido para el CONNECT STOMP.", e);
         }

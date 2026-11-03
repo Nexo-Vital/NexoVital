@@ -20,7 +20,7 @@ import java.util.UUID;
  * ({@code lat}, {@code lng}).
  */
 @Entity
-@Table(name = "organizaciones")
+@Table(name = "organizaciones", schema = "usuarios")
 public class OrganizacionJpaEntity {
 
     @Id

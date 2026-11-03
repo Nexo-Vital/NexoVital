@@ -2,7 +2,7 @@ package co.edu.escuelaing.nexovital.infrastructure.config;
 
 import co.edu.escuelaing.nexovital.usuarios.domain.exception.CredencialesInvalidasException;
 import co.edu.escuelaing.nexovital.usuarios.domain.exception.UsuarioNoEncontradoException;
-import co.edu.escuelaing.nexovital.usuarios.domain.port.in.AuthenticationUseCase;
+import co.edu.escuelaing.nexovital.usuarios.domain.port.in.ResolutorSesion;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -27,10 +27,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     private static final String PREFIJO_BEARER = "Bearer ";
 
-    private final AuthenticationUseCase authenticationUseCase;
+    private final ResolutorSesion resolutorSesion;
 
-    public JwtAuthFilter(AuthenticationUseCase authenticationUseCase) {
-        this.authenticationUseCase = authenticationUseCase;
+    public JwtAuthFilter(ResolutorSesion resolutorSesion) {
+        this.resolutorSesion = resolutorSesion;
     }
 
     @Override
@@ -42,7 +42,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         if (header != null && header.startsWith(PREFIJO_BEARER)) {
             String token = header.substring(PREFIJO_BEARER.length());
             try {
-                var usuario = authenticationUseCase.validarToken(token);
+                var usuario = resolutorSesion.resolver(token);
                 var authentication = new UsernamePasswordAuthenticationToken(
                         usuario,
                         null,
