@@ -8,6 +8,7 @@ import {
   setSession,
   setToken,
 } from '@/services/apiClient';
+import { logoutFirebase, observarRefrescoDeToken } from '@/services/firebase';
 import type { RolUsuario, Usuario } from '@/types/domain';
 import { hasRoleHome } from './role-home';
 
@@ -163,8 +164,21 @@ export const useSessionStore = create<SessionState>((set) => ({
     set({ user: usuario, role: usuario.rol, token });
   },
   logout: () => {
+    // Cierra tambien la sesion del IdP: si no, Firebase la conserva y al
+    // recargar la pestana el usuario vuelve a entrar solo.
+    void logoutFirebase();
     clearToken();
     clearSession();
     set({ user: null, role: null, token: null });
   },
 }));
+/**
+ * Mantiene el token al dia. Un ID token de Firebase dura una hora; sin esto una
+ * demo larga empieza a recibir 401 sin que nadie haya cerrado sesion. Sin
+ * Firebase configurado la suscripcion es inerte.
+ */
+observarRefrescoDeToken((token) => {
+  if (token) {
+    setToken(token);
+  }
+});

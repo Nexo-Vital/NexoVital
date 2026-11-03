@@ -1,4 +1,5 @@
 import { findDemoAccount } from '../mocks/demo-users';
+import { isFirebaseConfigured, loginFirebase } from './firebase';
 import type { Usuario } from '../types/domain';
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '/api/v1';
@@ -126,7 +127,7 @@ function demoLogin(email: string, password: string): LoginResponse {
   return { token, usuario };
 }
 
-export async function login(email: string, password: string): Promise<LoginResponse> {
+async function loginLocal(email: string, password: string): Promise<LoginResponse> {
   if (isDemoMode()) {
     return demoLogin(email, password);
   }
@@ -167,6 +168,40 @@ export async function login(email: string, password: string): Promise<LoginRespo
   }
 
   throw new ApiError(response.status, mensaje, codigo);
+}
+
+/**
+ * Login contra el IdP externo. El token de Firebase identifica; el usuario y su
+ * rol los devuelve el backend en GET /sesiones/actual, que sigue siendo la
+ * fuente de verdad (ADR-0008). No se confia en el rol que pudiera traer el
+ * token.
+ */
+async function loginConFirebase(email: string, password: string): Promise<LoginResponse> {
+  let token: string;
+  try {
+    token = await loginFirebase(email, password);
+  } catch (error) {
+    const codigo = (error as { code?: string }).code ?? '';
+    if (codigo === 'auth/too-many-requests') {
+      throw new ApiError(429, 'Demasiados intentos. Espera un momento.');
+    }
+    // Mismo mensaje para usuario inexistente y contrasena incorrecta.
+    throw new ApiError(401, 'Credenciales invalidas.', 'CREDENCIALES_INVALIDAS');
+  }
+  const usuario = await getMe(token);
+  setToken(token);
+  setSession(usuario);
+  return { token, usuario };
+}
+
+export async function login(email: string, password: string): Promise<LoginResponse> {
+  if (isDemoMode()) {
+    return demoLogin(email, password);
+  }
+  if (isFirebaseConfigured()) {
+    return loginConFirebase(email, password);
+  }
+  return loginLocal(email, password);
 }
 
 /**

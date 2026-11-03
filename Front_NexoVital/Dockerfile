@@ -24,6 +24,18 @@ COPY . .
 # Build contra el backend real, nunca en modo demo (el modo demo es solo para el
 # despliegue estatico de Cloudflare, que no tiene backend).
 ENV VITE_DEMO_MODE=0
+
+# Configuracion del IdP externo (ADR-0008). Vite la incrusta en el bundle en
+# tiempo de build, asi que llega como build arg. El apiKey de Firebase es un
+# identificador publico del proyecto, no un secreto; sin estas variables el
+# front cae al login local y los tests no tocan la nube.
+ARG VITE_FIREBASE_API_KEY
+ARG VITE_FIREBASE_AUTH_DOMAIN
+ARG VITE_FIREBASE_PROJECT_ID
+ENV VITE_FIREBASE_API_KEY=$VITE_FIREBASE_API_KEY
+ENV VITE_FIREBASE_AUTH_DOMAIN=$VITE_FIREBASE_AUTH_DOMAIN
+ENV VITE_FIREBASE_PROJECT_ID=$VITE_FIREBASE_PROJECT_ID
+
 RUN npm run build
 
 

@@ -19,7 +19,15 @@ const RECONNECT_DELAY_MS = 5000;
  * The adapter reads it in `beforeConnect`, once per connect attempt.
  */
 const STOMP_CONFIG = {
-  webSocketFactory: () => new SockJS(STOMP_ENDPOINT),
+  // Solo WebSocket, nunca el fallback XHR de SockJS.
+  //
+  // Con dos instancias detras del balanceador, round-robin manda `/ws/info` a
+  // una y el transporte `xhr_streaming` a la otra. La sesion SockJS vive en la
+  // memoria de UNA instancia, asi que la segunda responde 403 y el navegador
+  // queda en un bucle de reconexion sin conectar nunca. El transporte WebSocket
+  // es una sola conexion de larga duracion: no necesita afinidad de sesion.
+  webSocketFactory: () =>
+    new SockJS(STOMP_ENDPOINT, undefined, { transports: ['websocket'] }),
   heartbeatIncoming: 10000,
   heartbeatOutgoing: 10000,
   reconnectDelay: RECONNECT_DELAY_MS,
