@@ -116,12 +116,15 @@ public class IncorporarUnidadASolicitudesAbiertasUseCaseImpl
     private Optional<SolicitudAmbulancia> incorporarConReintento(UUID solicitudId, UUID ambulanciaId) {
         for (int intento = 0; intento < INTENTOS_POR_SOLICITUD; intento++) {
             try {
-                Optional<SolicitudAmbulancia> incorporada = enNuevaTransaccion.execute(estado ->
-                        solicitudRepository.incorporarNotificadaSiSigueAbierta(
-                                solicitudId, ambulanciaId, Instant.now(clock)));
-                // Empty: the request is no longer open, or the unit is already
-                // notified. Either way there is nothing left to do.
-                return incorporada == null ? Optional.empty() : incorporada;
+                // `TransactionTemplate.execute` está anotado @Nullable en Spring:
+                // puede devolver null aunque el callback devuelva un Optional.
+                // Se normaliza acá y no con un `== null` sobre el Optional, para
+                // que el contrato quede explícito y ningún analizador tenga que
+                // adivinar si el nulo es posible.
+                return Optional.ofNullable(enNuevaTransaccion.execute(estado ->
+                                solicitudRepository.incorporarNotificadaSiSigueAbierta(
+                                        solicitudId, ambulanciaId, Instant.now(clock))))
+                        .orElseGet(Optional::empty);
             } catch (ConcurrencyFailureException cambio) {
                 // Someone else wrote on the request first: read it again.
             }

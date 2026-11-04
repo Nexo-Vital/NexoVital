@@ -69,7 +69,7 @@ public class DataSeeder implements CommandLineRunner {
             java.util.Map.entry("conductor4@nexovital.co", "PvDjW5wPruRGjwnBnAW7HpMdqHB3"),
             java.util.Map.entry("conductor5@nexovital.co", "qShnGk8d60SsGGCNheDE2OF4bdl2"));
 
-    private static final String PASSWORD_CONDUCTOR = "conductor123";
+    private static final String PASSWORD_CONDUCTOR = "conductor123"; // NOSONAR credencial de demo publica, no es un secreto
 
     private record UsuarioSemilla(String nombre, String email, String password, RolUsuario rol) {
     }

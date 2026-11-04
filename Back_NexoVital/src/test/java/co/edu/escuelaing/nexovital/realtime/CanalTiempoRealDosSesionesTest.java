@@ -155,6 +155,9 @@ class CanalTiempoRealDosSesionesTest {
         }
         sesiones.clear();
         planificador.shutdown();
+        // Un solo @AfterEach por clase: JUnit no garantiza el orden entre
+        // varios, y la limpieza de datos debe correr siempre, falle o no el test.
+        limpiarOrganizacionesDeS6();
     }
 
     /**
@@ -162,7 +165,6 @@ class CanalTiempoRealDosSesionesTest {
      * quedaría en la H2 compartida y rompería las aserciones de conteo de otros
      * tests (p. ej. {@code OrganizacionesHttpTest.t6}).
      */
-    @AfterEach
     void limpiarOrganizacionesDeS6() {
         List<OrganizacionJpaEntity> aBorrar = organizacionJpaRepository.findAll().stream()
                 .filter(entidad -> entidad.getNombre().startsWith(PREFIJO_ORGANIZACION_S6))

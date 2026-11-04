@@ -34,7 +34,7 @@ export const DEMO_USERS: DemoUser[] = [
     label: 'Administrador de plataforma',
     descripcion: 'Administra la plataforma y los usuarios',
     email: 'admin@nexovital.co',
-    password: 'admin123',
+    password: 'admin123', // NOSONAR credencial de demo publica, no es un secreto
   },
   {
     rol: 'ADMIN_CENTRO_AYUDA',
@@ -42,7 +42,7 @@ export const DEMO_USERS: DemoUser[] = [
     groupLabel: 'Administradores de centro de ayuda',
     descripcion: 'Pide ambulancias y administra los insumos de su centro',
     email: 'rangel@nexovital.co',
-    password: 'rangel123',
+    password: 'rangel123', // NOSONAR credencial de demo publica, no es un secreto
   },
   {
     rol: 'ADMIN_CENTRO_AYUDA',
@@ -50,14 +50,14 @@ export const DEMO_USERS: DemoUser[] = [
     groupLabel: 'Administradores de centro de ayuda',
     descripcion: 'Pide ambulancias y administra los insumos de su centro',
     email: 'centro@nexovital.co',
-    password: 'centro123',
+    password: 'centro123', // NOSONAR credencial de demo publica, no es un secreto
   },
   {
     rol: 'ADMIN_ACOPIO',
     label: 'Administrador de centro de acopio',
     descripcion: 'Crea y gestiona su centro, igual que el administrador de centro de ayuda',
     email: 'acopio@nexovital.co',
-    password: 'acopio123',
+    password: 'acopio123', // NOSONAR credencial de demo publica, no es un secreto
   },
   {
     rol: 'CONDUCTOR',
@@ -65,7 +65,7 @@ export const DEMO_USERS: DemoUser[] = [
     groupLabel: 'Conductores de ambulancia',
     descripcion: 'Recibe y responde solicitudes de ambulancia',
     email: 'conductor1@nexovital.co',
-    password: 'conductor123',
+    password: 'conductor123', // NOSONAR credencial de demo publica, no es un secreto
   },
   {
     rol: 'CONDUCTOR',
@@ -73,7 +73,7 @@ export const DEMO_USERS: DemoUser[] = [
     groupLabel: 'Conductores de ambulancia',
     descripcion: 'Recibe y responde solicitudes de ambulancia',
     email: 'conductor2@nexovital.co',
-    password: 'conductor123',
+    password: 'conductor123', // NOSONAR credencial de demo publica, no es un secreto
   },
   {
     rol: 'CONDUCTOR',
@@ -81,7 +81,7 @@ export const DEMO_USERS: DemoUser[] = [
     groupLabel: 'Conductores de ambulancia',
     descripcion: 'Recibe y responde solicitudes de ambulancia',
     email: 'conductor3@nexovital.co',
-    password: 'conductor123',
+    password: 'conductor123', // NOSONAR credencial de demo publica, no es un secreto
   },
   {
     rol: 'CONDUCTOR',
@@ -89,7 +89,7 @@ export const DEMO_USERS: DemoUser[] = [
     groupLabel: 'Conductores de ambulancia',
     descripcion: 'Recibe y responde solicitudes de ambulancia',
     email: 'conductor4@nexovital.co',
-    password: 'conductor123',
+    password: 'conductor123', // NOSONAR credencial de demo publica, no es un secreto
   },
   {
     rol: 'CONDUCTOR',
@@ -97,7 +97,7 @@ export const DEMO_USERS: DemoUser[] = [
     groupLabel: 'Conductores de ambulancia',
     descripcion: 'Recibe y responde solicitudes de ambulancia',
     email: 'conductor5@nexovital.co',
-    password: 'conductor123',
+    password: 'conductor123', // NOSONAR credencial de demo publica, no es un secreto
   },
   {
     rol: 'CIUDADANO',
@@ -105,7 +105,7 @@ export const DEMO_USERS: DemoUser[] = [
     groupLabel: 'Ciudadanos',
     descripcion: 'Solicita una ambulancia y reporta emergencias',
     email: 'ciudadano@nexovital.co',
-    password: 'ciudadano123',
+    password: 'ciudadano123', // NOSONAR credencial de demo publica, no es un secreto
   },
   {
     rol: 'CIUDADANO',
@@ -113,7 +113,7 @@ export const DEMO_USERS: DemoUser[] = [
     groupLabel: 'Ciudadanos',
     descripcion: 'Solicita una ambulancia y reporta emergencias',
     email: 'ciudadano2@nexovital.co',
-    password: 'ciudadano123',
+    password: 'ciudadano123', // NOSONAR credencial de demo publica, no es un secreto
   },
 ];
 
