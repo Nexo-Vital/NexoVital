@@ -57,8 +57,9 @@ El launcher **avisa** si un puerto está ocupado, pero nunca mata procesos ajeno
 ## Arranque manual (si preferís control)
 
 ```powershell
-# Back
+# Back (el login local del back arranca apagado: se enciende para desarrollo)
 cd Back_NexoVital
+$env:NEXOVITAL_AUTH_LOCAL_ENABLED = "true"
 mvn spring-boot:run
 
 # Front (en otra terminal)
@@ -66,6 +67,23 @@ cd Front_NexoVital
 npm install
 npm run dev
 ```
+
+## Autenticación: IdP externo y login local de desarrollo
+
+El producto se autentica con un **proveedor de identidad externo** (Firebase Auth,
+ADR-0008). El login por email y contraseña del backend es un recurso de desarrollo y de la
+suite, no una función del producto:
+
+- `nexovital.auth.local.enabled` arranca en **`false`** en `application.properties`, y
+  `docker` y `prod` lo fijan en `false` otra vez. Con el login apagado,
+  `POST /api/v1/sesiones` responde **404**.
+- Solo `application-test.properties` lo enciende, porque la suite necesita emitir tokens sin
+  Firebase.
+- Para levantar el backend en local hay que exportar `NEXOVITAL_AUTH_LOCAL_ENABLED=true`
+  (el launcher `run.cmd` ya lo hace). El front usa ese camino **solo en `npm run dev`**: un
+  build de producción con Firebase sin configurar falla en voz alta, nunca cae al login local.
+- En docker, el front se construye con las variables `VITE_FIREBASE_*` y el backend valida
+  ID tokens de Firebase con el JWKS del proyecto.
 
 ## Datos y credenciales de desarrollo
 

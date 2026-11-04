@@ -194,14 +194,54 @@ async function loginConFirebase(email: string, password: string): Promise<LoginR
   return { token, usuario };
 }
 
+/** Proveedor de identidad que usa el build actual (ADR-0008). */
+export type ProveedorDeLogin = 'demo' | 'firebase' | 'local' | 'ninguno';
+
+/**
+ * Elige el proveedor de identidad. Es una función pura para poder probar la
+ * regla sin montar el SDK ni manipular variables de entorno:
+ *
+ * <ol>
+ *   <li>Modo demo: catálogo local, nunca habla con el backend.</li>
+ *   <li>Firebase configurado: IdP externo, el camino del producto.</li>
+ *   <li>Build de desarrollo sin Firebase: login local contra el backend.</li>
+ *   <li>Build de producción sin Firebase: <b>ninguno</b>. El login propio no
+ *       existe en un artefacto desplegable: falla en voz alta en vez de caer a
+ *       un proveedor casero.</li>
+ * </ol>
+ */
+export function proveedorDeLogin(opciones: {
+  demo: boolean;
+  firebase: boolean;
+  desarrollo: boolean;
+}): ProveedorDeLogin {
+  if (opciones.demo) {
+    return 'demo';
+  }
+  if (opciones.firebase) {
+    return 'firebase';
+  }
+  return opciones.desarrollo ? 'local' : 'ninguno';
+}
+
 export async function login(email: string, password: string): Promise<LoginResponse> {
-  if (isDemoMode()) {
-    return demoLogin(email, password);
+  switch (
+    proveedorDeLogin({
+      demo: isDemoMode(),
+      firebase: isFirebaseConfigured(),
+      desarrollo: import.meta.env.DEV,
+    })
+  ) {
+    case 'demo':
+      return demoLogin(email, password);
+    case 'firebase':
+      return loginConFirebase(email, password);
+    case 'local':
+      // El login propio NO existe en un build de produccion (ADR-0008).
+      return loginLocal(email, password);
+    default:
+      throw new ApiError(0, 'Este build no tiene proveedor de identidad configurado');
   }
-  if (isFirebaseConfigured()) {
-    return loginConFirebase(email, password);
-  }
-  return loginLocal(email, password);
 }
 
 /**

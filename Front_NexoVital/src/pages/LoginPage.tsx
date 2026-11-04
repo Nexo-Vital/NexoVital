@@ -67,10 +67,13 @@ async function typeText(text: string, setValue: (value: string) => void): Promis
 }
 
 /**
- * Real sign-in. The credentials travel to POST /api/v1/sesiones and, on success, the
- * token and the session are persisted before redirecting to the role home
- * (RoleHome decides the landing screen from the stored role). A role with no
- * screen in this build is not let in: the session is cleared and the reason is
+ * Real sign-in. In a production build the identity provider is external
+ * (Firebase, ADR-0008): the token and the session are persisted on success and
+ * the user is redirected to the role home (RoleHome decides the landing screen
+ * from the stored role). Only `npm run dev` without Firebase talks to the local
+ * POST /api/v1/sesiones fallback. A role with no
+ * screen in this build is not let in: the session is cleared and the
+ * reason is
  * shown on the form. The demo profiles panel shares this exact path: it only
  * fills the form and submits it, so no session is ever granted without the backend.
  */

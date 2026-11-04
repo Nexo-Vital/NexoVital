@@ -38,8 +38,12 @@ import org.springframework.web.server.ResponseStatusException;
  */
 @RestController
 @RequestMapping("/api/v1/sesiones")
-// Con IdP externo activo el login propio se apaga: el curso lo prohibe y ya no
-// hay nada que emitir. La propiedad vive en application-docker.properties.
+// El login propio es un recurso de DESARROLLO y de la suite, no del producto.
+// Arranca APAGADO en cualquier perfil: solo lo enciende, de forma explicita,
+// `nexovital.auth.local.enabled=true` (application-test.properties, o
+// NEXOVITAL_AUTH_LOCAL_ENABLED=true para levantar el back en local). Docker y
+// prod lo fijan en false como segunda barrera. Con el apagado, POST /sesiones
+// responde 404: el unico proveedor de identidad del producto es Firebase.
 @Tag(name = "usuarios")
 public class SesionController {
 
@@ -53,7 +57,7 @@ public class SesionController {
     private final boolean loginLocalHabilitado;
 
     public SesionController(AuthenticationUseCase authenticationUseCase,
-                          @Value("${nexovital.auth.local.enabled:true}") boolean loginLocalHabilitado) {
+                          @Value("${nexovital.auth.local.enabled:false}") boolean loginLocalHabilitado) {
         this.authenticationUseCase = authenticationUseCase;
         this.loginLocalHabilitado = loginLocalHabilitado;
     }

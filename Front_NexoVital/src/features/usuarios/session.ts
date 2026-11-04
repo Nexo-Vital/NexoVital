@@ -14,7 +14,8 @@ import { hasRoleHome } from './role-home';
 
 /**
  * Seeded accounts advertised on the login screen. This is only a shortcut that
- * fills the form: the credentials still travel through POST /api/v1/sesiones, so the
+ * fills the form: the credentials still go to the configured identity provider
+ * (Firebase in production, the local fallback only under `npm run dev`), so the
  * server remains the single source of truth for authentication.
  */
 export interface DemoUser {
