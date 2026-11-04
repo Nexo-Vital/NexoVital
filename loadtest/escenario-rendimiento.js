@@ -26,6 +26,7 @@
 //   DESTINOS      /topic/flota,...        topicos a los que se suscribe cada cliente
 //   DURACION      15m                     meseta de la carga HTTP
 //   SUB_DURACION  15m                     meseta de los suscriptores
+//   RATE          8                       peticiones HTTP por segundo de la meseta
 //   CONSECUTIVO   true                    activa el control de huecos
 //
 // El endpoint /ws esta registrado con .withSockJS(): el transporte crudo vive
@@ -64,6 +65,10 @@ const CON_CONSECUTIVO = __ENV.CONSECUTIVO === 'true';
 // DURACION permite una corrida corta de humo. Por defecto, la meseta de ESC-7.
 const DURACION = __ENV.DURACION || '15m';
 const SUB_DURACION = __ENV.SUB_DURACION || DURACION;
+// Peticiones por segundo de la meseta HTTP. Configurable porque el escenario de
+// rendimiento fija la volumetria: dejarlo clavado en 8 obligaba a editar el
+// script para demostrar los 100 req/s del enunciado.
+const RATE = Number(__ENV.RATE || 8);
 // Topicos a los que se suscribe cada cliente de prueba.
 const DESTINOS = (__ENV.DESTINOS || '/topic/flota,/topic/emergencias,/topic/map.events')
   .split(',')
@@ -93,7 +98,7 @@ const escenarios = {
   lectura: {
     executor: 'constant-arrival-rate',
     exec: 'lectura',
-    rate: 8,
+    rate: RATE,
     timeUnit: '1s',
     duration: DURACION,
     preAllocatedVUs: 20,
