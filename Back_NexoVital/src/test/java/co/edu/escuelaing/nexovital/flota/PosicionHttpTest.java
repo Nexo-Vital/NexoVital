@@ -113,19 +113,19 @@ class PosicionHttpTest extends LoginTestBase {
     }
 
     // -----------------------------------------------------------------------
-    // AC2 — a foreign unit is refused with 409 and never moves
+    // AC2 — a foreign unit is refused with 403 and never moves
     // -----------------------------------------------------------------------
 
     @Test
-    @DisplayName("AC2: reportar la posición de una unidad ajena responde 409 y no la mueve")
-    void ac2_reportarUnaUnidadAjenaDevuelve409() throws Exception {
+    @DisplayName("AC2: reportar la posición de una unidad ajena responde 403 y no la mueve")
+    void ac2_reportarUnaUnidadAjenaDevuelve403() throws Exception {
         String token = tokenDe(CONDUCTOR, CONDUCTOR_PASSWORD);
 
         mockMvc.perform(post("/api/v1/flota/ambulancias/{id}/posicion", unidadAjena)
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(cuerpoPosicion(4.99d, -73.99d, 10)))
-                .andExpect(status().isConflict())
+                .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.codigo").value("AMBULANCIA_AJENA"));
 
         AmbulanciaJpaEntity ajena = ambulanciaJpaRepository.findById(unidadAjena).orElseThrow();

@@ -164,9 +164,9 @@ describe('usePositionReport (EP-04.F1.US1, D2)', () => {
     expect(mockReportar).toHaveBeenCalledTimes(2);
   });
 
-  it('stops insisting when the server says the unit belongs to another driver (409)', async () => {
+  it('stops insisting when the server says the unit belongs to another driver (403)', async () => {
     mockReportar.mockRejectedValueOnce(
-      new ApiError(409, 'La unidad no es tuya', 'AMBULANCIA_AJENA'),
+      new ApiError(403, 'La unidad no es tuya', 'AMBULANCIA_AJENA'),
     );
     mount();
     await flush();
