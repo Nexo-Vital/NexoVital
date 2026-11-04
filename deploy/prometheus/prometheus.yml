@@ -11,6 +11,12 @@ global:
   scrape_interval: 10s
   evaluation_interval: 10s
 
+# Reglas de alerta (ESC-7). Se evaluan cada `evaluation_interval`; las alertas
+# activas se consultan en /alerts. No hay Alertmanager: el compose no envia
+# notificaciones, solo deja visible el estado.
+rule_files:
+  - /etc/prometheus/alertas.yml
+
 scrape_configs:
   - job_name: nexovital-backend
     metrics_path: /actuator/prometheus

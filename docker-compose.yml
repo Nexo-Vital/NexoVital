@@ -145,6 +145,7 @@ services:
     image: prom/prometheus:latest
     volumes:
       - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus/alertas.yml:/etc/prometheus/alertas.yml:ro
       - prometheus-data:/prometheus
     ports:
       - "9090:9090"
