@@ -1,3 +1,4 @@
+﻿import { stripTrailingSlashes } from '@/shared/http/strip-trailing-slashes';
 import type { Ubicacion } from '@/types/domain';
 
 /**
@@ -23,7 +24,7 @@ const DEFAULT_ROUTING_BASE = 'https://router.project-osrm.org';
 export const ROUTING_TIMEOUT_MS = 8000;
 
 /**
- * Cache granularity, in decimal places (~100 m near Bogotá). Two requests whose
+ * Cache granularity, in decimal places (~100 m near BogotÃ¡). Two requests whose
  * endpoints round to the same key share one network call (AC4).
  */
 const COORDINATE_DECIMALS = 3;
@@ -32,7 +33,7 @@ const COORDINATE_DECIMALS = 3;
 function routingBase(): string {
   const configured = import.meta.env.VITE_ROUTING_BASE as string | undefined;
   const base = configured && configured.length > 0 ? configured : DEFAULT_ROUTING_BASE;
-  return base.replace(/\/+$/, '');
+  return stripTrailingSlashes(base);
 }
 
 function isFiniteNumber(value: unknown): value is number {
