@@ -70,6 +70,17 @@ vi.mock('@/features/mapa/routing-api', () => ({
 
 mockFetchRuta.mockReturnValue(new Promise(() => {}));
 
+/**
+ * Broadcast used across the page tests.
+ *
+ * <p>`timeoutEn` is refreshed in `beforeEach`: the fixture is built once when
+ * the module loads, and the inbox drops an offer whose deadline is already in
+ * the past. A deadline computed at import time was therefore born expired in
+ * any run that took more than 45 s to reach these tests — the full suite under
+ * coverage does — and the card never appeared. Refreshing it per test keeps the
+ * offer 45 s ahead without making the value change between two reads inside the
+ * same test (some cases compare the whole object).
+ */
 const BROADCAST: SolicitudBroadcastPayload = {
   type: 'solicitud.broadcast',
   requestId: 'REQ-1',
@@ -147,6 +158,9 @@ describe('DriverConsolePage', () => {
     // relay instead of calling the backend (FIX1). The REST path is covered by
     // DriverConsolePage.remote.test.tsx.
     vi.stubEnv('VITE_DEMO_MODE', '1');
+    // The offer must be alive when this test runs, not when the module loaded:
+    // under coverage the file can start more than 45 s after the import.
+    BROADCAST.timeoutEn = new Date(Date.now() + 45_000).toISOString();
   });
 
   afterEach(() => {
