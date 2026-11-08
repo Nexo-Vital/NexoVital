@@ -26,6 +26,8 @@ import java.util.Objects;
  *                  {@code null} si el mensaje todavía no se instrumentó
  * @param consecutivo número creciente por instancia y destino, o {@code null}
  * @param instancia identificador de la instancia que publicó, o {@code null}
+ * @param traceId identificador de correlación de la petición que originó el
+ *                evento (T34), o {@code null} si no nació de una petición
  */
 public record PushMessage(
         String destino,
@@ -33,16 +35,17 @@ public record PushMessage(
         String usuario,
         String emitidoEn,
         String consecutivo,
-        String instancia) {
+        String instancia,
+        String traceId) {
 
     /** Tópico/cola compartido, sin instrumentar. */
     public PushMessage(String destino, Object payload) {
-        this(destino, payload, null, null, null, null);
+        this(destino, payload, null, null, null, null, null);
     }
 
     /** Destino por usuario, sin instrumentar. */
     public PushMessage(String destino, Object payload, String usuario) {
-        this(destino, payload, usuario, null, null, null);
+        this(destino, payload, usuario, null, null, null, null);
     }
 
     public PushMessage {

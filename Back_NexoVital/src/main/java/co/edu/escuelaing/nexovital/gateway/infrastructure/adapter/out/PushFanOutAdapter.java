@@ -1,5 +1,6 @@
 package co.edu.escuelaing.nexovital.gateway.infrastructure.adapter.out;
 
+import co.edu.escuelaing.nexovital.observabilidad.infrastructure.TraceId;
 import co.edu.escuelaing.nexovital.shared.domain.model.PushMessage;
 import java.util.HashMap;
 import java.util.Map;
@@ -35,12 +36,15 @@ import org.springframework.stereotype.Component;
  * una entrega doble para los clientes de la instancia que originó el evento. Ella
  * también está suscrita a su propia cola, así que ya va a recibir su copia.
  *
- * <p><b>Instrumentación (T27).</b> {@code emitidoEn}, {@code consecutivo} e
+ * <p><b>Instrumentación (T27, T34).</b> {@code emitidoEn}, {@code consecutivo} e
  * {@code instancia} se asignan <b>una sola vez, al publicar</b>. Si se asignaran
  * al entregar, cada nodo numeraría el mismo evento con su propia secuencia y el
  * receptor vería dos numeraciones distintas. El consecutivo es por instancia y
  * destino: uno global se intercalaría entre nodos y daría huecos que no son
- * pérdidas.
+ * pérdidas. El {@code traceId} de la petición que originó el evento viaja igual:
+ * dentro del mensaje por RabbitMQ y como cabecera STOMP, y la instancia que
+ * entrega lo publica en su MDC mientras empuja, para que sus logs queden
+ * correlacionados con los del origen.
  */
 @Component
 public class PushFanOutAdapter {
@@ -51,6 +55,8 @@ public class PushFanOutAdapter {
     static final String CABECERA_CONSECUTIVO = "consecutivo";
     /** Instancia que publicó el evento. */
     static final String CABECERA_INSTANCIA = "instancia";
+    /** Identificador de correlación de la petición que originó el evento. */
+    static final String CABECERA_TRACE_ID = "traceId";
 
     private final SimpMessagingTemplate messagingTemplate;
     private final ObjectProvider<RabbitTemplate> rabbitTemplate;
@@ -103,13 +109,28 @@ public class PushFanOutAdapter {
      * destino es un tópico o una cola compartida y se usa {@code convertAndSend}.
      */
     public void entregarLocal(PushMessage mensaje) {
-        Map<String, Object> cabeceras = cabecerasDe(mensaje);
-        if (mensaje.usuario() != null) {
-            messagingTemplate.convertAndSendToUser(
-                    mensaje.usuario(), mensaje.destino(), mensaje.payload(), cabeceras);
-            return;
+        // El traceId viaja con el mensaje: la instancia que entrega lo pone en su
+        // MDC mientras empuja, así sus logs quedan correlacionados con el origen
+        // aunque el evento haya nacido en otro nodo (T34).
+        String traceAnterior = TraceId.actual();
+        if (mensaje.traceId() != null) {
+            TraceId.poner(mensaje.traceId());
         }
-        messagingTemplate.convertAndSend(mensaje.destino(), mensaje.payload(), cabeceras);
+        try {
+            Map<String, Object> cabeceras = cabecerasDe(mensaje);
+            if (mensaje.usuario() != null) {
+                messagingTemplate.convertAndSendToUser(
+                        mensaje.usuario(), mensaje.destino(), mensaje.payload(), cabeceras);
+                return;
+            }
+            messagingTemplate.convertAndSend(mensaje.destino(), mensaje.payload(), cabeceras);
+        } finally {
+            if (traceAnterior != null) {
+                TraceId.poner(traceAnterior);
+            } else {
+                TraceId.limpiar();
+            }
+        }
     }
 
     private PushMessage instrumentar(PushMessage mensaje) {
@@ -125,11 +146,15 @@ public class PushFanOutAdapter {
                 mensaje.usuario(),
                 Long.toString(System.currentTimeMillis()),
                 Long.toString(consecutivo),
-                instancia);
+                instancia,
+                mensaje.traceId() != null ? mensaje.traceId() : TraceId.actual());
     }
 
     private Map<String, Object> cabecerasDe(PushMessage mensaje) {
-        Map<String, Object> cabeceras = new HashMap<>(4);
+        Map<String, Object> cabeceras = new HashMap<>(5);
+        if (mensaje.traceId() != null) {
+            cabeceras.put(CABECERA_TRACE_ID, mensaje.traceId());
+        }
         if (mensaje.emitidoEn() != null) {
             cabeceras.put(CABECERA_EMITIDO_EN, mensaje.emitidoEn());
             cabeceras.put(CABECERA_CONSECUTIVO, mensaje.consecutivo());

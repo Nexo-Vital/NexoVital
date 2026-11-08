@@ -1,8 +1,11 @@
 package co.edu.escuelaing.nexovital.gateway.infrastructure.adapter.out;
 
+import co.edu.escuelaing.nexovital.observabilidad.infrastructure.TraceId;
 import co.edu.escuelaing.nexovital.shared.domain.model.PushMessage;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -19,6 +22,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -42,6 +46,11 @@ class PushFanOutAdapterTest {
 
     @Mock
     private SimpMessagingTemplate messagingTemplate;
+
+    @AfterEach
+    void limpiarTraceId() {
+        TraceId.limpiar();
+    }
 
     @Test
     void mensajeConUsuarioSeEntregaConConvertAndSendToUser() {
@@ -113,5 +122,67 @@ class PushFanOutAdapterTest {
         // La instancia de origen tambien recibe su copia por su propia cola:
         // entregar aca seria una entrega doble.
         verifyNoInteractions(messagingTemplate);
+    }
+
+    // -----------------------------------------------------------------------
+    // T34/T35 — el traceId sigue al evento entre dos instancias
+    // -----------------------------------------------------------------------
+
+    @Test
+    void elTraceIdDeLaPeticionViajaDentroDelMensajeDelBrokerYEnLaCabeceraStomp() {
+        TraceId.poner("trace-origen-123");
+        ObjectProvider<RabbitTemplate> provider = mock(ObjectProvider.class);
+        RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
+        when(provider.getIfAvailable()).thenReturn(rabbitTemplate);
+
+        PushFanOutAdapter adapter = new PushFanOutAdapter(
+                messagingTemplate, provider, true, "nexovital.push", "backend-1");
+
+        adapter.alSolicitarPush(new PushMessage("/topic/flota", "payload"));
+
+        ArgumentCaptor<PushMessage> enviado = ArgumentCaptor.forClass(PushMessage.class);
+        verify(rabbitTemplate).convertAndSend(eq("nexovital.push"), eq(""), enviado.capture());
+        assertEquals("trace-origen-123", enviado.getValue().traceId(),
+                "el id de correlación viaja dentro del mensaje que cruza por RabbitMQ");
+    }
+
+    @Test
+    void laSegundaInstanciaEntregaElEventoConElTraceIdDelOrigen() {
+        String trace = "trace-de-la-otra-instancia";
+        TraceId.poner(trace);
+        ObjectProvider<RabbitTemplate> provider = mock(ObjectProvider.class);
+        RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
+        when(provider.getIfAvailable()).thenReturn(rabbitTemplate);
+
+        // Instancia A: publica al broker.
+        PushFanOutAdapter origen = new PushFanOutAdapter(
+                messagingTemplate, provider, true, "nexovital.push", "backend-1");
+        origen.alSolicitarPush(new PushMessage("/topic/emergencias", "payload"));
+
+        ArgumentCaptor<PushMessage> enviado = ArgumentCaptor.forClass(PushMessage.class);
+        verify(rabbitTemplate).convertAndSend(eq("nexovital.push"), eq(""), enviado.capture());
+        TraceId.limpiar();
+
+        // Instancia B: recibe la copia del broker y la entrega a sus sesiones.
+        SimpMessagingTemplate sesionesB = mock(SimpMessagingTemplate.class);
+        AtomicReference<String> traceEnEntrega = new AtomicReference<>();
+        AtomicReference<Map<String, Object>> cabeceras = new AtomicReference<>();
+        doAnswer(invocacion -> {
+            traceEnEntrega.set(TraceId.actual());
+            cabeceras.set(invocacion.getArgument(2));
+            return null;
+        }).when(sesionesB).convertAndSend(anyString(), any(Object.class), anyMap());
+
+        new PushFanOutAdapter(sesionesB, "backend-2").entregarLocal(enviado.getValue());
+
+        assertEquals(trace, traceEnEntrega.get(),
+                "la instancia que entrega publica en su MDC el traceId del origen");
+        assertEquals(trace, cabeceras.get().get(PushFanOutAdapter.CABECERA_TRACE_ID),
+                "el traceId viaja también como cabecera STOMP");
+        assertEquals(enviado.getValue().consecutivo(),
+                cabeceras.get().get(PushFanOutAdapter.CABECERA_CONSECUTIVO),
+                "el consecutivo es el mismo en las dos instancias");
+        assertEquals("backend-1", cabeceras.get().get(PushFanOutAdapter.CABECERA_INSTANCIA),
+                "la instancia de origen no se reescribe al entregar");
     }
 }
