@@ -25,6 +25,9 @@ tests:
         exp_alerts:
           - exp_labels:
               severidad: critica
+            exp_annotations:
+              resumen: "Ninguna instancia del backend responde"
+              descripcion: "Ninguna de las dos instancias se puede raspar. El balanceador no tiene a donde enrutar y la API esta caida de punta a punta."
 
   - interval: 30s
     input_series:
@@ -41,3 +44,6 @@ tests:
         exp_alerts:
           - exp_labels:
               severidad: critica
+            exp_annotations:
+              resumen: "Mas del 5 % de las peticiones responde 5xx"
+              descripcion: "ESC-1 exige 0 % de 5xx durante una caida de instancia. La tasa agregada supera el 5 % desde hace cinco minutos."
