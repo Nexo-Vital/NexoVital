@@ -1,5 +1,7 @@
 package co.edu.escuelaing.nexovital.flota.application.usecase;
 
+import co.edu.escuelaing.nexovital.auditoria.domain.model.AccionCritica;
+import co.edu.escuelaing.nexovital.auditoria.domain.port.out.RegistroAuditoriaPort;
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoSolicitud;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudRechazadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoAsignableException;
@@ -52,14 +54,17 @@ public class RechazarSolicitudUseCaseImpl implements RechazarSolicitudUseCase {
     private final AmbulanciaRepository ambulanciaRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
+    private final RegistroAuditoriaPort registroAuditoriaPort;
 
     public RechazarSolicitudUseCaseImpl(SolicitudRepository solicitudRepository,
                                         AmbulanciaRepository ambulanciaRepository,
                                         ApplicationEventPublisher eventPublisher,
+                                        RegistroAuditoriaPort registroAuditoriaPort,
                                         Clock clock) {
         this.solicitudRepository = solicitudRepository;
         this.ambulanciaRepository = ambulanciaRepository;
         this.eventPublisher = eventPublisher;
+        this.registroAuditoriaPort = registroAuditoriaPort;
         this.clock = clock;
     }
 
@@ -90,6 +95,13 @@ public class RechazarSolicitudUseCaseImpl implements RechazarSolicitudUseCase {
             eventPublisher.publishEvent(new SolicitudRechazadaEvent(
                     solicitudId, solicitud.getEmergenciaId(), solicitud.getZonaId(), ambulanciaId));
         }
-        return solicitud.conRechazoDe(ambulanciaId);
+        SolicitudAmbulancia rechazada = solicitud.conRechazoDe(ambulanciaId);
+        // Bitacora en la misma transaccion. Un rechazo NO cierra la solicitud,
+        // pero es una decision del conductor y el escenario pide poder leerla.
+        AuditoriaDeSolicitud.registrar(registroAuditoriaPort,
+                AccionCritica.SOLICITUD_RECHAZADA, rechazada, conductorId,
+                "solicitud rechazada por la ambulancia %s".formatted(ambulanciaId),
+                Instant.now(clock));
+        return rechazada;
     }
 }

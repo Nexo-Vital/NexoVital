@@ -14,4 +14,11 @@ public interface ConsultarAuditoriaUseCase {
     List<EventoAuditoria> porEmergencia(UUID emergenciaId);
 
     List<EventoAuditoria> porCentro(UUID centroId);
+
+    /**
+     * Traza de una solicitud creada sin emergencia (p. ej. "pedir ambulancia"
+     * directamente). Las solicitudes que nacen de una emergencia se cuelgan de
+     * la emergencia, para que su traza sea una sola.
+     */
+    List<EventoAuditoria> porSolicitud(UUID solicitudId);
 }

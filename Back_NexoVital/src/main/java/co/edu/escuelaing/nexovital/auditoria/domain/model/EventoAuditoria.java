@@ -32,6 +32,12 @@ public record EventoAuditoria(
     public static final String TIPO_EMERGENCIA = "EMERGENCIA";
     /** Recurso de tipo centro de acopio: se consulta con {@code porCentro}. */
     public static final String TIPO_CENTRO = "CENTRO_ACOPIO";
+    /**
+     * Recurso de tipo solicitud: una solicitud creada directamente (sin
+     * emergencia) también tiene traza. Si la solicitud vino de una emergencia, el
+     * evento se cuelga de la emergencia para que su traza sea completa.
+     */
+    public static final String TIPO_SOLICITUD = "SOLICITUD";
 
     public EventoAuditoria {
         Objects.requireNonNull(accion, "accion");

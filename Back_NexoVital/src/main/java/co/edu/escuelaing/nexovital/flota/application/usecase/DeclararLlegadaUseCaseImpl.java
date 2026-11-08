@@ -1,5 +1,7 @@
 package co.edu.escuelaing.nexovital.flota.application.usecase;
 
+import co.edu.escuelaing.nexovital.auditoria.domain.model.AccionCritica;
+import co.edu.escuelaing.nexovital.auditoria.domain.port.out.RegistroAuditoriaPort;
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoSolicitud;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudLlegadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.exception.AmbulanciaNoDisponibleException;
@@ -40,13 +42,16 @@ public class DeclararLlegadaUseCaseImpl implements DeclararLlegadaUseCase {
     private final SolicitudRepository solicitudRepository;
     private final AmbulanciaRepository ambulanciaRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final RegistroAuditoriaPort registroAuditoriaPort;
 
     public DeclararLlegadaUseCaseImpl(SolicitudRepository solicitudRepository,
                                       AmbulanciaRepository ambulanciaRepository,
-                                      ApplicationEventPublisher eventPublisher) {
+                                      ApplicationEventPublisher eventPublisher,
+                                      RegistroAuditoriaPort registroAuditoriaPort) {
         this.solicitudRepository = solicitudRepository;
         this.ambulanciaRepository = ambulanciaRepository;
         this.eventPublisher = eventPublisher;
+        this.registroAuditoriaPort = registroAuditoriaPort;
     }
 
     @Override
@@ -81,6 +86,13 @@ public class DeclararLlegadaUseCaseImpl implements DeclararLlegadaUseCase {
         }
 
         SolicitudAmbulancia llegada = solicitud.llegar(ahora);
+
+        // Bitacora en la misma transaccion: la llegada es un cambio de estado
+        // del servicio y forma parte de la traza que el escenario pide leer.
+        AuditoriaDeSolicitud.registrar(registroAuditoriaPort,
+                AccionCritica.LLEGADA_REPORTADA, llegada, conductorId,
+                "llegada declarada por la ambulancia %s".formatted(ambulanciaId),
+                ahora);
 
         eventPublisher.publishEvent(new SolicitudLlegadaEvent(
                 solicitudId, llegada.getEmergenciaId(), llegada.getZonaId(),

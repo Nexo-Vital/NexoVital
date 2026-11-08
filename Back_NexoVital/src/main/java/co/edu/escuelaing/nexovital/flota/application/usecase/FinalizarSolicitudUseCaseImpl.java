@@ -1,5 +1,7 @@
 package co.edu.escuelaing.nexovital.flota.application.usecase;
 
+import co.edu.escuelaing.nexovital.auditoria.domain.model.AccionCritica;
+import co.edu.escuelaing.nexovital.auditoria.domain.port.out.RegistroAuditoriaPort;
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoAmbulancia;
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoSolicitud;
 import co.edu.escuelaing.nexovital.flota.domain.event.FlotaActualizadaEvent;
@@ -45,13 +47,16 @@ public class FinalizarSolicitudUseCaseImpl implements FinalizarSolicitudUseCase 
     private final SolicitudRepository solicitudRepository;
     private final AmbulanciaRepository ambulanciaRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final RegistroAuditoriaPort registroAuditoriaPort;
 
     public FinalizarSolicitudUseCaseImpl(SolicitudRepository solicitudRepository,
                                          AmbulanciaRepository ambulanciaRepository,
-                                         ApplicationEventPublisher eventPublisher) {
+                                         ApplicationEventPublisher eventPublisher,
+                                         RegistroAuditoriaPort registroAuditoriaPort) {
         this.solicitudRepository = solicitudRepository;
         this.ambulanciaRepository = ambulanciaRepository;
         this.eventPublisher = eventPublisher;
+        this.registroAuditoriaPort = registroAuditoriaPort;
     }
 
     @Override
@@ -88,6 +93,13 @@ public class FinalizarSolicitudUseCaseImpl implements FinalizarSolicitudUseCase 
         }
 
         SolicitudAmbulancia finalizada = solicitud.finalizar();
+
+        // Bitacora en la misma transaccion: el cierre del servicio es lo ultimo
+        // que la traza de la emergencia tiene que mostrar.
+        AuditoriaDeSolicitud.registrar(registroAuditoriaPort,
+                AccionCritica.SERVICIO_FINALIZADO, finalizada, conductorId,
+                "servicio finalizado por la ambulancia %s".formatted(ambulanciaId),
+                java.time.Instant.now());
 
         eventPublisher.publishEvent(new SolicitudFinalizadaEvent(
                 solicitudId, finalizada.getEmergenciaId(), finalizada.getZonaId(),

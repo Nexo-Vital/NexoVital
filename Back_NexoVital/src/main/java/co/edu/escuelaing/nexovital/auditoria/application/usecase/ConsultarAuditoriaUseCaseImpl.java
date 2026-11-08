@@ -33,4 +33,9 @@ public class ConsultarAuditoriaUseCaseImpl implements ConsultarAuditoriaUseCase 
     public List<EventoAuditoria> porCentro(UUID centroId) {
         return registroAuditoriaPort.porRecurso(EventoAuditoria.TIPO_CENTRO, centroId);
     }
+
+    @Override
+    public List<EventoAuditoria> porSolicitud(UUID solicitudId) {
+        return registroAuditoriaPort.porRecurso(EventoAuditoria.TIPO_SOLICITUD, solicitudId);
+    }
 }

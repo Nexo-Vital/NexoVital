@@ -49,4 +49,12 @@ public class AuditoriaController {
                 .map(EventoAuditoriaDto::fromDomain)
                 .toList();
     }
+
+    @GetMapping("/solicitudes/{solicitudId}")
+    @Operation(summary = "Traza de auditoria de una solicitud sin emergencia, en orden cronologico")
+    public List<EventoAuditoriaDto> porSolicitud(@PathVariable UUID solicitudId) {
+        return consultarAuditoriaUseCase.porSolicitud(solicitudId).stream()
+                .map(EventoAuditoriaDto::fromDomain)
+                .toList();
+    }
 }

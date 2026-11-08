@@ -1,5 +1,7 @@
 package co.edu.escuelaing.nexovital.flota.application.usecase;
 
+import co.edu.escuelaing.nexovital.auditoria.domain.model.AccionCritica;
+import co.edu.escuelaing.nexovital.auditoria.domain.port.out.RegistroAuditoriaPort;
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoAmbulancia;
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoSolicitud;
 import co.edu.escuelaing.nexovital.flota.domain.event.FlotaActualizadaEvent;
@@ -19,6 +21,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -57,13 +60,16 @@ public class AceptarSolicitudUseCaseImpl implements AceptarSolicitudUseCase {
     private final SolicitudRepository solicitudRepository;
     private final AmbulanciaRepository ambulanciaRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final RegistroAuditoriaPort registroAuditoriaPort;
 
     public AceptarSolicitudUseCaseImpl(SolicitudRepository solicitudRepository,
                                        AmbulanciaRepository ambulanciaRepository,
-                                       ApplicationEventPublisher eventPublisher) {
+                                       ApplicationEventPublisher eventPublisher,
+                                       RegistroAuditoriaPort registroAuditoriaPort) {
         this.solicitudRepository = solicitudRepository;
         this.ambulanciaRepository = ambulanciaRepository;
         this.eventPublisher = eventPublisher;
+        this.registroAuditoriaPort = registroAuditoriaPort;
     }
 
     @Override
@@ -128,6 +134,12 @@ public class AceptarSolicitudUseCaseImpl implements AceptarSolicitudUseCase {
         if (unidadOcupada == 0) {
             throw new AmbulanciaNoDisponibleException(ambulanciaId);
         }
+
+        // Bitacora en la MISMA transaccion: el accept y su traza commitean juntos.
+        AuditoriaDeSolicitud.registrar(registroAuditoriaPort,
+                AccionCritica.AMBULANCIA_ASIGNADA, asignada, conductorId,
+                "solicitud asignada a la ambulancia %s".formatted(ambulanciaId),
+                Instant.now());
 
         // The notified list travels with the event: every OTHER notified unit is
         // told at once that the request is taken (SolicitudTomadaPushListener).

@@ -1,5 +1,7 @@
 package co.edu.escuelaing.nexovital.flota.application.usecase;
 
+import co.edu.escuelaing.nexovital.auditoria.domain.model.AccionCritica;
+import co.edu.escuelaing.nexovital.auditoria.domain.port.out.RegistroAuditoriaPort;
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoSolicitud;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudConfirmadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.exception.LlegadaNoDeclaradaException;
@@ -43,11 +45,14 @@ public class ConfirmarSolicitudUseCaseImpl implements ConfirmarSolicitudUseCase 
 
     private final SolicitudRepository solicitudRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final RegistroAuditoriaPort registroAuditoriaPort;
 
     public ConfirmarSolicitudUseCaseImpl(SolicitudRepository solicitudRepository,
-                                         ApplicationEventPublisher eventPublisher) {
+                                         ApplicationEventPublisher eventPublisher,
+                                         RegistroAuditoriaPort registroAuditoriaPort) {
         this.solicitudRepository = solicitudRepository;
         this.eventPublisher = eventPublisher;
+        this.registroAuditoriaPort = registroAuditoriaPort;
     }
 
     @Override
@@ -88,6 +93,13 @@ public class ConfirmarSolicitudUseCaseImpl implements ConfirmarSolicitudUseCase 
         }
 
         SolicitudAmbulancia confirmada = solicitud.confirmar();
+
+        // Bitacora en la misma transaccion: el ciudadano confirma la llegada y
+        // ese hecho cierra la traza del servicio.
+        AuditoriaDeSolicitud.registrar(registroAuditoriaPort,
+                AccionCritica.LLEGADA_CONFIRMADA, confirmada, solicitanteId,
+                "llegada confirmada por el solicitante",
+                java.time.Instant.now());
 
         eventPublisher.publishEvent(new SolicitudConfirmadaEvent(
                 solicitudId, confirmada.getEmergenciaId(), confirmada.getZonaId(),
