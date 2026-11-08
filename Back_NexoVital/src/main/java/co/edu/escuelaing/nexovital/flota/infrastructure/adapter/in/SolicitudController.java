@@ -26,6 +26,7 @@ import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in.dto.AceptarSo
 import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in.dto.RechazarSolicitudRequest;
 import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in.dto.SolicitudAmbulanciaDto;
 import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in.dto.SolicitudRequest;
+import co.edu.escuelaing.nexovital.infrastructure.config.RegistroAccesoDenegado;
 import co.edu.escuelaing.nexovital.shared.infrastructure.dto.ErrorResponse;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.Usuario;
 import io.swagger.v3.oas.annotations.Operation;
@@ -106,6 +107,7 @@ public class SolicitudController {
     private final ConsultarDetalleSolicitudUseCase consultarDetalleSolicitudUseCase;
     private final ListarMisSolicitudesUseCase listarMisSolicitudesUseCase;
     private final NombreUsuarioPort nombreUsuarioPort;
+    private final RegistroAccesoDenegado registroAccesoDenegado;
 
     public SolicitudController(SolicitarAmbulanciaUseCase solicitarAmbulanciaUseCase,
                                AceptarSolicitudUseCase aceptarSolicitudUseCase,
@@ -116,7 +118,8 @@ public class SolicitudController {
                                CancelarSolicitudUseCase cancelarSolicitudUseCase,
                                ConsultarDetalleSolicitudUseCase consultarDetalleSolicitudUseCase,
                                ListarMisSolicitudesUseCase listarMisSolicitudesUseCase,
-                               NombreUsuarioPort nombreUsuarioPort) {
+                               NombreUsuarioPort nombreUsuarioPort,
+                               RegistroAccesoDenegado registroAccesoDenegado) {
         this.solicitarAmbulanciaUseCase = solicitarAmbulanciaUseCase;
         this.aceptarSolicitudUseCase = aceptarSolicitudUseCase;
         this.rechazarSolicitudUseCase = rechazarSolicitudUseCase;
@@ -127,6 +130,7 @@ public class SolicitudController {
         this.consultarDetalleSolicitudUseCase = consultarDetalleSolicitudUseCase;
         this.listarMisSolicitudesUseCase = listarMisSolicitudesUseCase;
         this.nombreUsuarioPort = nombreUsuarioPort;
+        this.registroAccesoDenegado = registroAccesoDenegado;
     }
 
     /** The public projection, with the requester's name. */
@@ -228,6 +232,7 @@ public class SolicitudController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ErrorResponse.of("SOLICITUD_NO_ENCONTRADA", MENSAJE_SOLICITUD_NO_ENCONTRADA));
         } catch (SolicitudNoNotificadaException e) {
+            registroAccesoDenegado.registrar("recurso_ajeno");
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(ErrorResponse.of("SOLICITUD_NO_NOTIFICADA", MENSAJE_SOLICITUD_NO_NOTIFICADA));
         } catch (RuntimeException e) {
@@ -494,6 +499,7 @@ public class SolicitudController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ErrorResponse.of("SOLICITUD_NO_ENCONTRADA", MENSAJE_SOLICITUD_NO_ENCONTRADA));
         } catch (SolicitudAjenaException e) {
+            registroAccesoDenegado.registrar("recurso_ajeno");
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(ErrorResponse.of("SOLICITUD_AJENA", MENSAJE_SOLICITUD_AJENA));
         } catch (SolicitudNoAsignableException e) {

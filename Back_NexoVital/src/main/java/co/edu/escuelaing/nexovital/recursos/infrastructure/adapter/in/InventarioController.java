@@ -11,6 +11,7 @@ import co.edu.escuelaing.nexovital.recursos.domain.port.in.DespacharStockUseCase
 import co.edu.escuelaing.nexovital.recursos.domain.model.RetiroInventario;
 import co.edu.escuelaing.nexovital.recursos.domain.port.in.RegistrarDonacionUseCase;
 import co.edu.escuelaing.nexovital.recursos.domain.port.out.CentroPropioPort;
+import co.edu.escuelaing.nexovital.infrastructure.config.RegistroAccesoDenegado;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.Usuario;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
@@ -72,15 +73,18 @@ public class InventarioController {
     private final RegistrarDonacionUseCase registrarDonacionUseCase;
     private final DespacharStockUseCase despacharStockUseCase;
     private final CentroPropioPort centroPropioPort;
+    private final RegistroAccesoDenegado registroAccesoDenegado;
 
     public InventarioController(ConsultarInventarioUseCase consultarInventarioUseCase,
                                 RegistrarDonacionUseCase registrarDonacionUseCase,
                                 DespacharStockUseCase despacharStockUseCase,
-                                CentroPropioPort centroPropioPort) {
+                                CentroPropioPort centroPropioPort,
+                                RegistroAccesoDenegado registroAccesoDenegado) {
         this.centroPropioPort = centroPropioPort;
         this.consultarInventarioUseCase = consultarInventarioUseCase;
         this.registrarDonacionUseCase = registrarDonacionUseCase;
         this.despacharStockUseCase = despacharStockUseCase;
+        this.registroAccesoDenegado = registroAccesoDenegado;
     }
 
     /**
@@ -181,6 +185,7 @@ public class InventarioController {
     @Operation(summary = "Despachar un insumo con descuento atomico (C1)")
     public ResponseEntity<Object> despachar(@PathVariable UUID id, @RequestBody DespachoRequest request) {
         if (!puedeRetirarDe(id)) {
+            registroAccesoDenegado.registrar("recurso_ajeno");
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(ErrorResponse.of("NO_ES_DUENO_DEL_CENTRO", MENSAJE_NO_ES_DUENO));
         }
