@@ -1,6 +1,6 @@
 import { findDemoAccount } from '../mocks/demo-users';
-import { isFirebaseConfigured, loginFirebase } from './firebase';
 import type { Usuario } from '../types/domain';
+import { isFirebaseConfigured, loginFirebase } from './firebase';
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '/api/v1';
 
