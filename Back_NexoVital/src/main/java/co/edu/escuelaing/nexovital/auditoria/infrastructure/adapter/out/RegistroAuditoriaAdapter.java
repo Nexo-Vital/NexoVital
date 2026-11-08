@@ -32,7 +32,7 @@ public class RegistroAuditoriaAdapter implements RegistroAuditoriaPort {
     public void registrar(EventoAuditoria evento) {
         repositorio.save(new EventoAuditoriaJpaEntity(
                 evento.id(),
-                evento.actorId(),
+                evento.actorId() != null ? evento.actorId() : actorActual(),
                 evento.actorRol() != null ? evento.actorRol() : rolActual(),
                 evento.accion(),
                 evento.recursoTipo(),
@@ -75,5 +75,21 @@ public class RegistroAuditoriaAdapter implements RegistroAuditoriaPort {
                 .findFirst()
                 .map(authority -> authority.getAuthority().replaceFirst("^ROLE_", ""))
                 .orElse(null);
+    }
+
+    /**
+     * Id del llamante, o {@code null} si el evento no nace de una petición.
+     * Permite que un caso de uso que no recibe el actor como parámetro (la
+     * donación, por ejemplo) registre igual quién hizo la acción.
+     */
+    private static UUID actorActual() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return null;
+        }
+        if (authentication.getPrincipal() instanceof Usuario usuario) {
+            return usuario.getId();
+        }
+        return null;
     }
 }

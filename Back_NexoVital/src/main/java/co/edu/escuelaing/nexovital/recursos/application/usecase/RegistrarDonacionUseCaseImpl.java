@@ -1,5 +1,8 @@
 package co.edu.escuelaing.nexovital.recursos.application.usecase;
 
+import co.edu.escuelaing.nexovital.auditoria.domain.model.AccionCritica;
+import co.edu.escuelaing.nexovital.auditoria.domain.model.EventoAuditoria;
+import co.edu.escuelaing.nexovital.auditoria.domain.port.out.RegistroAuditoriaPort;
 import co.edu.escuelaing.nexovital.recursos.domain.exception.CentroAcopioNoEncontradoException;
 import co.edu.escuelaing.nexovital.recursos.domain.exception.ItemInventarioNoEncontradoException;
 import co.edu.escuelaing.nexovital.recursos.domain.exception.NecesidadCubiertaException;
@@ -13,6 +16,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -44,13 +48,16 @@ public class RegistrarDonacionUseCaseImpl implements RegistrarDonacionUseCase {
     private final InventarioRepository inventarioRepository;
     private final CentroAcopioQueryPort centroAcopioQueryPort;
     private final ApplicationEventPublisher eventPublisher;
+    private final RegistroAuditoriaPort registroAuditoriaPort;
 
     public RegistrarDonacionUseCaseImpl(InventarioRepository inventarioRepository,
                                         CentroAcopioQueryPort centroAcopioQueryPort,
-                                        ApplicationEventPublisher eventPublisher) {
+                                        ApplicationEventPublisher eventPublisher,
+                                        RegistroAuditoriaPort registroAuditoriaPort) {
         this.inventarioRepository = inventarioRepository;
         this.centroAcopioQueryPort = centroAcopioQueryPort;
         this.eventPublisher = eventPublisher;
+        this.registroAuditoriaPort = registroAuditoriaPort;
     }
 
     @Override
@@ -79,10 +86,26 @@ public class RegistrarDonacionUseCaseImpl implements RegistrarDonacionUseCase {
                 // was discarded), so the event carries the stock the database holds.
                 ItemInventario acreditado = inventarioRepository.buscar(centroAcopioId, itemId)
                         .orElseThrow(() -> new ItemInventarioNoEncontradoException(centroAcopioId, itemId));
+                // Bitácora en la MISMA transacción del crédito (Sprint 2, T14). El
+                // actor lo resuelve el adaptador desde el contexto de seguridad.
+                registroAuditoriaPort.registrar(EventoAuditoria.nuevo(
+                        AccionCritica.INSUMO_DONADO,
+                        EventoAuditoria.TIPO_CENTRO,
+                        centroAcopioId,
+                        null,
+                        detalleDonacion(itemId, acreditado.getNombre(), aceptada, cantidad),
+                        Instant.now()));
                 eventPublisher.publishEvent(new DonacionRegistradaEvento(ItemInventarioDto.fromDomain(acreditado)));
                 return new DonacionAceptada(acreditado, aceptada, cantidad);
             }
         }
         throw new IllegalStateException("No fue posible acreditar la donación tras " + INTENTOS_MAXIMOS + " intentos");
+    }
+
+    private static String detalleDonacion(UUID itemId, String nombre, int aceptada, int ofrecida) {
+        return "item=" + itemId
+                + " nombre=" + nombre
+                + " aceptada=" + aceptada
+                + " ofrecida=" + ofrecida;
     }
 }

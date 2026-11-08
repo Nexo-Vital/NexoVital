@@ -8,6 +8,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.Immutable;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -20,9 +21,12 @@ import java.util.UUID;
  * porque las dos consultas del escenario filtran exactamente por esas columnas y
  * ordenan por fecha; sin él, la traza de una emergencia recorre la tabla entera.
  *
- * <p>No hay setters: una fila de auditoría se escribe una vez y no se modifica.
+ * <p>No hay setters y la entidad es {@link Immutable}: una fila de auditoría se
+ * escribe una vez y Hibernate ignora cualquier cambio posterior. La bitácora se
+ * puede leer y agregar, nunca reescribir.
  */
 @Entity
+@Immutable
 @Table(name = "auditoria_eventos",
         indexes = @Index(name = "idx_auditoria_recurso",
                 columnList = "recurso_tipo,recurso_id,ocurrido_en"))

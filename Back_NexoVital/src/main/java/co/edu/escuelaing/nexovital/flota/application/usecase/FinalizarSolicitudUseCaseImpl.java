@@ -1,5 +1,8 @@
 package co.edu.escuelaing.nexovital.flota.application.usecase;
 
+import co.edu.escuelaing.nexovital.auditoria.domain.model.AccionCritica;
+import co.edu.escuelaing.nexovital.auditoria.domain.model.EventoAuditoria;
+import co.edu.escuelaing.nexovital.auditoria.domain.port.out.RegistroAuditoriaPort;
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoAmbulancia;
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoSolicitud;
 import co.edu.escuelaing.nexovital.flota.domain.event.FlotaActualizadaEvent;
@@ -18,6 +21,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -45,13 +49,16 @@ public class FinalizarSolicitudUseCaseImpl implements FinalizarSolicitudUseCase 
     private final SolicitudRepository solicitudRepository;
     private final AmbulanciaRepository ambulanciaRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final RegistroAuditoriaPort registroAuditoriaPort;
 
     public FinalizarSolicitudUseCaseImpl(SolicitudRepository solicitudRepository,
                                          AmbulanciaRepository ambulanciaRepository,
-                                         ApplicationEventPublisher eventPublisher) {
+                                         ApplicationEventPublisher eventPublisher,
+                                         RegistroAuditoriaPort registroAuditoriaPort) {
         this.solicitudRepository = solicitudRepository;
         this.ambulanciaRepository = ambulanciaRepository;
         this.eventPublisher = eventPublisher;
+        this.registroAuditoriaPort = registroAuditoriaPort;
     }
 
     @Override
@@ -89,6 +96,15 @@ public class FinalizarSolicitudUseCaseImpl implements FinalizarSolicitudUseCase 
 
         SolicitudAmbulancia finalizada = solicitud.finalizar();
 
+        // Bitácora del cierre en la MISMA transacción (Sprint 2, T14).
+        registroAuditoriaPort.registrar(EventoAuditoria.nuevo(
+                AccionCritica.SERVICIO_FINALIZADO,
+                tipoRecurso(finalizada),
+                idRecurso(finalizada),
+                conductorId,
+                "solicitud=" + solicitudId + " ambulancia=" + ambulanciaId,
+                Instant.now()));
+
         eventPublisher.publishEvent(new SolicitudFinalizadaEvent(
                 solicitudId, finalizada.getEmergenciaId(), finalizada.getZonaId(),
                 ambulanciaId, finalizada.getSolicitanteId()));
@@ -112,5 +128,16 @@ public class FinalizarSolicitudUseCaseImpl implements FinalizarSolicitudUseCase 
         if (!Objects.equals(ambulancia.getConductorId(), conductorId)) {
             throw new SolicitudNoAsignableException(solicitud.getId(), solicitud.getEstado());
         }
+    }
+
+    /** La traza vive en la emergencia; sin emergencia, en la propia solicitud. */
+    private static String tipoRecurso(SolicitudAmbulancia solicitud) {
+        return solicitud.getEmergenciaId() != null
+                ? EventoAuditoria.TIPO_EMERGENCIA
+                : EventoAuditoria.TIPO_SOLICITUD;
+    }
+
+    private static UUID idRecurso(SolicitudAmbulancia solicitud) {
+        return solicitud.getEmergenciaId() != null ? solicitud.getEmergenciaId() : solicitud.getId();
     }
 }

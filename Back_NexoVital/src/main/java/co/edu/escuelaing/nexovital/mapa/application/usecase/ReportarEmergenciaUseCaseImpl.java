@@ -1,5 +1,8 @@
 package co.edu.escuelaing.nexovital.mapa.application.usecase;
 
+import co.edu.escuelaing.nexovital.auditoria.domain.model.AccionCritica;
+import co.edu.escuelaing.nexovital.auditoria.domain.model.EventoAuditoria;
+import co.edu.escuelaing.nexovital.auditoria.domain.port.out.RegistroAuditoriaPort;
 import co.edu.escuelaing.nexovital.mapa.domain.model.Emergencia;
 import co.edu.escuelaing.nexovital.mapa.domain.model.EstadoEmergencia;
 import co.edu.escuelaing.nexovital.mapa.domain.model.NivelEmergencia;
@@ -45,17 +48,20 @@ public class ReportarEmergenciaUseCaseImpl implements ReportarEmergenciaUseCase 
     private final DespachoAmbulanciaPort despachoAmbulanciaPort;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
+    private final RegistroAuditoriaPort registroAuditoriaPort;
 
     public ReportarEmergenciaUseCaseImpl(EmergenciaRepository emergenciaRepository,
                                          ZonaRepository zonaRepository,
                                          DespachoAmbulanciaPort despachoAmbulanciaPort,
                                          ApplicationEventPublisher eventPublisher,
-                                         Clock clock) {
+                                         Clock clock,
+                                         RegistroAuditoriaPort registroAuditoriaPort) {
         this.emergenciaRepository = emergenciaRepository;
         this.zonaRepository = zonaRepository;
         this.despachoAmbulanciaPort = despachoAmbulanciaPort;
         this.eventPublisher = eventPublisher;
         this.clock = clock;
+        this.registroAuditoriaPort = registroAuditoriaPort;
     }
 
     @Override
@@ -86,6 +92,15 @@ public class ReportarEmergenciaUseCaseImpl implements ReportarEmergenciaUseCase 
                 Instant.now(clock));
 
         Emergencia guardada = emergenciaRepository.guardar(emergencia);
+        // Bitácora en la MISMA transacción: si el reporte commitea y esto no, la
+        // traza mentiría por omisión (Sprint 2, T14).
+        registroAuditoriaPort.registrar(EventoAuditoria.nuevo(
+                AccionCritica.EMERGENCIA_REPORTADA,
+                EventoAuditoria.TIPO_EMERGENCIA,
+                guardada.getId(),
+                solicitanteId,
+                detalleEmergencia(guardada),
+                Instant.now(clock)));
         eventPublisher.publishEvent(new EmergenciaRegistradaEvento(guardada));
 
         // Sin solicitante no hay a quien entregarle el ciclo de la solicitud:
@@ -109,5 +124,11 @@ public class ReportarEmergenciaUseCaseImpl implements ReportarEmergenciaUseCase 
                 .map(Zona::getId)
                 .findFirst()
                 .orElse(null);
+    }
+
+    private static String detalleEmergencia(Emergencia emergencia) {
+        return "tipo=" + emergencia.getTipo()
+                + " nivel=" + emergencia.getNivel()
+                + " zona=" + (emergencia.getZonaId() == null ? "-" : emergencia.getZonaId());
     }
 }
