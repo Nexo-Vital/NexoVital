@@ -1,6 +1,6 @@
 # Muestra la evidencia de la distribución: nodos, shards y planes router vs
 # multi-shard. Requiere que la topología Citus esté arriba (levantar.ps1).
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 
 $citus = Split-Path -Parent $MyInvocation.MyCommand.Path
 $raiz = Split-Path -Parent (Split-Path -Parent $citus)

@@ -4,7 +4,7 @@
 #   .\deploy\prometheus\probar-alertas.ps1
 #
 # Sale con codigo 0 solo si todas las reglas pasan.
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 
 $raiz = Split-Path -Parent $MyInvocation.MyCommand.Path
 

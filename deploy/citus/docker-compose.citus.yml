@@ -17,6 +17,11 @@ services:
   db:
     image: citusdata/citus:12.1
     command: ["postgres", "-c", "shared_preload_libraries=citus"]
+    # Volumen propio: no se comparte con el PostgreSQL suelto. Un volumen que
+    # nació como Citus no vuelve limpio a la imagen postgres:16-alpine (y al
+    # revés), así que cada topología guarda su estado por separado.
+    volumes:
+      - nexovital-db-citus:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     environment:
@@ -66,5 +71,6 @@ services:
       retries: 20
 
 volumes:
+  nexovital-db-citus:
   nexovital-db-worker-1:
   nexovital-db-worker-2:

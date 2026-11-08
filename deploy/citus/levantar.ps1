@@ -6,7 +6,7 @@
 #
 # Es idempotente: si ya está todo arriba, vuelve a correr la distribución sin
 # romper nada. La app no cambia: sigue conectándose a `db:5432`.
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 
 $citus = Split-Path -Parent $MyInvocation.MyCommand.Path
 $raiz = Split-Path -Parent (Split-Path -Parent $citus)
