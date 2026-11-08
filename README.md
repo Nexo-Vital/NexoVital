@@ -115,6 +115,25 @@ Mientras tanto, con el perfil `prod` el secreto ya es obligatorio: sin él el ar
 Con el perfil de desarrollo, Swagger UI queda disponible en
 `http://localhost:8080/swagger-ui.html` (y el JSON en `/v3/api-docs`). En `prod` está apagado.
 
+## Topología escalada (2 backends + nginx + observabilidad)
+
+`docker-compose.yml` levanta dos instancias del backend (sin estado) detrás de nginx, con
+RabbitMQ para propagar los eventos entre instancias, Prometheus y Grafana:
+
+```powershell
+docker compose up -d --build
+```
+
+| Servicio | URL |
+|---|---|
+| App (nginx: front + `/api` + `/ws`) | `http://localhost:8080` |
+| Prometheus | `http://localhost:9090` |
+| Grafana | `http://localhost:3000` |
+
+El balanceo se comprueba con las métricas por instancia (`up{job="nexovital-backend"}`) y con
+`docker compose logs backend-1 backend-2`. Las reglas de alerta se prueban con
+`.\deploy\prometheus\probar-alertas.ps1`.
+
 ## Base de datos distribuida (Citus, opcional)
 
 La topología por defecto sigue siendo **un PostgreSQL**. Para levantar la variante con

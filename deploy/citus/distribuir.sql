@@ -45,14 +45,24 @@ END $$;
 
 -- Citus no admite UNIQUE/PRIMARY KEY que no incluyan la columna de
 -- distribución. `ambulancias` tiene un UNIQUE(placa) que no incluye `id`; la
--- placa no se crea por API, así que se retira esa restricción de base.
+-- placa no se crea por API, así que se retira esa restricción de base. Solo se
+-- tocan las restricciones que NO contienen `id`: si mañana se agrega un UNIQUE
+-- que sí incluya la columna de distribución, Citus lo acepta y se respeta.
 DO $$
 DECLARE restriccion record;
 BEGIN
   FOR restriccion IN
     SELECT conname
     FROM pg_constraint
-    WHERE conrelid = 'flota.ambulancias'::regclass AND contype = 'u'
+    WHERE conrelid = 'flota.ambulancias'::regclass
+      AND contype = 'u'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM unnest(conkey) AS columna
+        JOIN pg_attribute atributo
+          ON atributo.attrelid = conrelid AND atributo.attnum = columna
+        WHERE atributo.attname = 'id'
+      )
   LOOP
     EXECUTE format('ALTER TABLE flota.ambulancias DROP CONSTRAINT %I', restriccion.conname);
   END LOOP;
