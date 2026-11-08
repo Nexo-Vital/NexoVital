@@ -1,0 +1,43 @@
+rule_files:
+  - alertas.yml
+
+# T39: la degradación total tiene que verse en 30 s o menos.
+# T45: la alerta de 5xx tiene que dispararse de verdad.
+#
+# Se corre con `promtool test rules alertas.test.yml` (ver probar-alertas.ps1).
+evaluation_interval: 10s
+
+tests:
+  - interval: 10s
+    input_series:
+      - series: 'up{job="nexovital-backend", instancia="backend-1"}'
+        values: '0x12'
+      - series: 'up{job="nexovital-backend", instancia="backend-2"}'
+        values: '0x12'
+    alert_rule_test:
+      # A los 20 s todavía no pasó el `for: 30s`: no debe estar disparada.
+      - eval_time: 20s
+        alertname: NexoVitalTodasLasInstanciasCaidas
+        exp_alerts: []
+      # A los 40 s la condición lleva 40 s siendo cierta: la degradación se ve.
+      - eval_time: 40s
+        alertname: NexoVitalTodasLasInstanciasCaidas
+        exp_alerts:
+          - exp_labels:
+              severidad: critica
+
+  - interval: 30s
+    input_series:
+      - series: 'http_server_requests_seconds_count{status="500", instancia="backend-1"}'
+        values: '0+600x20'
+    alert_rule_test:
+      # Antes del `for: 5m` la alerta de tasa de 5xx no dispara.
+      - eval_time: 4m
+        alertname: NexoVitalTasaErrores5xx
+        exp_alerts: []
+      # Con el 100 % de las peticiones en 5xx sostenido, dispara.
+      - eval_time: 6m
+        alertname: NexoVitalTasaErrores5xx
+        exp_alerts:
+          - exp_labels:
+              severidad: critica
