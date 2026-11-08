@@ -33,7 +33,14 @@ public class AmbulanciaJpaEntity {
     @Id
     private UUID id;
 
-    @Column(nullable = false, unique = true)
+    /**
+     * Sin restricción UNIQUE: Citus exige que todo índice único incluya la
+     * columna de distribución, y esta tabla se distribuye por {@code id}
+     * (deploy/citus/distribuir.sql). La placa no se crea por API —solo la siembra
+     * el seeder—, así que la unicidad no es una invariante que el producto
+     * necesite a nivel de base para escalar horizontalmente.
+     */
+    @Column(nullable = false)
     private String placa;
 
     @Enumerated(EnumType.STRING)

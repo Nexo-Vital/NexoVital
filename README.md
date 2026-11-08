@@ -115,6 +115,20 @@ Mientras tanto, con el perfil `prod` el secreto ya es obligatorio: sin él el ar
 Con el perfil de desarrollo, Swagger UI queda disponible en
 `http://localhost:8080/swagger-ui.html` (y el JSON en `/v3/api-docs`). En `prod` está apagado.
 
+## Base de datos distribuida (Citus, opcional)
+
+La topología por defecto sigue siendo **un PostgreSQL**. Para levantar la variante con
+**escalabilidad horizontal de la base de datos** (coordinador + 2 workers, tablas grandes
+distribuidas):
+
+```powershell
+.\deploy\citus\levantar.ps1    # levanta el cluster y distribuye las tablas
+.\deploy\citus\verificar.ps1   # muestra nodos, shards y planes router/multi-shard
+```
+
+La app no cambia: sigue conectándose a `db:5432` (el coordinador). El diseño, el porqué de la
+llave de sharding y el paralelo con Uber están en `docs/base-datos-distribuida.md`.
+
 ## Origen de este repositorio
 
 Se armó con `git subtree`, así que trae la **historia completa** de cada proyecto

@@ -1,0 +1,70 @@
+# ==========================================================================
+# Override de Citus: convierte el `db` de un PostgreSQL suelto en un
+# coordinador de Citus con dos workers.
+#
+#   docker compose -f docker-compose.yml -f deploy/citus/docker-compose.citus.yml up -d
+#
+# La app NO cambia: sigue hablando con `db:5432`. El coordinador reparte las
+# filas de las tablas distribuidas entre `db-worker-1` y `db-worker-2`.
+#
+# Sin este override, `docker compose up` sigue levantando el PostgreSQL de
+# siempre (una sola base). Este archivo es la demostracion de escalado
+# horizontal de la base de datos.
+# ==========================================================================
+name: nexovital
+
+services:
+  db:
+    image: citusdata/citus:12.1
+    command: ["postgres", "-c", "shared_preload_libraries=citus"]
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: nexovital
+      POSTGRES_USER: nexovital
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD. Copia .env.example como .env y definela}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexovital -d nexovital"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  db-worker-1:
+    restart: unless-stopped
+    image: citusdata/citus:12.1
+    command: ["postgres", "-c", "shared_preload_libraries=citus"]
+    environment:
+      POSTGRES_DB: nexovital
+      POSTGRES_USER: nexovital
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD. Copia .env.example como .env y definela}
+      # Solo para el laboratorio local: el coordinador se conecta a los workers
+      # por la red interna de Docker y no hay TLS ni password en ese salto.
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - nexovital-db-worker-1:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexovital -d nexovital"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  db-worker-2:
+    restart: unless-stopped
+    image: citusdata/citus:12.1
+    command: ["postgres", "-c", "shared_preload_libraries=citus"]
+    environment:
+      POSTGRES_DB: nexovital
+      POSTGRES_USER: nexovital
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD. Copia .env.example como .env y definela}
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - nexovital-db-worker-2:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexovital -d nexovital"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  nexovital-db-worker-1:
+  nexovital-db-worker-2:
