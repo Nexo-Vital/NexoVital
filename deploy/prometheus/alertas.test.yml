@@ -19,7 +19,16 @@ tests:
       - eval_time: 20s
         alertname: NexoVitalTodasLasInstanciasCaidas
         exp_alerts: []
-      # A los 40 s la condición lleva 40 s siendo cierta: la degradación se ve.
+      # A los 30 s se cumple exactamente el `for`: la degradación ya se ve.
+      - eval_time: 30s
+        alertname: NexoVitalTodasLasInstanciasCaidas
+        exp_alerts:
+          - exp_labels:
+              severidad: critica
+            exp_annotations:
+              resumen: "Ninguna instancia del backend responde"
+              descripcion: "Ninguna de las dos instancias se puede raspar. El balanceador no tiene a donde enrutar y la API esta caida de punta a punta."
+      # A los 40 s la condición lleva 40 s siendo cierta: sigue disparada.
       - eval_time: 40s
         alertname: NexoVitalTodasLasInstanciasCaidas
         exp_alerts:

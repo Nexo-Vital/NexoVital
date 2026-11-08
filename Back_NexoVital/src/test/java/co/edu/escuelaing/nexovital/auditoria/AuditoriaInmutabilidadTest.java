@@ -90,7 +90,8 @@ class AuditoriaInmutabilidadTest {
                     .toList();
 
             for (AccionCritica accion : AccionCritica.values()) {
-                assertTrue(codigo.stream().anyMatch(texto -> texto.contains(accion.name())),
+                String uso = "AccionCritica." + accion.name();
+                assertTrue(codigo.stream().anyMatch(texto -> texto.contains(uso)),
                         "ninguna acción crítica queda sin emisor: " + accion);
             }
         }
