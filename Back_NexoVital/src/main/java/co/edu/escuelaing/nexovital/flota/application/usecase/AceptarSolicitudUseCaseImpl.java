@@ -7,6 +7,7 @@ import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoAmbulancia;
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoSolicitud;
 import co.edu.escuelaing.nexovital.flota.domain.event.FlotaActualizadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudAsignadaEvent;
+import co.edu.escuelaing.nexovital.flota.domain.exception.AmbulanciaAjenaException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.AmbulanciaNoDisponibleException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoAsignableException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoEncontradaException;
@@ -79,6 +80,18 @@ public class AceptarSolicitudUseCaseImpl implements AceptarSolicitudUseCase {
         SolicitudAmbulancia solicitud = solicitudRepository.buscarPorId(solicitudId)
                 .orElseThrow(() -> new SolicitudNoEncontradaException(solicitudId));
 
+        // Propiedad ANTES que cualquier regla de estado (Sprint 2, S-4 / T10): el
+        // cliente manda `ambulanciaId`, así que un conductor podría nombrar la
+        // unidad de otro. Eso es un 403 (falta el permiso), no un 409: reintentar
+        // nunca lo arregla. Va primero para que el ajeno no aprenda nada del
+        // estado de la solicitud. Una unidad sin conductor no es de nadie
+        // (Objects.equals(null, x) es false).
+        Ambulancia ambulancia = ambulanciaRepository.buscarPorId(ambulanciaId)
+                .orElseThrow(() -> new AmbulanciaNoDisponibleException(ambulanciaId));
+        if (!Objects.equals(ambulancia.getConductorId(), conductorId)) {
+            throw new AmbulanciaAjenaException(ambulanciaId);
+        }
+
         if (solicitud.getEstado() != EstadoSolicitud.PENDIENTE) {
             // Too late: another unit already has it. A unit that WAS notified
             // is told exactly that ("ya asignada"), the same reason the loser
@@ -90,7 +103,7 @@ public class AceptarSolicitudUseCaseImpl implements AceptarSolicitudUseCase {
             throw new SolicitudNoAsignableException(solicitudId, solicitud.getEstado());
         }
 
-        Ambulancia ambulancia = validarAmbulancia(ambulanciaId);
+        validarDisponibilidad(ambulancia);
 
         // Mirror the reject path: only a unit the request actually notified may
         // act on it. Without this, any driver could accept a request that was
@@ -99,17 +112,9 @@ public class AceptarSolicitudUseCaseImpl implements AceptarSolicitudUseCase {
             throw new SolicitudNoAsignableException(solicitudId, solicitud.getEstado());
         }
 
-        // The unit must be the one driven by the authenticated user: the client
-        // sends `ambulanciaId`, so it cannot be trusted to pick someone else's
-        // unit. A unit without a driver matches nobody (Objects.equals(null, x)
-        // is false), so it can never be claimed.
-        if (!Objects.equals(ambulancia.getConductorId(), conductorId)) {
-            throw new SolicitudNoAsignableException(solicitudId, solicitud.getEstado());
-        }
-
         // A decline is final for that unit (EP-04.F2.US5): the request is still
         // open for the others, but the unit that said no cannot take it back.
-        // Checked after the ownership, so only the unit's own driver learns it.
+        // Ownership was checked first, so only the unit's own driver learns it.
         if (solicitud.fueRechazadaPor(ambulanciaId)) {
             throw new SolicitudYaRechazadaException(solicitudId, ambulanciaId);
         }
@@ -167,17 +172,14 @@ public class AceptarSolicitudUseCaseImpl implements AceptarSolicitudUseCase {
     }
 
     /**
-     * Loads the unit and enforces the availability precondition: available and
-     * connected. It is only the fast path; the guarantee is the conditional
-     * UPDATE of {@code ocuparAtomica}.
+     * Enforces the availability precondition: available and connected. It is
+     * only the fast path; the guarantee is the conditional UPDATE of
+     * {@code ocuparAtomica}.
      */
-    private Ambulancia validarAmbulancia(UUID ambulanciaId) {
-        Ambulancia ambulancia = ambulanciaRepository.buscarPorId(ambulanciaId)
-                .orElseThrow(() -> new AmbulanciaNoDisponibleException(ambulanciaId));
+    private static void validarDisponibilidad(Ambulancia ambulancia) {
         if (ambulancia.getEstado() != EstadoAmbulancia.DISPONIBLE || !ambulancia.isConectada()) {
-            throw new AmbulanciaNoDisponibleException(ambulanciaId);
+            throw new AmbulanciaNoDisponibleException(ambulancia.getId());
         }
-        return ambulancia;
     }
 
     /** La traza vive en la emergencia; sin emergencia, en la propia solicitud. */

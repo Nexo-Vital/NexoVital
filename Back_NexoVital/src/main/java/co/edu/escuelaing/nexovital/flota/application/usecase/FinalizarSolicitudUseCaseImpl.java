@@ -7,6 +7,7 @@ import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoAmbulancia;
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoSolicitud;
 import co.edu.escuelaing.nexovital.flota.domain.event.FlotaActualizadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudFinalizadaEvent;
+import co.edu.escuelaing.nexovital.flota.domain.exception.AmbulanciaAjenaException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.AmbulanciaNoDisponibleException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.ConfirmacionPendienteException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.LlegadaNoDeclaradaException;
@@ -114,18 +115,21 @@ public class FinalizarSolicitudUseCaseImpl implements FinalizarSolicitudUseCase 
     }
 
     /**
-     * The finishing unit must be the one assigned to the request and must belong
-     * to the authenticated driver. A unit without a driver matches nobody
-     * ({@code Objects.equals(null, x)} is false), so it can never finish.
+     * Primero la propiedad, después el estado (Sprint 2, S-4 / T10). La unidad
+     * debe ser del conductor autenticado: si no, es un 403
+     * ({@link AmbulanciaAjenaException}), porque falta el permiso y reintentar
+     * no lo arregla. Una unidad sin conductor no es de nadie
+     * ({@code Objects.equals(null, x)} es false). Recién con la propiedad
+     * resuelta se exige que sea la unidad asignada a la solicitud (409 si no).
      */
     private void validarUnidadAsignadaDelConductor(SolicitudAmbulancia solicitud, UUID ambulanciaId,
                                                    UUID conductorId) {
-        if (!Objects.equals(solicitud.getAmbulanciaAsignadaId(), ambulanciaId)) {
-            throw new SolicitudNoAsignableException(solicitud.getId(), solicitud.getEstado());
-        }
         Ambulancia ambulancia = ambulanciaRepository.buscarPorId(ambulanciaId)
                 .orElseThrow(() -> new AmbulanciaNoDisponibleException(ambulanciaId));
         if (!Objects.equals(ambulancia.getConductorId(), conductorId)) {
+            throw new AmbulanciaAjenaException(ambulanciaId);
+        }
+        if (!Objects.equals(solicitud.getAmbulanciaAsignadaId(), ambulanciaId)) {
             throw new SolicitudNoAsignableException(solicitud.getId(), solicitud.getEstado());
         }
     }

@@ -26,8 +26,7 @@ const STOMP_CONFIG = {
   // memoria de UNA instancia, asi que la segunda responde 403 y el navegador
   // queda en un bucle de reconexion sin conectar nunca. El transporte WebSocket
   // es una sola conexion de larga duracion: no necesita afinidad de sesion.
-  webSocketFactory: () =>
-    new SockJS(STOMP_ENDPOINT, undefined, { transports: ['websocket'] }),
+  webSocketFactory: () => new SockJS(STOMP_ENDPOINT, undefined, { transports: ['websocket'] }),
   heartbeatIncoming: 10000,
   heartbeatOutgoing: 10000,
   reconnectDelay: RECONNECT_DELAY_MS,

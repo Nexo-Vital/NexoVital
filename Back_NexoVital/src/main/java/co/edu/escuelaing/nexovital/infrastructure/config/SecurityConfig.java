@@ -350,9 +350,17 @@ public class SecurityConfig {
                     auth.anyRequest().denyAll();
                 })
                 .exceptionHandling(ex -> ex
-                        .authenticationEntryPoint((request, response, authException) ->
-                                escribirError(response, HttpServletResponse.SC_UNAUTHORIZED,
-                                        "NO_AUTENTICADO", "Token ausente, inválido o expirado"))
+                        .authenticationEntryPoint((request, response, authException) -> {
+                            // Todo 401 también queda registrado (S-1 / T11). Se
+                            // distingue "no mandó token" de "mandó uno que no
+                            // sirve"; el token nunca se escribe en el log.
+                            String authorization = request.getHeader("Authorization");
+                            boolean sinToken = authorization == null || !authorization.startsWith("Bearer ");
+                            registroAccesoDenegado.registrarNoAutenticado(request,
+                                    sinToken ? "token_ausente" : "token_invalido");
+                            escribirError(response, HttpServletResponse.SC_UNAUTHORIZED,
+                                    "NO_AUTENTICADO", "Token ausente, inválido o expirado");
+                        })
                         .accessDeniedHandler((request, response, deniedException) -> {
                             // Todo rechazo por rol queda registrado antes de
                             // responder: es la evidencia que exige el escenario

@@ -330,8 +330,8 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
     }
 
     @Test
-    @DisplayName("FIX2: aceptar con una unidad notificada de OTRO conductor responde 409 y no asigna")
-    void fix2_aceptarConUnidadDeOtroConductorDevuelve409() throws Exception {
+    @DisplayName("FIX2 / Sprint 2 T12: aceptar con una unidad notificada de OTRO conductor responde 403 y no asigna")
+    void fix2_aceptarConUnidadDeOtroConductorDevuelve403() throws Exception {
         String ciudadano = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
         String conductor = tokenDe(CONDUCTOR, CONDUCTOR_PASSWORD);
         String solicitudId = crearSolicitud(ciudadano, zona);
@@ -342,8 +342,8 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
                         .header("Authorization", "Bearer " + conductor)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(cuerpoAmbulancia(ajena)))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.codigo").value("SOLICITUD_NO_ASIGNABLE"));
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("AMBULANCIA_AJENA"));
 
         assertEquals(EstadoSolicitud.PENDIENTE,
                 solicitudJpaRepository.findById(UUID.fromString(solicitudId)).orElseThrow().getEstado());
@@ -357,8 +357,8 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
     // -----------------------------------------------------------------------
 
     @Test
-    @DisplayName("FIX4: rechazar con una unidad notificada de OTRO conductor responde 409")
-    void fix4_rechazarConUnidadDeOtroConductorDevuelve409() throws Exception {
+    @DisplayName("FIX4 / Sprint 2 T12: rechazar con una unidad notificada de OTRO conductor responde 403")
+    void fix4_rechazarConUnidadDeOtroConductorDevuelve403() throws Exception {
         String ciudadano = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
         String conductor = tokenDe(CONDUCTOR, CONDUCTOR_PASSWORD);
         String solicitudId = crearSolicitud(ciudadano, zona);
@@ -369,8 +369,8 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
                         .header("Authorization", "Bearer " + conductor)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(cuerpoAmbulancia(ajena)))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.codigo").value("SOLICITUD_NO_ASIGNABLE"));
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("AMBULANCIA_AJENA"));
 
         // The request is untouched: no decline was recorded for the foreign unit.
         assertEquals(EstadoSolicitud.PENDIENTE,
@@ -442,13 +442,14 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
                         .content(cuerpoAmbulancia(unidad)))
                 .andExpect(status().isOk());
 
-        // A notified but non-assigned unit of another conductor cannot declare it.
+        // A notified but non-assigned unit of another conductor cannot declare it:
+        // the unit is not the caller's, so it is a 403 (Sprint 2, T12).
         mockMvc.perform(post("/api/v1/solicitudes/{id}/llegada", solicitudId)
                         .header("Authorization", "Bearer " + conductor)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(cuerpoAmbulancia(sembradas.get(1))))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.codigo").value("SOLICITUD_NO_ASIGNABLE"));
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("AMBULANCIA_AJENA"));
     }
 
     // -----------------------------------------------------------------------
@@ -642,8 +643,8 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
     // -----------------------------------------------------------------------
 
     @Test
-    @DisplayName("Un CIUDADANO autenticado que NO es el solicitante no puede confirmar (409)")
-    void confirmarConOtroUsuarioDevuelve409() throws Exception {
+    @DisplayName("Sprint 2 T12: un CIUDADANO autenticado que NO es el solicitante no puede confirmar (403 SOLICITUD_AJENA)")
+    void confirmarConOtroUsuarioDevuelve403() throws Exception {
         String ciudadano = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
         String conductor = tokenDe(CONDUCTOR, CONDUCTOR_PASSWORD);
         // A second, unrelated citizen: same role as the requester, so the role
@@ -669,8 +670,8 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
             // citizen is refused, never accepted on a fuzzy match.
             mockMvc.perform(post("/api/v1/solicitudes/{id}/confirmar", solicitudId)
                             .header("Authorization", "Bearer " + ajeno))
-                    .andExpect(status().isConflict())
-                    .andExpect(jsonPath("$.codigo").value("SOLICITUD_NO_ASIGNABLE"));
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.codigo").value("SOLICITUD_AJENA"));
 
             // The refused call changed nothing: the request stays ASIGNADA.
             assertEquals(EstadoSolicitud.ASIGNADA,
@@ -876,8 +877,8 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
     }
 
     @Test
-    @DisplayName("DEBT2: finalizar con una unidad ajena responde 409 y no cierra ni libera nada")
-    void debt2_finalizarConUnidadAjenaDevuelve409() throws Exception {
+    @DisplayName("DEBT2 / Sprint 2 T12: finalizar con una unidad ajena responde 403 y no cierra ni libera nada")
+    void debt2_finalizarConUnidadAjenaDevuelve403() throws Exception {
         String ciudadano = tokenDe(CIUDADANO, CIUDADANO_PASSWORD);
         String conductor = tokenDe(CONDUCTOR, CONDUCTOR_PASSWORD);
         UUID unidad = unidadDelConductor;
@@ -889,13 +890,13 @@ class SolicitudFlujoHttpTest extends LoginTestBase {
                         .content(cuerpoAmbulancia(unidad)))
                 .andExpect(status().isOk());
 
-        // Notified but not assigned: cannot finish another unit's mission.
+        // Notified but not assigned, and driven by someone else: 403 (Sprint 2, T12).
         mockMvc.perform(post("/api/v1/solicitudes/{id}/finalizar", solicitudId)
                         .header("Authorization", "Bearer " + conductor)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(cuerpoAmbulancia(sembradas.get(1))))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.codigo").value("SOLICITUD_NO_ASIGNABLE"));
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("AMBULANCIA_AJENA"));
 
         assertEquals(EstadoSolicitud.ASIGNADA,
                 solicitudJpaRepository.findById(UUID.fromString(solicitudId)).orElseThrow().getEstado());

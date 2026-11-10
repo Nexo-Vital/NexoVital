@@ -28,6 +28,12 @@ import org.springframework.web.context.request.ServletRequestAttributes;
  * <p>El actor se toma del {@code Principal} de seguridad, que es el
  * {@link Usuario} de dominio; si la petición no llegó autenticada se registra
  * {@code anonimo}. Nunca se registra el token ni la contraseña.
+ *
+ * <p><b>Intentos sin sesión válida (Sprint 2, S-1 / T11).</b> Un 401 tampoco
+ * puede ser silencioso: el escenario de autenticación exige "rechaza y registra
+ * el intento". Esos casos se registran con la clave {@code autenticacion_fallida}
+ * (no {@code acceso_denegado}) para poder separarlos: un 401 es "no sé quién
+ * sos" y un 403 es "sé quién sos y no podés".
  */
 @Component
 public class RegistroAccesoDenegado {
@@ -53,6 +59,41 @@ public class RegistroAccesoDenegado {
                 request == null ? SIN_DATO : request.getMethod(),
                 request == null ? SIN_DATO : request.getRequestURI(),
                 motivo);
+    }
+
+    /**
+     * Registra una petición HTTP rechazada con 401: token ausente, vencido,
+     * alterado o emitido para otra aplicación.
+     *
+     * @param motivo {@code token_ausente} o {@code token_invalido}
+     */
+    public void registrarNoAutenticado(HttpServletRequest request, String motivo) {
+        LOG.warn("autenticacion_fallida canal=http metodo={} ruta={} ip={} motivo={}",
+                request.getMethod(), request.getRequestURI(), ipDelCliente(request), motivo);
+    }
+
+    /**
+     * Registra un {@code CONNECT} STOMP rechazado: el canal en tiempo real no
+     * se abre y queda constancia del intento.
+     *
+     * @param motivo {@code token_ausente}, {@code token_invalido} o
+     *               {@code sesion_no_autenticada}
+     */
+    public void registrarNoAutenticadoStomp(String motivo) {
+        LOG.warn("autenticacion_fallida canal=stomp motivo={}", motivo);
+    }
+
+    /**
+     * Primera entrada de {@code X-Forwarded-For} (la que escribe nginx) o, sin
+     * proxy delante, la dirección de la conexión. Mismo criterio que el
+     * limitador de solicitudes.
+     */
+    private static String ipDelCliente(HttpServletRequest request) {
+        String reenviada = request.getHeader("X-Forwarded-For");
+        if (reenviada != null && !reenviada.isBlank()) {
+            return reenviada.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
     }
 
     private static String actorActual() {

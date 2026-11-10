@@ -74,6 +74,47 @@ class RegistroAccesoDenegadoTest {
                 "sin sesión el actor se registra como anonimo, nunca vacío");
     }
 
+    @Test
+    void registraElIntentoSinAutenticarConLaIpDelClienteYsinElToken() {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/solicitudes/mias");
+        request.addHeader("X-Forwarded-For", "203.0.113.7, 10.0.0.2");
+        request.addHeader("Authorization", "Bearer secreto-que-no-se-loguea");
+
+        registro.registrarNoAutenticado(request, "token_invalido");
+
+        assertTrue(hayEvento(
+                        "autenticacion_fallida",
+                        "canal=http",
+                        "metodo=GET",
+                        "ruta=/api/v1/solicitudes/mias",
+                        "ip=203.0.113.7",
+                        "motivo=token_invalido"),
+                "el 401 debe quedar registrado con método, ruta, IP del cliente y motivo");
+        assertTrue(appender.list.stream()
+                        .map(ILoggingEvent::getFormattedMessage)
+                        .noneMatch(mensaje -> mensaje.contains("secreto-que-no-se-loguea")),
+                "el token nunca se escribe en el log");
+    }
+
+    @Test
+    void sinProxyDelanteUsaLaDireccionDeLaConexion() {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/solicitudes/mias");
+        request.setRemoteAddr("198.51.100.4");
+
+        registro.registrarNoAutenticado(request, "token_ausente");
+
+        assertTrue(hayEvento("ip=198.51.100.4", "motivo=token_ausente"),
+                "sin X-Forwarded-For se registra la IP de la conexión");
+    }
+
+    @Test
+    void registraElConnectStompRechazado() {
+        registro.registrarNoAutenticadoStomp("token_ausente");
+
+        assertTrue(hayEvento("autenticacion_fallida", "canal=stomp", "motivo=token_ausente"),
+                "el CONNECT rechazado también deja rastro");
+    }
+
     private static void autenticar(Usuario usuario) {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(usuario, null, List.of()));

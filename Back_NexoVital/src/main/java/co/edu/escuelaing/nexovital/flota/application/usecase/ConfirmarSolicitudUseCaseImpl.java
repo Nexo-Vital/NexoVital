@@ -3,6 +3,7 @@ package co.edu.escuelaing.nexovital.flota.application.usecase;
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoSolicitud;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudConfirmadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.exception.LlegadaNoDeclaradaException;
+import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudAjenaException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoAsignableException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoEncontradaException;
 import co.edu.escuelaing.nexovital.flota.domain.model.SolicitudAmbulancia;
@@ -55,20 +56,22 @@ public class ConfirmarSolicitudUseCaseImpl implements ConfirmarSolicitudUseCase 
     public SolicitudAmbulancia confirmar(UUID solicitudId, UUID solicitanteId) {
         SolicitudAmbulancia solicitud = solicitudRepository.buscarPorId(solicitudId)
                 .orElseThrow(() -> new SolicitudNoEncontradaException(solicitudId));
-        // Already confirmed (e.g. automatically): the requester's repeat is a no-op.
-        if (solicitud.getEstado() == EstadoSolicitud.CONFIRMADA
-                && Objects.equals(solicitud.getSolicitanteId(), solicitanteId)) {
-            return solicitud;
-        }
-        if (solicitud.getEstado() != EstadoSolicitud.ASIGNADA) {
-            throw new SolicitudNoAsignableException(solicitudId, solicitud.getEstado());
-        }
 
         // Only the requester may confirm: the client sends no id, so the
         // principal resolved by the controller is compared with the request's own
-        // solicitanteId. A mismatch is a conflict, exactly like the other
-        // actor-binding refusals (accept/reject/arrival).
+        // solicitanteId. Sprint 2 (S-4 / T10): a mismatch is a 403
+        // (SolicitudAjenaException), the same refusal cancel already gives, and
+        // it is checked BEFORE the state so a stranger learns nothing about it.
+        // A legacy row without a requester matches nobody.
         if (!Objects.equals(solicitud.getSolicitanteId(), solicitanteId)) {
+            throw new SolicitudAjenaException(solicitudId, solicitanteId);
+        }
+
+        // Already confirmed (e.g. automatically): the requester's repeat is a no-op.
+        if (solicitud.getEstado() == EstadoSolicitud.CONFIRMADA) {
+            return solicitud;
+        }
+        if (solicitud.getEstado() != EstadoSolicitud.ASIGNADA) {
             throw new SolicitudNoAsignableException(solicitudId, solicitud.getEstado());
         }
 

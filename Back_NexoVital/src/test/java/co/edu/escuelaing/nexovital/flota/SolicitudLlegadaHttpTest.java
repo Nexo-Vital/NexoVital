@@ -144,14 +144,15 @@ class SolicitudLlegadaHttpTest extends SolicitudHttpTestSupport {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.codigo").value("SOLICITUD_NO_ASIGNABLE"));
 
-        // A driver cannot declare with someone else's unit.
+        // A driver cannot declare with someone else's unit: 403, not 409
+        // (Sprint 2, T12). The unit exists; what is missing is the permission.
         mockMvc.perform(post("/api/v1/solicitudes/{id}/llegada", asignada)
                         .header("Authorization", "Bearer " + tokenOtro)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
                                 Map.of("ambulanciaId", asignado.unidad().toString()))))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.codigo").value("SOLICITUD_NO_ASIGNABLE"));
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("AMBULANCIA_AJENA"));
 
         // Without a unit in the body.
         mockMvc.perform(post("/api/v1/solicitudes/{id}/llegada", asignada)

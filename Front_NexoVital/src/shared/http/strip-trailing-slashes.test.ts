@@ -22,7 +22,7 @@ describe('stripTrailingSlashes', () => {
   });
 
   it('una cadena larga de barras no degrada el tiempo (sin backtracking)', () => {
-    const entrada = 'https://x.test' + '/'.repeat(20000);
+    const entrada = `https://x.test${'/'.repeat(20000)}`;
     const inicio = performance.now();
     expect(stripTrailingSlashes(entrada)).toBe('https://x.test');
     expect(performance.now() - inicio).toBeLessThan(50);

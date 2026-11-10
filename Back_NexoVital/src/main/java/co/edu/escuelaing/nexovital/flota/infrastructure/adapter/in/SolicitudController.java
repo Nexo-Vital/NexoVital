@@ -1,5 +1,6 @@
 package co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in;
 
+import co.edu.escuelaing.nexovital.flota.domain.exception.AmbulanciaAjenaException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.AmbulanciaNoDisponibleException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudAjenaException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.ConfirmacionPendienteException;
@@ -78,6 +79,10 @@ public class SolicitudController {
             "La solicitud ya no admite esa transición.";
     private static final String MENSAJE_SOLICITUD_AJENA =
             "Solo el solicitante puede cancelar su propia solicitud.";
+    private static final String MENSAJE_SOLICITUD_AJENA_CONFIRMAR =
+            "Solo el solicitante puede confirmar la llegada de su solicitud.";
+    private static final String MENSAJE_AMBULANCIA_AJENA =
+            "La ambulancia indicada no pertenece al conductor autenticado.";
     private static final String MENSAJE_SOLICITUD_NO_NOTIFICADA =
             "Esta solicitud no fue notificada a tu ambulancia.";
     private static final String MENSAJE_CAS_PERDIDO = "Solicitud ya asignada a otra ambulancia.";
@@ -255,8 +260,9 @@ public class SolicitudController {
      *
      * @return 200 with {@code ganador=true} and the ASSIGNED request; 409
      *         {@code CAS_PERDIDO} / {@code SOLICITUD_NO_ASIGNABLE} if another
-     *         caller won, if the unit was never notified for the request, or if
-     *         the unit is not the authenticated driver's; 409
+     *         caller won or if the unit was never notified for the request; 403
+     *         {@code AMBULANCIA_AJENA} if the unit is not the authenticated
+     *         driver's (checked first, and logged); 409
      *         {@code AMBULANCIA_NO_DISPONIBLE} if the unit is already busy; 404
      *         {@code SOLICITUD_NO_ENCONTRADA}; 400 {@code DATOS_INVALIDOS}; 500
      *         {@code ERROR_ACEPTACION_SOLICITUD}
@@ -278,6 +284,12 @@ public class SolicitudController {
             }
             return ResponseEntity.ok(AceptarSolicitudResponse.of(
                     true, aDto(resultado.solicitud())));
+        } catch (AmbulanciaAjenaException e) {
+            // 403 y registro (Sprint 2, S-4 / T10-T11): la unidad no es del
+            // llamante. Mismo código y mensaje que FlotaController.
+            registroAccesoDenegado.registrar("recurso_ajeno");
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(ErrorResponse.of("AMBULANCIA_AJENA", MENSAJE_AMBULANCIA_AJENA));
         } catch (SolicitudNoEncontradaException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ErrorResponse.of("SOLICITUD_NO_ENCONTRADA", MENSAJE_SOLICITUD_NO_ENCONTRADA));
@@ -319,8 +331,9 @@ public class SolicitudController {
      *
      * @return 200 with the still-PENDIENTE request; 404
      *         {@code SOLICITUD_NO_ENCONTRADA}; 409 {@code SOLICITUD_NO_ASIGNABLE}
-     *         if it is no longer PENDIENTE, the unit was not notified, or the
-     *         unit is not the authenticated driver's; 400
+     *         if it is no longer PENDIENTE or the unit was not notified; 403
+     *         {@code AMBULANCIA_AJENA} if the unit is not the authenticated
+     *         driver's (checked first, and logged); 400
      *         {@code DATOS_INVALIDOS}; 500 {@code ERROR_RECHAZO_SOLICITUD}
      */
     @PostMapping("/{id}/reject")
@@ -335,6 +348,12 @@ public class SolicitudController {
             SolicitudAmbulancia rechazada =
                     rechazarSolicitudUseCase.rechazar(id, request.ambulanciaId(), usuarioAutenticadoId());
             return ResponseEntity.ok(aDto(rechazada));
+        } catch (AmbulanciaAjenaException e) {
+            // 403 y registro (Sprint 2, S-4 / T10-T11): la unidad no es del
+            // llamante. Mismo código y mensaje que FlotaController.
+            registroAccesoDenegado.registrar("recurso_ajeno");
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(ErrorResponse.of("AMBULANCIA_AJENA", MENSAJE_AMBULANCIA_AJENA));
         } catch (SolicitudNoEncontradaException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ErrorResponse.of("SOLICITUD_NO_ENCONTRADA", MENSAJE_SOLICITUD_NO_ENCONTRADA));
@@ -359,7 +378,8 @@ public class SolicitudController {
      *
      * @return 200 with the ASIGNADA request carrying {@code llegadaEn}; 404
      *         {@code SOLICITUD_NO_ENCONTRADA}; 409 {@code SOLICITUD_NO_ASIGNABLE}
-     *         if the request is not ASIGNADA or the unit is not the caller's;
+     *         if the request is not ASIGNADA or not assigned to that unit; 403
+     *         {@code AMBULANCIA_AJENA} if the unit is not the caller's (logged);
      *         409 {@code AMBULANCIA_NO_DISPONIBLE} if the unit does not exist;
      *         400 {@code DATOS_INVALIDOS}; 500 {@code ERROR_LLEGADA_SOLICITUD}
      */
@@ -373,6 +393,12 @@ public class SolicitudController {
             SolicitudAmbulancia llegada =
                     declararLlegadaUseCase.declararLlegada(id, request.ambulanciaId(), usuarioAutenticadoId());
             return ResponseEntity.ok(aDto(llegada));
+        } catch (AmbulanciaAjenaException e) {
+            // 403 y registro (Sprint 2, S-4 / T10-T11): la unidad no es del
+            // llamante. Mismo código y mensaje que FlotaController.
+            registroAccesoDenegado.registrar("recurso_ajeno");
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(ErrorResponse.of("AMBULANCIA_AJENA", MENSAJE_AMBULANCIA_AJENA));
         } catch (SolicitudNoEncontradaException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ErrorResponse.of("SOLICITUD_NO_ENCONTRADA", MENSAJE_SOLICITUD_NO_ENCONTRADA));
@@ -399,7 +425,8 @@ public class SolicitudController {
      *
      * @return 200 with the closed (TOMADA) request; 404
      *         {@code SOLICITUD_NO_ENCONTRADA}; 409 {@code SOLICITUD_NO_ASIGNABLE}
-     *         if the request is not in service or the unit is not the caller's;
+     *         if the request is not in service or not assigned to that unit;
+     *         403 {@code AMBULANCIA_AJENA} if the unit is not the caller's (logged);
      *         409 {@code AMBULANCIA_NO_DISPONIBLE} if the unit is not EN_MISION;
      *         409 {@code LLEGADA_NO_DECLARADA} if the unit has not declared
      *         its arrival yet (EP-04.F2.US8);
@@ -416,6 +443,12 @@ public class SolicitudController {
             SolicitudAmbulancia finalizada = finalizarSolicitudUseCase.finalizar(
                     id, request.ambulanciaId(), usuarioAutenticadoId());
             return ResponseEntity.ok(aDto(finalizada));
+        } catch (AmbulanciaAjenaException e) {
+            // 403 y registro (Sprint 2, S-4 / T10-T11): la unidad no es del
+            // llamante. Mismo código y mensaje que FlotaController.
+            registroAccesoDenegado.registrar("recurso_ajeno");
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(ErrorResponse.of("AMBULANCIA_AJENA", MENSAJE_AMBULANCIA_AJENA));
         } catch (SolicitudNoEncontradaException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ErrorResponse.of("SOLICITUD_NO_ENCONTRADA", MENSAJE_SOLICITUD_NO_ENCONTRADA));
@@ -447,7 +480,8 @@ public class SolicitudController {
      *
      * @return 200 with the CONFIRMED request; 404
      *         {@code SOLICITUD_NO_ENCONTRADA}; 409 {@code SOLICITUD_NO_ASIGNABLE}
-     *         if it is not ASIGNADA or the caller is not the requester; 409
+     *         if it is not ASIGNADA; 403 {@code SOLICITUD_AJENA} if the caller
+     *         is not the requester (checked first, and logged); 409
      *         {@code LLEGADA_NO_DECLARADA} if the unit has not declared its
      *         arrival yet (EP-04.F2.US8); 500
      *         {@code ERROR_CONFIRMACION_SOLICITUD}
@@ -459,6 +493,11 @@ public class SolicitudController {
             UUID solicitanteId = usuarioAutenticadoId();
             SolicitudAmbulancia confirmada = confirmarSolicitudUseCase.confirmar(id, solicitanteId);
             return ResponseEntity.ok(aDto(confirmada));
+        } catch (SolicitudAjenaException e) {
+            // 403 y registro (Sprint 2, S-4 / T10-T11): no es el solicitante.
+            registroAccesoDenegado.registrar("recurso_ajeno");
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(ErrorResponse.of("SOLICITUD_AJENA", MENSAJE_SOLICITUD_AJENA_CONFIRMAR));
         } catch (SolicitudNoEncontradaException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ErrorResponse.of("SOLICITUD_NO_ENCONTRADA", MENSAJE_SOLICITUD_NO_ENCONTRADA));

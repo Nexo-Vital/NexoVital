@@ -60,9 +60,12 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
     private static final String PREFIJO_APLICACION = "/app";
 
     private final ResolutorSesion resolutorSesion;
+    private final RegistroAccesoDenegado registroAccesoDenegado;
 
-    public StompAuthChannelInterceptor(ResolutorSesion resolutorSesion) {
+    public StompAuthChannelInterceptor(ResolutorSesion resolutorSesion,
+                                       RegistroAccesoDenegado registroAccesoDenegado) {
         this.resolutorSesion = resolutorSesion;
+        this.registroAccesoDenegado = registroAccesoDenegado;
     }
 
     @Override
@@ -93,6 +96,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
     private void autenticar(StompHeaderAccessor accessor) {
         String header = accessor.getFirstNativeHeader(CABECERA_AUTHORIZATION);
         if (header == null || !header.startsWith(PREFIJO_BEARER)) {
+            registroAccesoDenegado.registrarNoAutenticadoStomp("token_ausente");
             throw new AccessDeniedException("El CONNECT STOMP exige Authorization: Bearer <jwt>.");
         }
         String token = header.substring(PREFIJO_BEARER.length());
@@ -100,6 +104,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
         try {
             usuario = resolutorSesion.resolver(token);
         } catch (CredencialesInvalidasException | UsuarioNoEncontradoException e) {
+            registroAccesoDenegado.registrarNoAutenticadoStomp("token_invalido");
             throw new AccessDeniedException("Token inválido para el CONNECT STOMP.", e);
         }
         var authentication = new UsernamePasswordAuthenticationToken(
@@ -116,6 +121,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
      */
     private void exigirSesionAutenticada(StompHeaderAccessor accessor) {
         if (accessor.getUser() == null) {
+            registroAccesoDenegado.registrarNoAutenticadoStomp("sesion_no_autenticada");
             throw new AccessDeniedException("El SUBSCRIBE STOMP exige una sesión autenticada.");
         }
     }
