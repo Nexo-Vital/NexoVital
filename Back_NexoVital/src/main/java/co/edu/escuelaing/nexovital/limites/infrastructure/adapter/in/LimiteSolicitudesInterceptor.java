@@ -39,6 +39,13 @@ import java.util.regex.Pattern;
  * cuanto uno abuse. Se toma la primera entrada de la cadena, que es la del
  * cliente original.
  *
+ * <p>Eso solo es confiable porque el proxy de entrada REEMPLAZA la cabecera en
+ * vez de agregarle (Sprint 2, T18): el nginx del compose manda
+ * {@code X-Forwarded-For $remote_addr} y el nginx del front en Azure resuelve
+ * la IP real con {@code realip} antes de reenviarla. Si un proxy volviera a
+ * usar {@code $proxy_add_x_forwarded_for}, un cliente podría inventar la
+ * primera entrada y evadir el límite por IP.
+ *
  * <p>El rechazo queda registrado con el mismo formato {@code clave=valor} que la
  * bitácora de accesos denegados, para poder contar patrones en el tablero
  * técnico.

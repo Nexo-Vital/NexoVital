@@ -6,7 +6,11 @@ import type { RealtimeHandler, RealtimePort, RealtimeState } from './port';
 
 /** WebSocket/STOMP endpoint exposed by the backend (`/ws`, SockJS fallback). */
 const STOMP_ENDPOINT = '/ws';
-const RECONNECT_DELAY_MS = 5000;
+// D-1 (Sprint 2, T06): si cae la instancia que atiende al cliente, la
+// reconexion y la recuperacion del estado deben tomar menos de 10 s. Con 5 s de
+// espera mas el handshake y la relectura del mapa quedaba demasiado justo; con
+// 2 s sobra margen y no satura el balanceador (un intento cada 2 s por cliente).
+const RECONNECT_DELAY_MS = 2000;
 
 /**
  * STOMP client configuration. The bearer token travels in the CONNECT frame,

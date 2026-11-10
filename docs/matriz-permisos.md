@@ -49,5 +49,5 @@ Todas las rutas van con el prefijo `/api/v1`, salvo `/ws` y `/actuator`.
 ## 3. Notas
 
 1. **`PATCH /emergencias/{id}`** no tiene regla de pertenencia: cualquier admin de un centro de ayuda puede actualizar cualquier emergencia. Si el equipo decide que solo el centro que atiende la emergencia puede cambiarla, eso es una regla nueva y queda fuera de esta corrección.
-2. **`/actuator/prometheus`** hoy es público en el backend y se bloquea en nginx (corrección H4, bloque 3).
+2. **`/actuator/prometheus`** está permitido en el backend porque Prometheus lo lee directo de cada instancia por la red interna. Hacia afuera, el nginx del compose solo publica `/actuator/health` y cualquier otro `/actuator/...` responde 404 (T03).
 3. Las pruebas que respaldan esta matriz están en `AccesoDenegadoRegistroHttpTest`, `SolicitudFlujoHttpTest`, `SolicitudLlegadaHttpTest`, `PosicionHttpTest`, `RegistroAccesoDenegadoTest` y `StompAuthChannelInterceptorTest`.

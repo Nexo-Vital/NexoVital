@@ -7,6 +7,9 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,9 +48,19 @@ import org.springframework.stereotype.Component;
  * dentro del mensaje por RabbitMQ y como cabecera STOMP, y la instancia que
  * entrega lo publica en su MDC mientras empuja, para que sus logs queden
  * correlacionados con los del origen.
+ *
+ * <p><b>Si RabbitMQ no responde (Sprint 2, T04).</b> Publicar en el exchange
+ * puede fallar con {@link AmqpException} (broker caído, red cortada). En ese caso
+ * el evento se entrega a las sesiones de ESTA instancia y queda un
+ * {@code push_degradado} en el log: los clientes conectados aquí siguen viendo
+ * el mapa en tiempo real y los de la otra instancia lo recuperan al releer el
+ * estado. Sin esto, el evento se perdía en silencio para todos. No hay entrega
+ * doble: si la publicación falló, el broker nunca devuelve la copia.
  */
 @Component
 public class PushFanOutAdapter {
+
+    private static final Logger LOG = LoggerFactory.getLogger(PushFanOutAdapter.class);
 
     /** Momento de publicación, en epoch de milisegundos. */
     static final String CABECERA_EMITIDO_EN = "emitidoEn";
@@ -91,9 +104,16 @@ public class PushFanOutAdapter {
 
         RabbitTemplate template = brokerHabilitado ? rabbitTemplate.getIfAvailable() : null;
         if (template != null) {
-            // Fanout: el routing key no se usa, todas las colas atadas reciben.
-            template.convertAndSend(exchangePush, "", instrumentado);
-            return;
+            try {
+                // Fanout: el routing key no se usa, todas las colas atadas reciben.
+                template.convertAndSend(exchangePush, "", instrumentado);
+                return;
+            } catch (AmqpException e) {
+                // Degradación controlada: el broker no está, se entrega local.
+                LOG.warn("push_degradado instancia={} destino={} consecutivo={} motivo={}",
+                        instancia, instrumentado.destino(), instrumentado.consecutivo(),
+                        e.getClass().getSimpleName());
+            }
         }
         entregarLocal(instrumentado);
     }

@@ -11,6 +11,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.amqp.AmqpConnectException;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -23,6 +24,7 @@ import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -122,6 +124,28 @@ class PushFanOutAdapterTest {
         // La instancia de origen tambien recibe su copia por su propia cola:
         // entregar aca seria una entrega doble.
         verifyNoInteractions(messagingTemplate);
+    }
+
+    @Test
+    void siRabbitMqNoRespondeElEventoSeEntregaLocalYNoSePierde() {
+        @SuppressWarnings("unchecked")
+        ObjectProvider<RabbitTemplate> provider = mock(ObjectProvider.class);
+        RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
+        when(provider.getIfAvailable()).thenReturn(rabbitTemplate);
+        doThrow(new AmqpConnectException(new java.net.ConnectException("Connection refused")))
+                .when(rabbitTemplate).convertAndSend(eq("nexovital.push"), eq(""), any(PushMessage.class));
+
+        PushFanOutAdapter adapter = new PushFanOutAdapter(
+                messagingTemplate, provider, true, "nexovital.push", "backend-1");
+
+        adapter.alSolicitarPush(new PushMessage("/topic/flota", "payload"));
+
+        // T04: con el broker caído, los clientes de ESTA instancia igual reciben
+        // el evento, con su instrumentación intacta.
+        ArgumentCaptor<Map<String, Object>> cabeceras = ArgumentCaptor.forClass(Map.class);
+        verify(messagingTemplate, times(1)).convertAndSend(eq("/topic/flota"), eq("payload"), cabeceras.capture());
+        assertEquals("backend-1", cabeceras.getValue().get(PushFanOutAdapter.CABECERA_INSTANCIA));
+        assertEquals("1", cabeceras.getValue().get(PushFanOutAdapter.CABECERA_CONSECUTIVO));
     }
 
     // -----------------------------------------------------------------------
