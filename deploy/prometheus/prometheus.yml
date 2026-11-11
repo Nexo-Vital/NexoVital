@@ -20,6 +20,10 @@ rule_files:
 scrape_configs:
   - job_name: nexovital-backend
     metrics_path: /actuator/prometheus
+    # Cada 5 s (y no 10) para que la degradacion se vea en el tablero tecnico en
+    # 30 s o menos (O-1, T39): raspado 5 s + tiempo limite 4 s + refresco 5 s.
+    scrape_interval: 5s
+    scrape_timeout: 4s
     static_configs:
       - targets: ["backend-1:8080"]
         labels:

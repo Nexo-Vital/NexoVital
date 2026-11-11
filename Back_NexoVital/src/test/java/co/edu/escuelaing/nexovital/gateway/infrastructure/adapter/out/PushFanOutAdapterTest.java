@@ -2,8 +2,11 @@ package co.edu.escuelaing.nexovital.gateway.infrastructure.adapter.out;
 
 import co.edu.escuelaing.nexovital.observabilidad.infrastructure.TraceId;
 import co.edu.escuelaing.nexovital.shared.domain.model.PushMessage;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -208,5 +211,39 @@ class PushFanOutAdapterTest {
                 "el consecutivo es el mismo en las dos instancias");
         assertEquals("backend-1", cabeceras.get().get(PushFanOutAdapter.CABECERA_INSTANCIA),
                 "la instancia de origen no se reescribe al entregar");
+    }
+
+    // -----------------------------------------------------------------------
+    // T38 (H6) — la latencia de eventos en tiempo real se mide al entregar
+    // -----------------------------------------------------------------------
+
+    @Test
+    void alEntregarMideLaLatenciaDesdeQueSePublicoElEvento() {
+        SimpleMeterRegistry registro = new SimpleMeterRegistry();
+        PushFanOutAdapter adapter = new PushFanOutAdapter(
+                messagingTemplate, null, false, "nexovital.push", "backend-2", registro);
+        String hace200ms = Long.toString(System.currentTimeMillis() - 200);
+
+        // El evento nacio en backend-1 y lo entrega backend-2 (salto por RabbitMQ).
+        adapter.entregarLocal(new PushMessage(
+                "/topic/flota", "payload", null, hace200ms, "1", "backend-1", null));
+
+        Timer timer = registro.find(PushFanOutAdapter.METRICA_PROPAGACION).tag("origen", "backend-1").timer();
+        assertNotNull(timer, "la entrega debe registrar la latencia de propagacion");
+        assertEquals(1, timer.count());
+        assertTrue(timer.totalTime(TimeUnit.MILLISECONDS) >= 200,
+                "mide desde emitidoEn, no desde que llego a esta instancia");
+    }
+
+    @Test
+    void unMensajeSinInstanteDeOrigenNoSeMide() {
+        SimpleMeterRegistry registro = new SimpleMeterRegistry();
+        PushFanOutAdapter adapter = new PushFanOutAdapter(
+                messagingTemplate, null, false, "nexovital.push", "backend-1", registro);
+
+        adapter.entregarLocal(new PushMessage("/topic/flota", "payload"));
+
+        assertTrue(registro.find(PushFanOutAdapter.METRICA_PROPAGACION).timers().isEmpty(),
+                "sin emitidoEn no hay contra que medir");
     }
 }

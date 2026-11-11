@@ -2,10 +2,14 @@ package co.edu.escuelaing.nexovital.gateway.infrastructure.adapter.out;
 
 import co.edu.escuelaing.nexovital.observabilidad.infrastructure.TraceId;
 import co.edu.escuelaing.nexovital.shared.domain.model.PushMessage;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,6 +53,14 @@ import org.springframework.stereotype.Component;
  * entrega lo publica en su MDC mientras empuja, para que sus logs queden
  * correlacionados con los del origen.
  *
+ * <p><b>Latencia de propagación (Sprint 2, T38, H6).</b> Al entregar a las
+ * sesiones se mide {@code ahora - emitidoEn} en el timer
+ * {@value #METRICA_PROPAGACION}, con la instancia que publicó como etiqueta
+ * {@code origen}. Es el tiempo real que tarda un evento desde que se publica
+ * hasta que la instancia que lo entrega lo pone en el canal de sus clientes,
+ * incluido el salto por RabbitMQ cuando nace en el otro nodo. Antes el tablero
+ * usaba la latencia HTTP de {@code POST /posicion}, que no mide la propagación.
+ *
  * <p><b>Si RabbitMQ no responde (Sprint 2, T04).</b> Publicar en el exchange
  * puede fallar con {@link AmqpException} (broker caído, red cortada). En ese caso
  * el evento se entrega a las sesiones de ESTA instancia y queda un
@@ -71,16 +83,30 @@ public class PushFanOutAdapter {
     /** Identificador de correlación de la petición que originó el evento. */
     static final String CABECERA_TRACE_ID = "traceId";
 
+    /** Timer de la latencia de eventos en tiempo real (tablero técnico, H6). */
+    static final String METRICA_PROPAGACION = "nexovital.push.propagacion";
+
     private final SimpMessagingTemplate messagingTemplate;
     private final ObjectProvider<RabbitTemplate> rabbitTemplate;
     private final boolean brokerHabilitado;
     private final String exchangePush;
     private final String instancia;
+    private final MeterRegistry registro;
     private final ConcurrentMap<String, AtomicLong> consecutivos = new ConcurrentHashMap<>();
 
     /** Modo local, para composición manual en pruebas. */
     public PushFanOutAdapter(SimpMessagingTemplate messagingTemplate, String instancia) {
-        this(messagingTemplate, null, false, "nexovital.push", instancia);
+        this(messagingTemplate, null, false, "nexovital.push", instancia, null);
+    }
+
+    /** Composición manual en pruebas, sin medir la propagación. */
+    public PushFanOutAdapter(
+            SimpMessagingTemplate messagingTemplate,
+            ObjectProvider<RabbitTemplate> rabbitTemplate,
+            boolean brokerHabilitado,
+            String exchangePush,
+            String instancia) {
+        this(messagingTemplate, rabbitTemplate, brokerHabilitado, exchangePush, instancia, null);
     }
 
     @Autowired
@@ -89,12 +115,14 @@ public class PushFanOutAdapter {
             ObjectProvider<RabbitTemplate> rabbitTemplate,
             @Value("${nexovital.eventos.broker.enabled:false}") boolean brokerHabilitado,
             @Value("${nexovital.push.exchange:nexovital.push}") String exchangePush,
-            @Value("${nexovital.instancia-id:${NEXOVITAL_INSTANCIA_ID:local}}") String instancia) {
+            @Value("${nexovital.instancia-id:${NEXOVITAL_INSTANCIA_ID:local}}") String instancia,
+            MeterRegistry registro) {
         this.messagingTemplate = messagingTemplate;
         this.rabbitTemplate = rabbitTemplate;
         this.brokerHabilitado = brokerHabilitado;
         this.exchangePush = exchangePush;
         this.instancia = instancia;
+        this.registro = registro;
     }
 
     /** El módulo dueño publicó un push: se instrumenta y va al broker o directo. */
@@ -141,9 +169,10 @@ public class PushFanOutAdapter {
             if (mensaje.usuario() != null) {
                 messagingTemplate.convertAndSendToUser(
                         mensaje.usuario(), mensaje.destino(), mensaje.payload(), cabeceras);
-                return;
+            } else {
+                messagingTemplate.convertAndSend(mensaje.destino(), mensaje.payload(), cabeceras);
             }
-            messagingTemplate.convertAndSend(mensaje.destino(), mensaje.payload(), cabeceras);
+            medirPropagacion(mensaje);
         } finally {
             if (traceAnterior != null) {
                 TraceId.poner(traceAnterior);
@@ -151,6 +180,34 @@ public class PushFanOutAdapter {
                 TraceId.limpiar();
             }
         }
+    }
+
+    /**
+     * Registra cuánto tardó el evento desde que se publicó hasta que esta
+     * instancia lo entregó. Un mensaje sin {@code emitidoEn} (no instrumentado)
+     * no se mide: no hay un instante de origen contra el cual comparar.
+     */
+    private void medirPropagacion(PushMessage mensaje) {
+        if (registro == null || mensaje.emitidoEn() == null) {
+            return;
+        }
+        long emitidoEn;
+        try {
+            emitidoEn = Long.parseLong(mensaje.emitidoEn());
+        } catch (NumberFormatException e) {
+            return;
+        }
+        // Los relojes de dos contenedores pueden diferir unos milisegundos: un
+        // valor negativo se cuenta como 0 en vez de descartarse.
+        long milisegundos = Math.max(0L, System.currentTimeMillis() - emitidoEn);
+        Timer.builder(METRICA_PROPAGACION)
+                .description("Tiempo desde que se publica un evento hasta que se entrega a los clientes")
+                .tag("origen", mensaje.instancia() != null ? mensaje.instancia() : "desconocido")
+                .publishPercentileHistogram()
+                .minimumExpectedValue(Duration.ofMillis(1))
+                .maximumExpectedValue(Duration.ofSeconds(10))
+                .register(registro)
+                .record(milisegundos, TimeUnit.MILLISECONDS);
     }
 
     private PushMessage instrumentar(PushMessage mensaje) {
