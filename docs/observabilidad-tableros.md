@@ -13,7 +13,7 @@ Archivo `deploy/grafana/dashboards/tecnico.json`, refresco cada 5 s.
 | Panel | Qué pide el PDF | Métrica / consulta |
 |---|---|---|
 | Estado de componentes | Estado de cada componente visible en todo momento | `up{job="nexovital-backend"}` por instancia y `min by (componente) (nexovital_componente_disponible)` para `base_datos` y `rabbitmq` |
-| Tiempo de respuesta promedio | Tiempo de respuesta promedio | `rate(http_server_requests_seconds_sum[1m]) / rate(..._count[1m])` por instancia, sin `/actuator`; también el p95 |
+| Tiempo de respuesta promedio | Tiempo de respuesta promedio | `rate(http_server_requests_seconds_sum[1m]) / rate(..._count[1m])` por instancia, sin `/actuator` ni `/ws`; también el p95 |
 | Latencia de eventos en tiempo real | Latencia de eventos en tiempo real | p95 y promedio de `nexovital_push_propagacion_seconds` (objetivo R-1: p95 ≤ 500 ms) |
 | Usuarios concurrentes | Usuarios concurrentes | `nexovital_usuarios_stomp`, total y por instancia |
 | CPU / Memoria del heap | Consumo de CPU y memoria | `process_cpu_usage`, `jvm_memory_used_bytes{area="heap"}` |

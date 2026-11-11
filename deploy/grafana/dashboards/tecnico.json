@@ -168,7 +168,7 @@
             "type": "prometheus",
             "uid": "nexovital-prometheus"
           },
-          "expr": "sum by (instancia) (rate(http_server_requests_seconds_sum{uri!~\"/actuator.*\"}[1m])) / clamp_min(sum by (instancia) (rate(http_server_requests_seconds_count{uri!~\"/actuator.*\"}[1m])), 0.0001)",
+          "expr": "sum by (instancia) (rate(http_server_requests_seconds_sum{uri!~\"/actuator.*|/ws.*\"}[1m])) / clamp_min(sum by (instancia) (rate(http_server_requests_seconds_count{uri!~\"/actuator.*|/ws.*\"}[1m])), 0.0001)",
           "legendFormat": "promedio {{instancia}}",
           "refId": "A"
         },
@@ -177,12 +177,12 @@
             "type": "prometheus",
             "uid": "nexovital-prometheus"
           },
-          "expr": "histogram_quantile(0.95, sum by (le, instancia) (rate(http_server_requests_seconds_bucket{uri!~\"/actuator.*\"}[1m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, instancia) (rate(http_server_requests_seconds_bucket{uri!~\"/actuator.*|/ws.*\"}[1m])))",
           "legendFormat": "p95 {{instancia}}",
           "refId": "B"
         }
       ],
-      "description": "Promedio y p95 de las peticiones HTTP del API en el último minuto, por instancia. Se excluye /actuator (el raspado de Prometheus)."
+      "description": "Promedio y p95 de las peticiones HTTP del API en el último minuto, por instancia. Se excluyen /actuator (el raspado de Prometheus) y /ws (el canal en tiempo real, que no es una respuesta del API)."
     },
     {
       "id": 3,
