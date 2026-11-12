@@ -116,4 +116,67 @@ class ValidadorTokenFirebaseTest {
 
         assertThrows(CredencialesInvalidasException.class, () -> validador().validar(alterado));
     }
+    // -----------------------------------------------------------------------
+    // Sprint 2, T10/T12: identidad completa y tiempo de validación (S-1)
+    // -----------------------------------------------------------------------
+
+    @Test
+    void devuelveCorreoVerificadoYnombreDeLaCuentaDeGoogle() {
+        String token = Jwts.builder()
+                .subject("uid-del-usuario")
+                .issuer(ISSUER)
+                .audience().add(PROJECT_ID).and()
+                .expiration(Date.from(Instant.now().plus(1, ChronoUnit.HOURS)))
+                .claim("email", "persona@gmail.com")
+                .claim("email_verified", true)
+                .claim("name", "Persona Prueba")
+                .header().keyId(KID).and()
+                .signWith(parValido.getPrivate(), Jwts.SIG.RS256)
+                .compact();
+
+        co.edu.escuelaing.nexovital.usuarios.domain.model.IdentidadExterna identidad =
+                validador().validarIdentidad(token);
+
+        assertEquals("uid-del-usuario", identidad.uid());
+        assertEquals("persona@gmail.com", identidad.email());
+        assertEquals(true, identidad.emailVerificado());
+        assertEquals("Persona Prueba", identidad.nombre());
+    }
+
+    @Test
+    void sinClaimDeVerificacionElCorreoNoCuentaComoVerificado() {
+        String token = token(parValido.getPrivate(), PROJECT_ID, ISSUER,
+                Instant.now().plus(1, ChronoUnit.HOURS));
+
+        assertEquals(false, validador().validarIdentidad(token).emailVerificado());
+    }
+
+    /**
+     * Escenario S-1: "la validación agrega menos de 50 ms por solicitud". Se mide
+     * el percentil 95 de 300 validaciones (firma RS256, emisor, audiencia y
+     * expiración) después de calentar la JVM. Las claves públicas de Google ya
+     * están en memoria (el proveedor de JWKS las cachea), así que esto es lo que
+     * paga cada petición.
+     */
+    @Test
+    void validarUnTokenTardaMenosDe50msEnElPercentil95() {
+        ValidadorTokenFirebase validador = validador();
+        String token = token(parValido.getPrivate(), PROJECT_ID, ISSUER,
+                Instant.now().plus(1, ChronoUnit.HOURS));
+        for (int i = 0; i < 100; i++) {
+            validador.validar(token);
+        }
+
+        long[] duraciones = new long[300];
+        for (int i = 0; i < duraciones.length; i++) {
+            long inicio = System.nanoTime();
+            validador.validar(token);
+            duraciones[i] = System.nanoTime() - inicio;
+        }
+        java.util.Arrays.sort(duraciones);
+        double p95Ms = duraciones[(int) Math.ceil(duraciones.length * 0.95) - 1] / 1_000_000.0;
+
+        org.junit.jupiter.api.Assertions.assertTrue(p95Ms < 50.0,
+                "el p95 de la validación debe ser menor a 50 ms; fue " + p95Ms + " ms");
+    }
 }

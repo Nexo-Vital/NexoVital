@@ -61,6 +61,35 @@ class RegistroAccesoDenegadoTest {
     }
 
     @Test
+    void elRechazoIncluyeRolEIpDelClienteSinElToken() {
+        autenticar(new Usuario(UUID.randomUUID(), "Ana", "ana@nexovital.co", "hash", RolUsuario.CONDUCTOR));
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/flota/ambulancias/9/posicion");
+        request.addHeader("X-Forwarded-For", "203.0.113.9");
+        request.addHeader("Authorization", "Bearer secreto-que-no-se-loguea");
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+
+        registro.registrar("recurso_ajeno");
+
+        assertTrue(hayEvento("acceso_denegado", "rol=CONDUCTOR", "ip=203.0.113.9", "motivo=recurso_ajeno"),
+                "el 403 debe decir el rol del actor y la IP desde donde lo intentó (T11)");
+        assertTrue(appender.list.stream()
+                        .map(ILoggingEvent::getFormattedMessage)
+                        .noneMatch(mensaje -> mensaje.contains("secreto-que-no-se-loguea")),
+                "el token nunca se escribe en el log");
+    }
+
+    @Test
+    void registraLaIdentidadDeGoogleDeQuienAunNoTieneUsuario() {
+        peticion("POST", "/api/v1/registros");
+
+        registro.registrarIdentidadExterna("uid-google-1", "rol_no_elegible");
+
+        assertTrue(hayEvento("acceso_denegado", "actor=google:uid-google-1", "ruta=/api/v1/registros",
+                        "motivo=rol_no_elegible"),
+                "pedir un rol de administración al registrarse queda con el uid de Google (T11)");
+    }
+
+    @Test
     void registraAnonimoCuandoLaPeticionNoTraeSesion() {
         peticion("GET", "/api/v1/auditoria/emergencias/123");
 

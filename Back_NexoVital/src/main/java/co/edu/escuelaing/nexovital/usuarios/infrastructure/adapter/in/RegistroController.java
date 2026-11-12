@@ -112,7 +112,7 @@ public class RegistroController {
         } catch (RolNoElegibleException e) {
             // Pedir un rol de administracion es un intento de escalar privilegios:
             // queda en la misma bitacora que los demas 403 (S-1 / T11).
-            registroAccesoDenegado.registrar("rol_no_elegible");
+            registroAccesoDenegado.registrarIdentidadExterna(identidad.uid(), "rol_no_elegible");
             return error(HttpStatus.FORBIDDEN, "ROL_NO_ELEGIBLE", e.getMessage());
         } catch (DatosRegistroInvalidosException e) {
             return error(HttpStatus.BAD_REQUEST, "DATOS_INVALIDOS", e.getMessage());

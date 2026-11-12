@@ -52,7 +52,7 @@ Todas las rutas van con el prefijo `/api/v1`, salvo `/ws` y `/actuator`.
 
 1. **`PATCH /emergencias/{id}`** es solo de ADMIN_PLATAFORMA. El administrador de centro no puede editar emergencias, porque la emergencia no guarda quién la reportó ni qué centro la atiende, y por eso no hay regla de pertenencia posible sin cambiar el modelo.
 2. **`/actuator/prometheus`** está permitido en el backend porque Prometheus lo lee directo de cada instancia por la red interna. Hacia afuera, el nginx del compose solo publica `/actuator/health` y cualquier otro `/actuator/...` responde 404 (T03).
-3. Las pruebas que respaldan esta matriz están en `AccesoDenegadoRegistroHttpTest`, `SolicitudFlujoHttpTest`, `SolicitudLlegadaHttpTest`, `PosicionHttpTest`, `RegistroAccesoDenegadoTest` y `StompAuthChannelInterceptorTest`.
+3. Las pruebas que respaldan esta matriz están en `AccesoDenegadoRegistroHttpTest`, `SolicitudFlujoHttpTest`, `SolicitudLlegadaHttpTest`, `PosicionHttpTest`, `EmergenciaActualizacionHttpTest`, `RegistroAccesoDenegadoTest`, `StompAuthChannelInterceptorTest`, `RegistroHttpTest`, `RegistrarUsuarioUseCaseImplTest`, `ResolutorSesionFirebaseTest` y `ValidadorTokenFirebaseTest` (este último incluye la medición del p95 de la validación del token, menor a 50 ms).
 
 ## 4. Registro y roles
 
@@ -61,3 +61,15 @@ Todas las rutas van con el prefijo `/api/v1`, salvo `/ws` y `/actuator`.
 - **ADMIN_PLATAFORMA** y **ADMIN_ACOPIO** nunca se pueden elegir al registrarse. El administrador de plataforma está precargado y se enlaza con su cuenta de Google.
 - El nombre y el correo salen del token de Google, no de lo que envía el cliente.
 - El conductor indica además **placa y modelo** del vehículo. La placa debe ser única: si ya existe, el registro responde 409.
+- Al registrarse, la persona crea también una **contraseña** (mínimo 8 caracteres, con mayúscula, minúscula y número; el símbolo no es obligatorio). La contraseña se guarda en **Firebase**, enlazada a la misma cuenta de Google, nunca en NexoVital: después puede entrar con su correo y contraseña o con Google, y en los dos casos es el mismo usuario.
+
+## 5. Registro de los rechazos (T11)
+
+Cada rechazo deja una línea en el log con la hora, sin el token:
+
+| Rechazo | Línea |
+|---|---|
+| 401 por HTTP | `autenticacion_fallida canal=http metodo=… ruta=… ip=… motivo=token_ausente\|token_invalido\|usuario_no_registrado` |
+| 401 en el WebSocket | `autenticacion_fallida canal=stomp motivo=token_ausente\|token_invalido\|usuario_no_registrado\|sesion_no_autenticada` |
+| 403 | `acceso_denegado actor=<id> rol=<rol> metodo=… ruta=… ip=… motivo=rol_insuficiente\|recurso_ajeno` |
+| 403 al registrarse | `acceso_denegado actor=google:<uid> rol=- metodo=POST ruta=/api/v1/registros ip=… motivo=rol_no_elegible` |

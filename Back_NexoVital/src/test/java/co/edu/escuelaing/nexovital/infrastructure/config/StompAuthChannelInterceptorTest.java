@@ -4,6 +4,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import co.edu.escuelaing.nexovital.usuarios.domain.exception.CredencialesInvalidasException;
+import co.edu.escuelaing.nexovital.usuarios.domain.exception.UsuarioNoRegistradoException;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.RolUsuario;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.Usuario;
 import org.junit.jupiter.api.AfterEach;
@@ -31,6 +32,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class StompAuthChannelInterceptorTest {
 
     private static final String TOKEN_VALIDO = "token-valido";
+    /** Token válido de Google cuya cuenta todavía no eligió su rol (T10). */
+    private static final String TOKEN_SIN_REGISTRO = "token-sin-registro";
 
     private final Usuario conductor = new Usuario(
             UUID.randomUUID(), "Ana", "ana@nexovital.co", "hash", RolUsuario.CONDUCTOR);
@@ -38,6 +41,9 @@ class StompAuthChannelInterceptorTest {
             token -> {
                 if (TOKEN_VALIDO.equals(token)) {
                     return conductor;
+                }
+                if (TOKEN_SIN_REGISTRO.equals(token)) {
+                    throw new UsuarioNoRegistradoException("uid-sin-registro");
                 }
                 throw new CredencialesInvalidasException();
             },
@@ -73,6 +79,15 @@ class StompAuthChannelInterceptorTest {
 
         assertThrows(AccessDeniedException.class, () -> interceptor.preSend(connect, null));
         assertTrue(hayEvento("autenticacion_fallida", "canal=stomp", "motivo=token_invalido"));
+    }
+
+    @Test
+    @DisplayName("CONNECT de una cuenta de Google sin registro: no abre el canal y se registra (T12)")
+    void connectDeCuentaSinRegistroSeRechazaYseRegistra() {
+        Message<byte[]> connect = frame(StompCommand.CONNECT, "Bearer " + TOKEN_SIN_REGISTRO);
+
+        assertThrows(AccessDeniedException.class, () -> interceptor.preSend(connect, null));
+        assertTrue(hayEvento("autenticacion_fallida", "canal=stomp", "motivo=usuario_no_registrado"));
     }
 
     @Test

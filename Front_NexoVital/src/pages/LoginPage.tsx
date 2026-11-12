@@ -8,6 +8,7 @@ import {
   Lock,
   LogIn,
   User,
+  UserPlus,
   Warehouse,
 } from 'lucide-react';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
@@ -82,10 +83,15 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const login = useSessionStore((state) => state.login);
   const loginWithGoogle = useSessionStore((state) => state.loginWithGoogle);
-  // Con Firebase configurado (docker y Azure) el unico acceso es Google
-  // (EP-06.F2.US1, T10): el formulario de correo y contrasena queda solo para
-  // desarrollo, las pruebas y el modo demo.
+  // Con Firebase configurado (docker y Azure) el correo y la contrasena se
+  // validan en Firebase, no en NexoVital, y ademas se ofrece Google
+  // (EP-06.F2.US1, T10). Sin Firebase (desarrollo y pruebas) la pantalla es la
+  // de siempre.
   const conGoogle = isFirebaseConfigured() && !isDemoMode();
+  // Con Firebase hay dos pestañas: iniciar sesión (correo y contraseña, o
+  // Google) y crear cuenta (solo con Google; la contraseña se define despues,
+  // en el registro).
+  const [modo, setModo] = useState<'ingresar' | 'crear'>('ingresar');
   const logout = useSessionStore((state) => state.logout);
 
   const [email, setEmail] = useState('');
@@ -133,6 +139,11 @@ export default function LoginPage() {
       }
       navigate('/', { replace: true });
     } catch (cause) {
+      if (cause instanceof ApiError && cause.codigo === CODIGO_USUARIO_NO_REGISTRADO) {
+        // La cuenta existe en Firebase pero aun no eligio su rol (T10).
+        navigate('/registro', { replace: true });
+        return;
+      }
       if (cause instanceof ApiError) {
         if (cause.status === 423 && cause.retryAfter) {
           setLockRemaining(cause.retryAfter);
@@ -212,11 +223,9 @@ export default function LoginPage() {
         opening or collapsing it never shifts the sign-in form. It is opaque and
         limited to 62dvh, which keeps it scrollable rather than covering the form.
       */}
-      {!conGoogle && (
-        <div className="absolute inset-x-0 top-0 z-20 flex justify-end p-3">
-          <DemoProfilesPanel disabled={disabled} busy={filling} onSelect={handleProfileSelect} />
-        </div>
-      )}
+      <div className="absolute inset-x-0 top-0 z-20 flex justify-end p-3">
+        <DemoProfilesPanel disabled={disabled} busy={filling} onSelect={handleProfileSelect} />
+      </div>
 
       {/*
         Brand panel: navy on the left from `lg`, a compact banner on mobile.
@@ -257,16 +266,54 @@ export default function LoginPage() {
       {/* Access panel: white card over mint, fixed to the mockup palette. */}
       <section className="flex flex-1 items-center justify-center bg-nv-mint p-6 lg:w-1/2">
         <div className="flex w-full max-w-[420px] flex-col gap-5 rounded-nv-lg bg-white p-10 shadow-nv-card">
+          {conGoogle && (
+            <div
+              role="tablist"
+              aria-label="Acceso a NexoVital"
+              className="grid grid-cols-2 gap-1 rounded-nv-md bg-nv-mint p-1"
+            >
+              {(
+                [
+                  { id: 'ingresar', texto: 'Iniciar sesión' },
+                  { id: 'crear', texto: 'Crear cuenta' },
+                ] as const
+              ).map((pestana) => (
+                <button
+                  key={pestana.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={modo === pestana.id}
+                  onClick={() => {
+                    setModo(pestana.id);
+                    setError(null);
+                  }}
+                  disabled={submitting || filling}
+                  className={`h-10 rounded-nv-md font-semibold text-sm transition-colors focus-visible:outline-2 focus-visible:outline-nv-teal ${
+                    modo === pestana.id
+                      ? 'bg-white text-nv-navy shadow-nv-card'
+                      : 'text-nv-navy-400 hover:text-nv-navy'
+                  }`}
+                >
+                  {pestana.texto}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div>
-            <h3 className="font-semibold text-2xl text-nv-navy tracking-[-0.3px]">Inicia sesión</h3>
+            <h3 className="font-semibold text-2xl text-nv-navy tracking-[-0.3px]">
+              {conGoogle && modo === 'crear' ? 'Crea tu cuenta' : 'Inicia sesión'}
+            </h3>
             <p className="mt-1.5 text-nv-navy-400 text-sm leading-5">
               {conGoogle
-                ? 'Entra con tu cuenta de Google'
+                ? modo === 'crear'
+                  ? 'Tu cuenta se crea con Google. Después eliges tu rol y una contraseña.'
+                  : 'Entra con tu correo y contraseña, o con tu cuenta de Google'
                 : 'Entra con la cuenta que te asignó el equipo de NexoVital'}
             </p>
           </div>
 
-          {conGoogle ? (
+          {conGoogle && modo === 'crear' ? (
             <div className="flex flex-col gap-5">
               {error && (
                 <p
@@ -283,17 +330,15 @@ export default function LoginPage() {
                 disabled={submitting}
                 className={nvButton()}
               >
-                <LogIn className="size-5 shrink-0" aria-hidden />
-                {submitting ? 'Abriendo Google…' : 'Continuar con Google'}
+                <UserPlus className="size-5 shrink-0" aria-hidden />
+                {submitting ? 'Abriendo Google…' : 'Crear cuenta con Google'}
               </button>
-
-              <div className="h-px bg-nv-line" aria-hidden />
 
               <div className="flex items-start gap-2 rounded-nv-md bg-nv-mint p-2.5 px-3 text-[12.5px] text-nv-navy-400 leading-[18px]">
                 <Info className="mt-px size-4 shrink-0 text-nv-navy-600" aria-hidden />
                 <span>
-                  ¿Primera vez en NexoVital? Entra con Google y elige si eres ciudadano,
-                  administrador de un centro o conductor de ambulancia.
+                  Eliges si eres ciudadano, administrador de un centro o conductor de ambulancia.
+                  Con la contraseña que definas podrás entrar también con tu correo.
                 </span>
               </div>
             </div>
@@ -367,15 +412,36 @@ export default function LoginPage() {
                 {submitting ? 'Ingresando…' : 'Iniciar sesión'}
               </button>
 
-              <div className="h-px bg-nv-line" aria-hidden />
+              {conGoogle ? (
+                <>
+                  <div className="flex items-center gap-3 text-nv-navy-400 text-xs" aria-hidden>
+                    <span className="h-px flex-1 bg-nv-line" />o
+                    <span className="h-px flex-1 bg-nv-line" />
+                  </div>
 
-              <div className="flex items-start gap-2 rounded-nv-md bg-nv-mint p-2.5 px-3 text-[12.5px] text-nv-navy-400 leading-[18px]">
-                <Info className="mt-px size-4 shrink-0 text-nv-navy-600" aria-hidden />
-                <span>
-                  En el MVP no hay registro: las cuentas de ciudadano y de conductor vienen
-                  precargadas.
-                </span>
-              </div>
+                  <button
+                    type="button"
+                    onClick={handleGoogle}
+                    disabled={disabled}
+                    className={nvButton({ tone: 'secondary' })}
+                  >
+                    <LogIn className="size-5 shrink-0" aria-hidden />
+                    Continuar con Google
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="h-px bg-nv-line" aria-hidden />
+
+                  <div className="flex items-start gap-2 rounded-nv-md bg-nv-mint p-2.5 px-3 text-[12.5px] text-nv-navy-400 leading-[18px]">
+                    <Info className="mt-px size-4 shrink-0 text-nv-navy-600" aria-hidden />
+                    <span>
+                      En el MVP no hay registro: las cuentas de ciudadano y de conductor vienen
+                      precargadas.
+                    </span>
+                  </div>
+                </>
+              )}
             </form>
           )}
         </div>

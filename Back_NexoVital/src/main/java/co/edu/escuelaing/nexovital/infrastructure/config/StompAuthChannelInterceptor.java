@@ -2,6 +2,7 @@ package co.edu.escuelaing.nexovital.infrastructure.config;
 
 import co.edu.escuelaing.nexovital.usuarios.domain.exception.CredencialesInvalidasException;
 import co.edu.escuelaing.nexovital.usuarios.domain.exception.UsuarioNoEncontradoException;
+import co.edu.escuelaing.nexovital.usuarios.domain.exception.UsuarioNoRegistradoException;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.Usuario;
 import co.edu.escuelaing.nexovital.usuarios.domain.port.in.ResolutorSesion;
 import org.slf4j.Logger;
@@ -103,6 +104,10 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
         Usuario usuario;
         try {
             usuario = resolutorSesion.resolver(token);
+        } catch (UsuarioNoRegistradoException e) {
+            // Token valido de Google sin cuenta (T10): tampoco abre el canal.
+            registroAccesoDenegado.registrarNoAutenticadoStomp("usuario_no_registrado");
+            throw new AccessDeniedException("La cuenta aún no está registrada.", e);
         } catch (CredencialesInvalidasException | UsuarioNoEncontradoException e) {
             registroAccesoDenegado.registrarNoAutenticadoStomp("token_invalido");
             throw new AccessDeniedException("Token inválido para el CONNECT STOMP.", e);

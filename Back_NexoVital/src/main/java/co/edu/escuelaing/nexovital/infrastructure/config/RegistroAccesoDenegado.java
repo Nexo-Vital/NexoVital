@@ -50,14 +50,35 @@ public class RegistroAccesoDenegado {
      *               o {@code recurso_ajeno}
      */
     public void registrar(String motivo) {
+        registrarComo(actorActual(), rolActual(), motivo);
+    }
+
+    /**
+     * Registra un intento denegado de alguien que todavía no tiene usuario en
+     * NexoVital, pero sí una identidad verificada por Google: por ejemplo, quien
+     * intenta registrarse como administrador de plataforma (T10/T11). El actor
+     * queda como {@code google:<uid>} para poder seguir el patrón.
+     */
+    public void registrarIdentidadExterna(String uidExterno, String motivo) {
+        registrarComo("google:" + uidExterno, SIN_DATO, motivo);
+    }
+
+    /**
+     * Formato único del 403 (S-1 / T11): quién (actor y rol), qué (método y
+     * ruta, que incluye el id del recurso), desde dónde (IP) y por qué. La hora
+     * la pone el log. Nunca se escribe el token.
+     */
+    private static void registrarComo(String actor, String rol, String motivo) {
         ServletRequestAttributes atributos =
                 (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
         HttpServletRequest request = atributos == null ? null : atributos.getRequest();
 
-        LOG.warn("acceso_denegado actor={} metodo={} ruta={} motivo={}",
-                actorActual(),
+        LOG.warn("acceso_denegado actor={} rol={} metodo={} ruta={} ip={} motivo={}",
+                actor,
+                rol,
                 request == null ? SIN_DATO : request.getMethod(),
                 request == null ? SIN_DATO : request.getRequestURI(),
+                request == null ? SIN_DATO : ipDelCliente(request),
                 motivo);
     }
 
@@ -94,6 +115,14 @@ public class RegistroAccesoDenegado {
             return reenviada.split(",")[0].trim();
         }
         return request.getRemoteAddr();
+    }
+
+    private static String rolActual() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.getPrincipal() instanceof Usuario usuario) {
+            return usuario.getRol().name();
+        }
+        return SIN_DATO;
     }
 
     private static String actorActual() {

@@ -115,6 +115,36 @@ export async function cuentaFirebaseActual(): Promise<CuentaFirebase | null> {
   };
 }
 
+/**
+ * Define la contraseña de la cuenta con sesión abierta (registro, T10). La
+ * contraseña queda en Firebase, enlazada a la misma cuenta de Google: después
+ * se entra con correo y contraseña o con Google, y en los dos casos es el mismo
+ * usuario (mismo uid). NexoVital nunca la ve ni la guarda.
+ *
+ * <p>Si la cuenta ya tenía contraseña (un registro anterior que falló después
+ * de este paso), la reemplaza en vez de fallar.
+ */
+export async function establecerContrasenaFirebase(contrasena: string): Promise<void> {
+  const [auth, { EmailAuthProvider, linkWithCredential, updatePassword }] = await Promise.all([
+    getFirebaseAuth(),
+    import('firebase/auth'),
+  ]);
+  const usuario = auth.currentUser;
+  if (!usuario?.email) {
+    throw Object.assign(new Error('No hay sesión de Google abierta'), {
+      code: 'auth/no-current-user',
+    });
+  }
+  const yaTieneContrasena = usuario.providerData.some(
+    (proveedor) => proveedor.providerId === 'password',
+  );
+  if (yaTieneContrasena) {
+    await updatePassword(usuario, contrasena);
+    return;
+  }
+  await linkWithCredential(usuario, EmailAuthProvider.credential(usuario.email, contrasena));
+}
+
 /** Cierra la sesión del IdP. Sin sesión de Firebase abierta no hace nada. */
 export async function logoutFirebase(): Promise<void> {
   if (!authPromise) {

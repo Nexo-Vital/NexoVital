@@ -1,10 +1,26 @@
-import { Ambulance, HeartPulse, type LucideIcon, User, UserPlus, Warehouse } from 'lucide-react';
+import {
+  Ambulance,
+  Check,
+  Circle,
+  Eye,
+  EyeOff,
+  HeartPulse,
+  Lock,
+  type LucideIcon,
+  User,
+  UserPlus,
+  Warehouse,
+} from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { nvButton } from '@/components/ui/button';
 import { useSessionStore } from '@/features/usuarios/session';
 import { ApiError, type DatosRegistro, registrarCuenta } from '@/services/apiClient';
-import { cuentaFirebaseActual, logoutFirebase } from '@/services/firebase';
+import {
+  cuentaFirebaseActual,
+  establecerContrasenaFirebase,
+  logoutFirebase,
+} from '@/services/firebase';
 
 type RolElegible = DatosRegistro['rol'];
 
@@ -41,6 +57,46 @@ export const OPCIONES_DE_ROL: OpcionDeRol[] = [
   },
 ];
 
+/**
+ * Política de la contraseña que se define al crear la cuenta: mínimo 8
+ * caracteres, con mayúscula, minúscula y número. El símbolo no es obligatorio.
+ */
+export const REGLAS_CONTRASENA = [
+  { id: 'largo', texto: 'Mínimo 8 caracteres', cumple: (c: string) => c.length >= 8 },
+  { id: 'mayuscula', texto: 'Una letra mayúscula', cumple: (c: string) => /[A-ZÁÉÍÓÚÑ]/.test(c) },
+  { id: 'minuscula', texto: 'Una letra minúscula', cumple: (c: string) => /[a-záéíóúñ]/.test(c) },
+  { id: 'numero', texto: 'Un número', cumple: (c: string) => /\d/.test(c) },
+] as const;
+
+/** @returns el mensaje de la primera regla que no se cumple, o `null` si la contraseña sirve */
+export function validarContrasena(contrasena: string, confirmacion: string): string | null {
+  const incumplida = REGLAS_CONTRASENA.find((regla) => !regla.cumple(contrasena));
+  if (incumplida) {
+    return 'La contraseña debe tener mínimo 8 caracteres, una mayúscula, una minúscula y un número.';
+  }
+  if (contrasena !== confirmacion) {
+    return 'Las contraseñas no coinciden.';
+  }
+  return null;
+}
+
+/** Mensaje en español para los errores de Firebase al guardar la contraseña. */
+function mensajeErrorContrasena(codigo: string): string {
+  switch (codigo) {
+    case 'auth/weak-password':
+    case 'auth/password-does-not-meet-requirements':
+      return 'Firebase rechazó la contraseña por débil. Prueba con una más larga.';
+    case 'auth/email-already-in-use':
+    case 'auth/credential-already-in-use':
+      return 'Ya existe una cuenta con contraseña para este correo. Inicia sesión con tu correo y contraseña.';
+    case 'auth/requires-recent-login':
+    case 'auth/no-current-user':
+      return 'Tu sesión de Google expiró. Vuelve a crear la cuenta con Google.';
+    default:
+      return 'No se pudo guardar la contraseña. Inténtalo de nuevo.';
+  }
+}
+
 /** Placa colombiana de vehículo: tres letras y tres números. Mismo criterio que el backend. */
 const PATRON_PLACA = /^[A-Z]{3}\d{3}$/;
 
@@ -58,13 +114,22 @@ export function validarRegistro(
   rol: RolElegible | null,
   placa: string,
   modelo: string,
+  contrasena: string,
+  confirmacion: string,
 ): string | null {
   if (!rol) {
     return 'Elige cómo vas a usar NexoVital.';
   }
-  if (rol !== 'CONDUCTOR') {
-    return null;
+  if (rol === 'CONDUCTOR') {
+    const problemaVehiculo = validarVehiculo(placa, modelo);
+    if (problemaVehiculo) {
+      return problemaVehiculo;
+    }
   }
+  return validarContrasena(contrasena, confirmacion);
+}
+
+function validarVehiculo(placa: string, modelo: string): string | null {
   const placaNormalizada = normalizarPlaca(placa);
   if (!placaNormalizada) {
     return 'Escribe la placa del vehículo.';
@@ -102,6 +167,9 @@ export default function RegistroPage() {
   const [rol, setRol] = useState<RolElegible | null>(null);
   const [placa, setPlaca] = useState('');
   const [modelo, setModelo] = useState('');
+  const [contrasena, setContrasena] = useState('');
+  const [confirmacion, setConfirmacion] = useState('');
+  const [verContrasena, setVerContrasena] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -127,7 +195,7 @@ export default function RegistroPage() {
     if (enviando) {
       return;
     }
-    const problema = validarRegistro(rol, placa, modelo);
+    const problema = validarRegistro(rol, placa, modelo, contrasena, confirmacion);
     if (problema || !rol) {
       setError(problema);
       return;
@@ -138,6 +206,12 @@ export default function RegistroPage() {
       const actual = await cuentaFirebaseActual();
       if (!actual) {
         navigate('/login', { replace: true });
+        return;
+      }
+      try {
+        await establecerContrasenaFirebase(contrasena);
+      } catch (causa) {
+        setError(mensajeErrorContrasena((causa as { code?: string }).code ?? ''));
         return;
       }
       const datos: DatosRegistro =
@@ -173,8 +247,8 @@ export default function RegistroPage() {
           </h1>
           <p className="mt-1.5 text-nv-navy-400 text-sm leading-5">
             {cuenta?.email
-              ? `Entraste con ${cuenta.email}. Elige cómo vas a usar NexoVital.`
-              : 'Elige cómo vas a usar NexoVital.'}
+              ? `Entraste con ${cuenta.email}. Elige tu rol y crea una contraseña para entrar también con este correo.`
+              : 'Elige tu rol y crea una contraseña.'}
           </p>
         </div>
 
@@ -257,6 +331,85 @@ export default function RegistroPage() {
               </div>
             </div>
           )}
+
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col">
+              <label
+                htmlFor="registro-contrasena"
+                className="mb-2 font-semibold text-nv-navy text-sm"
+              >
+                Crea tu contraseña
+              </label>
+              <div className={CAMPO}>
+                <Lock className="size-5 shrink-0 text-nv-navy-400" aria-hidden />
+                <input
+                  id="registro-contrasena"
+                  name="contrasena"
+                  type={verContrasena ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  value={contrasena}
+                  onChange={(event) => setContrasena(event.target.value)}
+                  disabled={enviando}
+                  aria-describedby="registro-reglas"
+                  className={ENTRADA}
+                />
+                <button
+                  type="button"
+                  onClick={() => setVerContrasena((actual) => !actual)}
+                  aria-label={verContrasena ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                  className="flex size-5 shrink-0 items-center justify-center text-nv-navy-400 transition-colors hover:text-nv-navy focus-visible:outline-2 focus-visible:outline-nv-teal focus-visible:outline-offset-2"
+                >
+                  {verContrasena ? (
+                    <EyeOff className="size-5" aria-hidden />
+                  ) : (
+                    <Eye className="size-5" aria-hidden />
+                  )}
+                </button>
+              </div>
+              <ul id="registro-reglas" className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
+                {REGLAS_CONTRASENA.map((regla) => {
+                  const cumple = regla.cumple(contrasena);
+                  return (
+                    <li
+                      key={regla.id}
+                      className={`flex items-center gap-1.5 text-xs ${
+                        cumple ? 'text-nv-teal' : 'text-nv-navy-400'
+                      }`}
+                    >
+                      {cumple ? (
+                        <Check className="size-3.5 shrink-0" aria-hidden />
+                      ) : (
+                        <Circle className="size-3.5 shrink-0" aria-hidden />
+                      )}
+                      {regla.texto}
+                      <span className="sr-only">{cumple ? ' (cumplida)' : ' (pendiente)'}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+            <div className="flex flex-col">
+              <label
+                htmlFor="registro-confirmacion"
+                className="mb-2 font-semibold text-nv-navy text-sm"
+              >
+                Confirma tu contraseña
+              </label>
+              <div className={CAMPO}>
+                <Lock className="size-5 shrink-0 text-nv-navy-400" aria-hidden />
+                <input
+                  id="registro-confirmacion"
+                  name="confirmacion"
+                  type={verContrasena ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  value={confirmacion}
+                  onChange={(event) => setConfirmacion(event.target.value)}
+                  disabled={enviando}
+                  className={ENTRADA}
+                />
+              </div>
+            </div>
+          </div>
 
           {error && (
             <p
