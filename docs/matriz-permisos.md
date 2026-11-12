@@ -1,6 +1,6 @@
 # Matriz de permisos por rol y por recurso (EP-06.F2.US1 · T09)
 
-Escenario de calidad **S-4**: el backend verifica el rol y la pertenencia del recurso en cada solicitud, rechaza con **403** y registra el intento. Los intentos sin sesión válida (**S-1**) se rechazan con **401** y también se registran.
+Escenario de calidad **S-1** (autenticación con Google y autorización por rol y por recurso): el backend valida el token del proveedor externo en cada solicitud y en el CONNECT del WebSocket (**401** si falla), verifica además el rol y la pertenencia del recurso (**403** si no corresponde) y registra ambos intentos.
 
 ## 1. Cómo se decide
 
@@ -8,6 +8,7 @@ Escenario de calidad **S-4**: el backend verifica el rol y la pertenencia del re
 |---|---|---|---|
 | 1. ¿Hay token válido? | `JwtAuthFilter` + `SecurityConfig` (entry point) | 401 `NO_AUTENTICADO` | `autenticacion_fallida canal=http motivo=token_ausente\|token_invalido` |
 | 1b. ¿El CONNECT del WebSocket trae un token válido? | `StompAuthChannelInterceptor` | No se abre la conexión | `autenticacion_fallida canal=stomp motivo=...` |
+| 1c. ¿El token es válido pero el usuario no tiene cuenta? | `ResolutorSesionFirebase` + entry point | 401 `USUARIO_NO_REGISTRADO` | `autenticacion_fallida ... motivo=usuario_no_registrado` |
 | 2. ¿El rol puede usar el endpoint? | `SecurityConfig` (matchers por método y ruta) | 403 `ACCESO_DENEGADO` | `acceso_denegado ... motivo=rol_insuficiente` |
 | 3. ¿El recurso es del usuario? | Casos de uso y controladores | 403 con código del recurso | `acceso_denegado ... motivo=recurso_ajeno` |
 | 4. ¿El estado permite la acción? | Casos de uso | 409 | — |
@@ -24,8 +25,9 @@ Roles: **CIU** = Ciudadano, **CON** = Conductor, **ACA** = Admin. centro de acop
 |---|:-:|:-:|:-:|:-:|:-:|---|
 | `GET /sesiones/actual`, `GET /mapa`, `GET /emergencias`, `GET /organizaciones` | ✅ | ✅ | ✅ | ✅ | ✅ | — |
 | `POST /emergencias` | ✅ | ❌ | ✅ | ✅ | ❌ | — (además, límite de 10/min por usuario) |
-| `PATCH /emergencias/{id}` | ❌ | ❌ | ❌ | ✅ | ❌ | Ninguna: cualquier ACY puede actualizar cualquier emergencia (ver nota 1) |
+| `PATCH /emergencias/{id}` | ❌ | ❌ | ❌ | ❌ | ✅ | — (solo la plataforma corrige emergencias; ver nota 1) |
 | `POST /organizaciones` | ❌ | ❌ | ❌ | ❌ | ✅ | — |
+| `POST /registros` | token válido de Google sin cuenta | | | | | El rol se elige entre CIU, ACY y CON (ver sección 4). Si el usuario ya existe → 409. Conductor con placa repetida → 409 |
 | `GET / POST /centros-acopio/mio`, `POST /centros-acopio/mio/inventario` | ❌ | ❌ | ✅ | ✅ | ❌ | 🔒 Implícita: `mio` se resuelve con el usuario del token |
 | `GET /centros-acopio/{id}/inventario` | ✅ | ✅ | ✅ | ✅ | ✅ | — |
 | `POST /centros-acopio/{id}/inventario/donacion` | ✅ | ✅ | ✅ | ✅ | ✅ | — (límite de 10/min por usuario) |
@@ -42,12 +44,20 @@ Roles: **CIU** = Ciudadano, **CON** = Conductor, **ACA** = Admin. centro de acop
 | `POST /solicitudes/{id}/cancelar` | 🔒 | ❌ | 🔒 | 🔒 | ❌ | Solo quien creó la solicitud → 403 `SOLICITUD_AJENA` |
 | `GET /auditoria/**` | ❌ | ❌ | ❌ | ❌ | ✅ | — |
 | Canal en tiempo real (`/ws`, CONNECT y SUBSCRIBE) | ✅ | ✅ | ✅ | ✅ | ✅ | Requiere token válido en el CONNECT. Los clientes no pueden publicar en `/topic` ni en `/queue` |
-| `/actuator/health`, `POST /sesiones` (login local de desarrollo) | público | | | | | — |
+| `/actuator/health`, `POST /sesiones` (login local de desarrollo, 404 en docker y prod) | público | | | | | — |
 
 Todas las rutas van con el prefijo `/api/v1`, salvo `/ws` y `/actuator`.
 
 ## 3. Notas
 
-1. **`PATCH /emergencias/{id}`** no tiene regla de pertenencia: cualquier admin de un centro de ayuda puede actualizar cualquier emergencia. Si el equipo decide que solo el centro que atiende la emergencia puede cambiarla, eso es una regla nueva y queda fuera de esta corrección.
+1. **`PATCH /emergencias/{id}`** es solo de ADMIN_PLATAFORMA. El administrador de centro no puede editar emergencias, porque la emergencia no guarda quién la reportó ni qué centro la atiende, y por eso no hay regla de pertenencia posible sin cambiar el modelo.
 2. **`/actuator/prometheus`** está permitido en el backend porque Prometheus lo lee directo de cada instancia por la red interna. Hacia afuera, el nginx del compose solo publica `/actuator/health` y cualquier otro `/actuator/...` responde 404 (T03).
 3. Las pruebas que respaldan esta matriz están en `AccesoDenegadoRegistroHttpTest`, `SolicitudFlujoHttpTest`, `SolicitudLlegadaHttpTest`, `PosicionHttpTest`, `RegistroAccesoDenegadoTest` y `StompAuthChannelInterceptorTest`.
+
+## 4. Registro y roles
+
+- Todo usuario nuevo entra con su cuenta de Google y elige su rol al registrarse (`POST /registros`).
+- Los roles que se pueden elegir son **ciudadano**, **administrador de centro** (se guarda como `ADMIN_CENTRO_AYUDA`; centro de ayuda y de acopio son lo mismo) y **conductor**.
+- **ADMIN_PLATAFORMA** y **ADMIN_ACOPIO** nunca se pueden elegir al registrarse. El administrador de plataforma está precargado y se enlaza con su cuenta de Google.
+- El nombre y el correo salen del token de Google, no de lo que envía el cliente.
+- El conductor indica además **placa y modelo** del vehículo. La placa debe ser única: si ya existe, el registro responde 409.
