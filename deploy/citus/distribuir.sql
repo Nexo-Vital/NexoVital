@@ -79,6 +79,19 @@ BEGIN
   END IF;
 END $$;
 
+-- Placas registradas (Sprint 2, T10): tabla de referencia. Su clave primaria
+-- (la placa) es la que garantiza que dos conductores no queden con la misma
+-- placa; flota.ambulancias no puede tener ese UNIQUE porque se distribuye por
+-- id. Una tabla de referencia se replica en todos los nodos y SI admite clave
+-- unica. Solo se convierte si Hibernate ya la creo (ddl-auto=update).
+DO $$
+BEGIN
+  IF to_regclass('flota.placas') IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM citus_tables WHERE table_name::text = 'flota.placas') THEN
+    PERFORM create_reference_table('flota.placas');
+  END IF;
+END $$;
+
 -- Tablas grandes: distribuidas por id.
 DO $$
 BEGIN

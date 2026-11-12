@@ -22,6 +22,8 @@ public interface UsuarioJpaRepository extends JpaRepository<UsuarioJpaEntity, UU
      */
     Optional<UsuarioJpaEntity> findByFirebaseUid(String firebaseUid);
 
+    Optional<UsuarioJpaEntity> findByEmailIgnoreCaseAndFirebaseUidIsNull(String email);
+
     /**
      * Increments the failure counter and triggers the lockout in <b>a single</b>
      * statement (design D6). In SQL the {@code SET} expressions read the row's

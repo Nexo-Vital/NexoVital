@@ -2,6 +2,7 @@ package co.edu.escuelaing.nexovital.infrastructure.config;
 
 import co.edu.escuelaing.nexovital.usuarios.domain.exception.CredencialesInvalidasException;
 import co.edu.escuelaing.nexovital.usuarios.domain.exception.UsuarioNoEncontradoException;
+import co.edu.escuelaing.nexovital.usuarios.domain.exception.UsuarioNoRegistradoException;
 import co.edu.escuelaing.nexovital.usuarios.domain.port.in.ResolutorSesion;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -27,6 +28,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     private static final String PREFIJO_BEARER = "Bearer ";
 
+    /**
+     * Atributo de la peticion que marca "token valido sin cuenta registrada".
+     * Lo lee el entry point de {@link SecurityConfig}.
+     */
+    public static final String ATRIBUTO_USUARIO_NO_REGISTRADO = "nexovital.usuarioNoRegistrado";
+
     private final ResolutorSesion resolutorSesion;
 
     public JwtAuthFilter(ResolutorSesion resolutorSesion) {
@@ -48,6 +55,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                         null,
                         List.of(new SimpleGrantedAuthority("ROLE_" + usuario.getRol().name())));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
+            } catch (UsuarioNoRegistradoException e) {
+                // Token valido de Google, pero la cuenta aun no eligio su rol
+                // (T10). Sigue sin autenticar —sale 401 como cualquier token que
+                // no sirve— y se marca para que el entry point responda el
+                // codigo USUARIO_NO_REGISTRADO y el front muestre el registro.
+                request.setAttribute(ATRIBUTO_USUARIO_NO_REGISTRADO, Boolean.TRUE);
+                SecurityContextHolder.clearContext();
             } catch (CredencialesInvalidasException | UsuarioNoEncontradoException e) {
                 // Token inválido, o válido pero de un usuario que ya no existe: se
                 // sigue sin autenticar y Spring Security responde 401.

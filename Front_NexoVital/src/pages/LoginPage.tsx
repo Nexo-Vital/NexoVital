@@ -16,7 +16,8 @@ import { nvButton } from '@/components/ui/button';
 import { DemoProfilesPanel } from '@/features/usuarios/DemoProfilesPanel';
 import { hasRoleHome, roleWithoutHomeMessage } from '@/features/usuarios/role-home';
 import { type DemoUser, useSessionStore } from '@/features/usuarios/session';
-import { ApiError } from '@/services/apiClient';
+import { ApiError, CODIGO_USUARIO_NO_REGISTRADO, isDemoMode } from '@/services/apiClient';
+import { isFirebaseConfigured } from '@/services/firebase';
 
 /**
  * Per-character delay of the demo autofill. 20 ms is the fast end of the
@@ -80,6 +81,11 @@ async function typeText(text: string, setValue: (value: string) => void): Promis
 export default function LoginPage() {
   const navigate = useNavigate();
   const login = useSessionStore((state) => state.login);
+  const loginWithGoogle = useSessionStore((state) => state.loginWithGoogle);
+  // Con Firebase configurado (docker y Azure) el unico acceso es Google
+  // (EP-06.F2.US1, T10): el formulario de correo y contrasena queda solo para
+  // desarrollo, las pruebas y el modo demo.
+  const conGoogle = isFirebaseConfigured() && !isDemoMode();
   const logout = useSessionStore((state) => state.logout);
 
   const [email, setEmail] = useState('');
@@ -140,6 +146,35 @@ export default function LoginPage() {
     }
   };
 
+  /**
+   * Acceso con Google. Una cuenta sin registro va a elegir su rol; un rol sin
+   * pantalla en esta version (administrador de plataforma) no entra.
+   */
+  const handleGoogle = async () => {
+    if (submitting) {
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const usuario = await loginWithGoogle();
+      if (!hasRoleHome(usuario.rol)) {
+        logout();
+        setError(roleWithoutHomeMessage(usuario.rol));
+        return;
+      }
+      navigate('/', { replace: true });
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.codigo === CODIGO_USUARIO_NO_REGISTRADO) {
+        navigate('/registro', { replace: true });
+        return;
+      }
+      setError(cause instanceof ApiError ? cause.message : 'No se pudo iniciar sesión con Google');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (disabled) {
@@ -177,9 +212,11 @@ export default function LoginPage() {
         opening or collapsing it never shifts the sign-in form. It is opaque and
         limited to 62dvh, which keeps it scrollable rather than covering the form.
       */}
-      <div className="absolute inset-x-0 top-0 z-20 flex justify-end p-3">
-        <DemoProfilesPanel disabled={disabled} busy={filling} onSelect={handleProfileSelect} />
-      </div>
+      {!conGoogle && (
+        <div className="absolute inset-x-0 top-0 z-20 flex justify-end p-3">
+          <DemoProfilesPanel disabled={disabled} busy={filling} onSelect={handleProfileSelect} />
+        </div>
+      )}
 
       {/*
         Brand panel: navy on the left from `lg`, a compact banner on mobile.
@@ -223,89 +260,124 @@ export default function LoginPage() {
           <div>
             <h3 className="font-semibold text-2xl text-nv-navy tracking-[-0.3px]">Inicia sesión</h3>
             <p className="mt-1.5 text-nv-navy-400 text-sm leading-5">
-              Entra con la cuenta que te asignó el equipo de NexoVital
+              {conGoogle
+                ? 'Entra con tu cuenta de Google'
+                : 'Entra con la cuenta que te asignó el equipo de NexoVital'}
             </p>
           </div>
 
-          <form className="flex flex-col gap-5" onSubmit={handleSubmit} noValidate>
-            <div className="flex flex-col">
-              <label htmlFor="login-email" className="mb-2 font-semibold text-nv-navy text-sm">
-                Usuario o correo
-              </label>
-              <div className="flex h-[52px] items-center gap-3 rounded-nv-md border-[1.5px] border-nv-line bg-white px-4 focus-within:border-nv-teal focus-within:shadow-[0_0_0_3px_rgb(93_186_168_/_0.22)]">
-                <User className="size-5 shrink-0 text-nv-navy-400" aria-hidden />
-                <input
-                  id="login-email"
-                  name="email"
-                  type="email"
-                  autoComplete="username"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  disabled={disabled}
-                  aria-invalid={error !== null}
-                  className="h-full min-w-0 flex-1 border-0 bg-transparent text-base text-nv-navy outline-none placeholder:text-nv-navy-400 disabled:opacity-50"
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-col">
-              <label htmlFor="login-password" className="mb-2 font-semibold text-nv-navy text-sm">
-                Contraseña
-              </label>
-              <div className="flex h-[52px] items-center gap-3 rounded-nv-md border-[1.5px] border-nv-line bg-white px-4 focus-within:border-nv-teal focus-within:shadow-[0_0_0_3px_rgb(93_186_168_/_0.22)]">
-                <Lock className="size-5 shrink-0 text-nv-navy-400" aria-hidden />
-                <input
-                  id="login-password"
-                  name="password"
-                  type={showPassword ? 'text' : 'password'}
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  disabled={disabled}
-                  aria-invalid={error !== null}
-                  className="h-full min-w-0 flex-1 border-0 bg-transparent text-base text-nv-navy outline-none placeholder:text-nv-navy-400 disabled:opacity-50"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((current) => !current)}
-                  aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                  className="flex size-5 shrink-0 items-center justify-center text-nv-navy-400 transition-colors hover:text-nv-navy focus-visible:outline-2 focus-visible:outline-nv-teal focus-visible:outline-offset-2"
+          {conGoogle ? (
+            <div className="flex flex-col gap-5">
+              {error && (
+                <p
+                  role="alert"
+                  className="rounded-nv-md border border-nv-red-600/40 bg-nv-red-600/10 px-3 py-2 text-nv-red-600 text-xs"
                 >
-                  {showPassword ? (
-                    <EyeOff className="size-5" aria-hidden />
-                  ) : (
-                    <Eye className="size-5" aria-hidden />
-                  )}
-                </button>
+                  {error}
+                </p>
+              )}
+
+              <button
+                type="button"
+                onClick={handleGoogle}
+                disabled={submitting}
+                className={nvButton()}
+              >
+                <LogIn className="size-5 shrink-0" aria-hidden />
+                {submitting ? 'Abriendo Google…' : 'Continuar con Google'}
+              </button>
+
+              <div className="h-px bg-nv-line" aria-hidden />
+
+              <div className="flex items-start gap-2 rounded-nv-md bg-nv-mint p-2.5 px-3 text-[12.5px] text-nv-navy-400 leading-[18px]">
+                <Info className="mt-px size-4 shrink-0 text-nv-navy-600" aria-hidden />
+                <span>
+                  ¿Primera vez en NexoVital? Entra con Google y elige si eres ciudadano,
+                  administrador de un centro o conductor de ambulancia.
+                </span>
               </div>
             </div>
+          ) : (
+            <form className="flex flex-col gap-5" onSubmit={handleSubmit} noValidate>
+              <div className="flex flex-col">
+                <label htmlFor="login-email" className="mb-2 font-semibold text-nv-navy text-sm">
+                  Usuario o correo
+                </label>
+                <div className="flex h-[52px] items-center gap-3 rounded-nv-md border-[1.5px] border-nv-line bg-white px-4 focus-within:border-nv-teal focus-within:shadow-[0_0_0_3px_rgb(93_186_168_/_0.22)]">
+                  <User className="size-5 shrink-0 text-nv-navy-400" aria-hidden />
+                  <input
+                    id="login-email"
+                    name="email"
+                    type="email"
+                    autoComplete="username"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    disabled={disabled}
+                    aria-invalid={error !== null}
+                    className="h-full min-w-0 flex-1 border-0 bg-transparent text-base text-nv-navy outline-none placeholder:text-nv-navy-400 disabled:opacity-50"
+                  />
+                </div>
+              </div>
 
-            {error && (
-              <p
-                role="alert"
-                className="rounded-nv-md border border-nv-red-600/40 bg-nv-red-600/10 px-3 py-2 text-nv-red-600 text-xs"
-              >
-                {locked
-                  ? `Cuenta bloqueada temporalmente. Intente nuevamente en ${lockRemaining} s.`
-                  : error}
-              </p>
-            )}
+              <div className="flex flex-col">
+                <label htmlFor="login-password" className="mb-2 font-semibold text-nv-navy text-sm">
+                  Contraseña
+                </label>
+                <div className="flex h-[52px] items-center gap-3 rounded-nv-md border-[1.5px] border-nv-line bg-white px-4 focus-within:border-nv-teal focus-within:shadow-[0_0_0_3px_rgb(93_186_168_/_0.22)]">
+                  <Lock className="size-5 shrink-0 text-nv-navy-400" aria-hidden />
+                  <input
+                    id="login-password"
+                    name="password"
+                    type={showPassword ? 'text' : 'password'}
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    disabled={disabled}
+                    aria-invalid={error !== null}
+                    className="h-full min-w-0 flex-1 border-0 bg-transparent text-base text-nv-navy outline-none placeholder:text-nv-navy-400 disabled:opacity-50"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((current) => !current)}
+                    aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                    className="flex size-5 shrink-0 items-center justify-center text-nv-navy-400 transition-colors hover:text-nv-navy focus-visible:outline-2 focus-visible:outline-nv-teal focus-visible:outline-offset-2"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="size-5" aria-hidden />
+                    ) : (
+                      <Eye className="size-5" aria-hidden />
+                    )}
+                  </button>
+                </div>
+              </div>
 
-            <button type="submit" disabled={disabled} className={nvButton()}>
-              <LogIn className="size-5 shrink-0" aria-hidden />
-              {submitting ? 'Ingresando…' : 'Iniciar sesión'}
-            </button>
+              {error && (
+                <p
+                  role="alert"
+                  className="rounded-nv-md border border-nv-red-600/40 bg-nv-red-600/10 px-3 py-2 text-nv-red-600 text-xs"
+                >
+                  {locked
+                    ? `Cuenta bloqueada temporalmente. Intente nuevamente en ${lockRemaining} s.`
+                    : error}
+                </p>
+              )}
 
-            <div className="h-px bg-nv-line" aria-hidden />
+              <button type="submit" disabled={disabled} className={nvButton()}>
+                <LogIn className="size-5 shrink-0" aria-hidden />
+                {submitting ? 'Ingresando…' : 'Iniciar sesión'}
+              </button>
 
-            <div className="flex items-start gap-2 rounded-nv-md bg-nv-mint p-2.5 px-3 text-[12.5px] text-nv-navy-400 leading-[18px]">
-              <Info className="mt-px size-4 shrink-0 text-nv-navy-600" aria-hidden />
-              <span>
-                En el MVP no hay registro: las cuentas de ciudadano y de conductor vienen
-                precargadas.
-              </span>
-            </div>
-          </form>
+              <div className="h-px bg-nv-line" aria-hidden />
+
+              <div className="flex items-start gap-2 rounded-nv-md bg-nv-mint p-2.5 px-3 text-[12.5px] text-nv-navy-400 leading-[18px]">
+                <Info className="mt-px size-4 shrink-0 text-nv-navy-600" aria-hidden />
+                <span>
+                  En el MVP no hay registro: las cuentas de ciudadano y de conductor vienen
+                  precargadas.
+                </span>
+              </div>
+            </form>
+          )}
         </div>
       </section>
     </div>

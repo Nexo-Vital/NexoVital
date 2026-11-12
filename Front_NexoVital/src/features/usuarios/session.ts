@@ -5,6 +5,7 @@ import {
   clearToken,
   getSession,
   getToken,
+  loginConGoogle,
   setSession,
   setToken,
 } from '@/services/apiClient';
@@ -124,6 +125,11 @@ interface SessionState {
   token: string | null;
   login: (email: string, password: string) => Promise<Usuario>;
   /**
+   * Inicio de sesion con Google (T10). Rechaza con `ApiError` de codigo
+   * `USUARIO_NO_REGISTRADO` si la cuenta aun no eligio su rol.
+   */
+  loginWithGoogle: () => Promise<Usuario>;
+  /**
    * Replaces the session with the server-authoritative user returned by
    * GET /api/v1/sesiones/actual. The server wins over any stale localStorage
    * copy, including the role, so a revoked or re-assigned role is honoured
@@ -156,6 +162,11 @@ export const useSessionStore = create<SessionState>((set) => ({
     const { token, usuario } = await apiLogin(email, password);
     setToken(token);
     setSession(usuario);
+    set({ user: usuario, role: usuario.rol, token });
+    return usuario;
+  },
+  loginWithGoogle: async () => {
+    const { token, usuario } = await loginConGoogle();
     set({ user: usuario, role: usuario.rol, token });
     return usuario;
   },

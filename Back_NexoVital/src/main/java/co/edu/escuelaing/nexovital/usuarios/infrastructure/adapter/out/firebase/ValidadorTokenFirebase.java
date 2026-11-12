@@ -1,6 +1,7 @@
 package co.edu.escuelaing.nexovital.usuarios.infrastructure.adapter.out.firebase;
 
 import co.edu.escuelaing.nexovital.usuarios.domain.exception.CredencialesInvalidasException;
+import co.edu.escuelaing.nexovital.usuarios.domain.model.IdentidadExterna;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.JwtParser;
@@ -48,13 +49,28 @@ public class ValidadorTokenFirebase {
      * @throws CredencialesInvalidasException si el token no verifica
      */
     public String validar(String idToken) {
+        return validarIdentidad(idToken).uid();
+    }
+
+    /**
+     * Valida el token igual que {@link #validar(String)} y devuelve además lo
+     * que Google afirma de la cuenta: correo, si está verificado, y nombre.
+     * Lo usan el registro (T10) y el enlace del administrador precargado.
+     *
+     * @throws CredencialesInvalidasException si el token no verifica
+     */
+    public IdentidadExterna validarIdentidad(String idToken) {
         try {
             Claims claims = parser.parseSignedClaims(idToken).getPayload();
             String uid = claims.getSubject();
             if (uid == null || uid.isBlank()) {
                 throw new CredencialesInvalidasException("El token no trae subject");
             }
-            return uid;
+            return new IdentidadExterna(
+                    uid,
+                    claims.get("email", String.class),
+                    Boolean.TRUE.equals(claims.get("email_verified", Boolean.class)),
+                    claims.get("name", String.class));
         } catch (JwtException | IllegalArgumentException e) {
             throw new CredencialesInvalidasException("Token de Firebase inválido: " + e.getMessage());
         }

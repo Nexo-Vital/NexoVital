@@ -1,6 +1,6 @@
 import { findDemoAccount } from '../mocks/demo-users';
 import type { Usuario } from '../types/domain';
-import { isFirebaseConfigured, loginFirebase } from './firebase';
+import { isFirebaseConfigured, loginFirebase, loginGoogleFirebase } from './firebase';
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '/api/v1';
 
@@ -274,6 +274,12 @@ export async function getMe(token: string): Promise<Usuario> {
   }
 
   if (response.status === 401) {
+    // Token valido de Google, pero la cuenta todavia no eligio su rol (T10):
+    // el backend lo distingue con un codigo propio para llevar al registro.
+    const codigo = await leerCodigoDeError(response);
+    if (codigo === CODIGO_USUARIO_NO_REGISTRADO) {
+      throw new ApiError(401, 'Tu cuenta aún no está registrada en NexoVital.', codigo);
+    }
     throw new ApiError(401, 'Sesión expirada o no autenticado');
   }
 
@@ -282,6 +288,102 @@ export async function getMe(token: string): Promise<Usuario> {
   }
 
   return (await response.json()) as Usuario;
+}
+
+/** Codigo con el que el backend responde 401 a una cuenta de Google sin registro (T10). */
+export const CODIGO_USUARIO_NO_REGISTRADO = 'USUARIO_NO_REGISTRADO';
+
+async function leerCodigoDeError(response: Response): Promise<string | undefined> {
+  try {
+    const body = (await response.json()) as { codigo?: string };
+    return body.codigo;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Mensaje en español para los errores del popup de Google que puede ver una persona. */
+function mensajeDeErrorGoogle(codigo: string): string {
+  switch (codigo) {
+    case 'auth/popup-closed-by-user':
+    case 'auth/cancelled-popup-request':
+      return 'Cerraste la ventana de Google antes de terminar.';
+    case 'auth/popup-blocked':
+      return 'El navegador bloqueó la ventana de Google. Permite las ventanas emergentes e inténtalo de nuevo.';
+    case 'auth/unauthorized-domain':
+      return 'Este dominio no está autorizado en Firebase para iniciar sesión con Google.';
+    case 'auth/operation-not-allowed':
+      return 'El inicio de sesión con Google no está habilitado en Firebase.';
+    case 'auth/network-request-failed':
+      return 'No se pudo conectar con Google. Revisa tu conexión.';
+    default:
+      return 'No se pudo iniciar sesión con Google.';
+  }
+}
+
+/**
+ * Inicio de sesion con Google (EP-06.F2.US1, T10). Abre la ventana de Google,
+ * y con el token pregunta al backend quien es el usuario.
+ *
+ * <p>Si la cuenta todavia no tiene usuario, lanza un `ApiError` con el codigo
+ * `USUARIO_NO_REGISTRADO`: la pantalla de login lleva entonces al registro.
+ * La sesion de Firebase queda abierta para que el registro pida el token.
+ */
+export async function loginConGoogle(): Promise<LoginResponse> {
+  let token: string;
+  try {
+    token = await loginGoogleFirebase();
+  } catch (error) {
+    const codigo = (error as { code?: string }).code ?? '';
+    throw new ApiError(0, mensajeDeErrorGoogle(codigo), codigo || undefined);
+  }
+  const usuario = await getMe(token);
+  setToken(token);
+  setSession(usuario);
+  return { token, usuario };
+}
+
+/** Lo que elige la persona al registrarse. Placa y modelo solo para el conductor. */
+export interface DatosRegistro {
+  rol: 'CIUDADANO' | 'ADMIN_CENTRO_AYUDA' | 'CONDUCTOR';
+  placa?: string;
+  modelo?: string;
+}
+
+/**
+ * Crea el usuario de la cuenta de Google con el rol elegido (POST /registros).
+ * El token va explicito porque quien se registra todavia no tiene sesion de
+ * NexoVital; no se usa `apiFetch`, que ante un 401 cierra la sesion y recarga.
+ */
+export async function registrarCuenta(token: string, datos: DatosRegistro): Promise<Usuario> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}/registros`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(datos),
+    });
+  } catch {
+    throw new ApiError(0, 'No se pudo conectar al servidor');
+  }
+
+  if (response.ok) {
+    return (await response.json()) as Usuario;
+  }
+
+  let codigo: string | undefined;
+  let mensaje = `Error HTTP ${response.status}`;
+  try {
+    const body = (await response.json()) as { codigo?: string; mensaje?: string };
+    codigo = body.codigo;
+    mensaje = body.mensaje ?? mensaje;
+  } catch {
+    // Cuerpo vacio o no JSON: se queda el mensaje generico.
+  }
+  if (response.status === 401) {
+    mensaje = 'Tu sesión de Google expiró. Vuelve a iniciar sesión.';
+  }
+  throw new ApiError(response.status, mensaje, codigo);
 }
 
 export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {

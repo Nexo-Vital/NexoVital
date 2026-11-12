@@ -67,6 +67,54 @@ export async function loginFirebase(email: string, password: string): Promise<st
   return credencial.user.getIdToken();
 }
 
+/**
+ * Inicia sesión con Google en una ventana emergente (EP-06.F2.US1, T10) y
+ * devuelve el ID token de Firebase. `select_account` hace que Google siempre
+ * pregunte con qué cuenta entrar: en la demo se alternan varias cuentas en el
+ * mismo navegador.
+ */
+export async function loginGoogleFirebase(): Promise<string> {
+  const [auth, { GoogleAuthProvider, signInWithPopup }] = await Promise.all([
+    getFirebaseAuth(),
+    import('firebase/auth'),
+  ]);
+  const proveedor = new GoogleAuthProvider();
+  proveedor.setCustomParameters({ prompt: 'select_account' });
+  const credencial = await signInWithPopup(auth, proveedor);
+  return credencial.user.getIdToken();
+}
+
+/** Cuenta de Google con la que hay sesión abierta en Firebase, si la hay. */
+export interface CuentaFirebase {
+  token: string;
+  email: string | null;
+  nombre: string | null;
+}
+
+/**
+ * Token y datos visibles de la cuenta con sesión en Firebase. La pantalla de
+ * registro lo usa para pedir un token vigente en vez de guardarlo: un ID token
+ * dura una hora y quien se registra puede tardar.
+ *
+ * @returns `null` si no hay sesión de Firebase abierta en esta pestaña
+ */
+export async function cuentaFirebaseActual(): Promise<CuentaFirebase | null> {
+  if (!isFirebaseConfigured()) {
+    return null;
+  }
+  const auth = await getFirebaseAuth();
+  await auth.authStateReady();
+  const usuario = auth.currentUser;
+  if (!usuario) {
+    return null;
+  }
+  return {
+    token: await usuario.getIdToken(),
+    email: usuario.email,
+    nombre: usuario.displayName,
+  };
+}
+
 /** Cierra la sesión del IdP. Sin sesión de Firebase abierta no hace nada. */
 export async function logoutFirebase(): Promise<void> {
   if (!authPromise) {

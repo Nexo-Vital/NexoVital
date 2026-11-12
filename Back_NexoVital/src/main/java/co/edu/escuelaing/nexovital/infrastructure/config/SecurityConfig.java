@@ -24,8 +24,9 @@ import java.util.List;
 /**
  * Stateless security with the {@code ROLE_<ROL>} authority.
  *
- * <p>The only public endpoint is {@code POST /api/v1/sesiones}: it issues the
- * token. Every protected operation is declared here explicitly; anything not
+ * <p>The public endpoints are {@code POST /api/v1/sesiones} (local login,
+ * development only) and {@code POST /api/v1/registros} (sign-up with Google,
+ * which validates the Google token itself). Every protected operation is declared here explicitly; anything not
  * declared is denied (fail-closed), never left open to every authenticated
  * role.
  *
@@ -124,6 +125,12 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> {
                     auth
                         .requestMatchers(HttpMethod.POST, "/api/v1/sesiones").permitAll()
+                        // Registro con Google (EP-06.F2.US1, T10). Es publico para
+                        // la cadena porque quien se registra todavia no tiene usuario
+                        // y el filtro no puede autenticarlo; NO queda abierto: el
+                        // controlador exige un token valido de Google y responde 401
+                        // (y lo registra) si falta o no verifica.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/registros").permitAll()
                         // Spring Boot forwards unhandled failures to /error and that
                         // dispatch passes through this chain: without permission here, a
                         // validation 400 would turn into a 401.
@@ -174,13 +181,14 @@ public class SecurityConfig {
                         // explicitly because the chain is fail-closed; without it, GET
                         // /emergencias would be denied.
                         .requestMatchers(HttpMethod.GET, "/api/v1/emergencias").authenticated()
-                        // Update an emergency (US4): the help-center administrator, the
-                        // role the story fixes (D3). The matcher names only that
-                        // authority. Declared explicitly because the chain is fail-closed;
-                        // without it, PATCH /emergencias/{id} would be denied. The path
-                        // carries the {id}, so the pattern covers the sub-paths.
+                        // Corregir una emergencia (estado o nivel): solo el
+                        // administrador de plataforma (Sprint 2, T09/T10). La
+                        // emergencia no guarda quien la reporto ni que centro la
+                        // atiende, asi que no hay regla de pertenencia posible: dejarla
+                        // en el administrador de centro permitia que cualquiera de
+                        // ellos editara cualquier emergencia. Ver matriz-permisos.md.
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/emergencias/**")
-                                .hasAuthority("ROLE_ADMIN_CENTRO_AYUDA")
+                                .hasAuthority("ROLE_ADMIN_PLATAFORMA")
                         // Register an organization/center (EP-01.F2.US1): the platform
                         // administrator creates it. Azure fixes the role as the platform
                         // administrator, so the matcher names only that authority. Declared
@@ -354,6 +362,16 @@ public class SecurityConfig {
                             // Todo 401 también queda registrado (S-1 / T11). Se
                             // distingue "no mandó token" de "mandó uno que no
                             // sirve"; el token nunca se escribe en el log.
+                            if (Boolean.TRUE.equals(request.getAttribute(
+                                    JwtAuthFilter.ATRIBUTO_USUARIO_NO_REGISTRADO))) {
+                                // Token valido de Google sin cuenta (T10): sigue
+                                // siendo 401, pero con un codigo propio para que el
+                                // front lleve a elegir el rol.
+                                registroAccesoDenegado.registrarNoAutenticado(request, "usuario_no_registrado");
+                                escribirError(response, HttpServletResponse.SC_UNAUTHORIZED,
+                                        "USUARIO_NO_REGISTRADO", "La cuenta aún no está registrada en NexoVital");
+                                return;
+                            }
                             String authorization = request.getHeader("Authorization");
                             boolean sinToken = authorization == null || !authorization.startsWith("Bearer ");
                             registroAccesoDenegado.registrarNoAutenticado(request,
