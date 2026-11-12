@@ -2,6 +2,7 @@ package co.edu.escuelaing.nexovital.auditoria.infrastructure.adapter.out;
 
 import co.edu.escuelaing.nexovital.auditoria.domain.model.EventoAuditoria;
 import co.edu.escuelaing.nexovital.auditoria.domain.port.out.RegistroAuditoriaPort;
+import co.edu.escuelaing.nexovital.observabilidad.infrastructure.TraceId;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.Usuario;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -38,7 +39,8 @@ public class RegistroAuditoriaAdapter implements RegistroAuditoriaPort {
                 evento.recursoTipo(),
                 evento.recursoId(),
                 evento.detalle(),
-                evento.ocurridoEn()));
+                evento.ocurridoEn(),
+                evento.traceId() != null ? evento.traceId() : TraceId.actual()));
     }
 
     @Override
@@ -59,7 +61,8 @@ public class RegistroAuditoriaAdapter implements RegistroAuditoriaPort {
                 entidad.getRecursoTipo(),
                 entidad.getRecursoId(),
                 entidad.getDetalle(),
-                entidad.getOcurridoEn());
+                entidad.getOcurridoEn(),
+                entidad.getTraceId());
     }
 
     /** Rol del llamante, o {@code null} si el evento no nace de una petición. */

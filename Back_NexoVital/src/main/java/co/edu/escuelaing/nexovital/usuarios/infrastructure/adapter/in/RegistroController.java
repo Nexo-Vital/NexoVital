@@ -1,5 +1,6 @@
 package co.edu.escuelaing.nexovital.usuarios.infrastructure.adapter.in;
 
+import co.edu.escuelaing.nexovital.auditoria.infrastructure.adapter.in.AtributosBitacora;
 import co.edu.escuelaing.nexovital.infrastructure.config.RegistroAccesoDenegado;
 import co.edu.escuelaing.nexovital.shared.infrastructure.dto.ErrorResponse;
 import co.edu.escuelaing.nexovital.usuarios.domain.exception.CredencialesInvalidasException;
@@ -94,6 +95,9 @@ public class RegistroController {
             registroAccesoDenegado.registrarNoAutenticado(httpRequest, "token_invalido");
             return noAutenticado();
         }
+        // Quien se registra aun no es usuario: la bitacora (T14) lo nombra por
+        // su identidad de Google, y por su usuario si el registro sale bien.
+        httpRequest.setAttribute(AtributosBitacora.ACTOR_EXTERNO, "google:" + identidad.uid());
 
         if (request == null || request.rol() == null || request.rol().isBlank()) {
             return error(HttpStatus.BAD_REQUEST, "DATOS_INVALIDOS", "Debes elegir un rol.");
@@ -108,6 +112,7 @@ public class RegistroController {
         try {
             Usuario usuario = registrarUsuarioUseCase.registrar(
                     identidad, new DatosRegistro(rol, request.placa(), request.modelo()));
+            httpRequest.setAttribute(AtributosBitacora.USUARIO, usuario);
             return ResponseEntity.status(HttpStatus.CREATED).body(UsuarioDto.fromDomain(usuario));
         } catch (RolNoElegibleException e) {
             // Pedir un rol de administracion es un intento de escalar privilegios:

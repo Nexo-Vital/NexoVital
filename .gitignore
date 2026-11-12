@@ -11,3 +11,7 @@ evidencias-nube/
 # Entorno local
 .env
 .env.local
+
+# Base de paises real de MaxMind (licencia GeoLite2: no se versiona). Las de
+# prueba con datos inventados viven en Back_NexoVital/src/test/resources/geoip.
+GeoLite2-*.mmdb

@@ -17,6 +17,10 @@ import java.util.UUID;
  * contexto de seguridad, porque el caso de uso conoce el id del llamante pero no
  * su rol. Se guarda con el evento y no se recalcula al leer: si mañana cambia el
  * rol de la persona, la bitácora debe seguir contando lo que era cierto ese día.
+ *
+ * <p>{@code traceId} es el de la petición que originó la acción (T13): enlaza
+ * la acción crítica con la fila de la bitácora de peticiones y con los logs.
+ * Lo completa el adaptador desde el MDC.
  */
 public record EventoAuditoria(
         UUID id,
@@ -26,7 +30,8 @@ public record EventoAuditoria(
         String recursoTipo,
         UUID recursoId,
         String detalle,
-        Instant ocurridoEn) {
+        Instant ocurridoEn,
+        String traceId) {
 
     /** Recurso de tipo emergencia: se consulta con {@code porEmergencia}. */
     public static final String TIPO_EMERGENCIA = "EMERGENCIA";
@@ -56,6 +61,6 @@ public record EventoAuditoria(
                                         String detalle,
                                         Instant ocurridoEn) {
         return new EventoAuditoria(
-                UUID.randomUUID(), actorId, null, accion, recursoTipo, recursoId, detalle, ocurridoEn);
+                UUID.randomUUID(), actorId, null, accion, recursoTipo, recursoId, detalle, ocurridoEn, null);
     }
 }

@@ -1,5 +1,6 @@
 package co.edu.escuelaing.nexovital.infrastructure.config;
 
+import co.edu.escuelaing.nexovital.auditoria.infrastructure.adapter.in.BitacoraStompInterceptor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.ChannelRegistration;
@@ -25,13 +26,18 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final StompAuthChannelInterceptor stompAuthChannelInterceptor;
 
+    /** Bitácora del canal (T14): CONNECT, SUBSCRIBE, DISCONNECT y rechazos. */
+    private final BitacoraStompInterceptor bitacoraStompInterceptor;
+
     /** Orígenes del frontend aceptados en el handshake; los mismos de CORS. */
     private final String[] origenesPermitidos;
 
     public WebSocketConfig(StompAuthChannelInterceptor stompAuthChannelInterceptor,
+                           BitacoraStompInterceptor bitacoraStompInterceptor,
                            @Value("${nexovital.cors.origenes-permitidos:http://localhost:5173,http://127.0.0.1:5173}")
                            String[] origenesPermitidos) {
         this.stompAuthChannelInterceptor = stompAuthChannelInterceptor;
+        this.bitacoraStompInterceptor = bitacoraStompInterceptor;
         this.origenesPermitidos = origenesPermitidos.clone();
     }
 
@@ -39,6 +45,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns(origenesPermitidos)
+                // Guarda IP y navegador del handshake para la bitácora (T14).
+                .addInterceptors(bitacoraStompInterceptor.handshake())
                 .withSockJS();
     }
 
@@ -58,6 +66,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
-        registration.interceptors(stompAuthChannelInterceptor);
+        // La bitácora va PRIMERO: así Spring le avisa el resultado del frame
+        // aunque la autenticación lo rechace con una excepción.
+        registration.interceptors(bitacoraStompInterceptor, stompAuthChannelInterceptor);
     }
 }

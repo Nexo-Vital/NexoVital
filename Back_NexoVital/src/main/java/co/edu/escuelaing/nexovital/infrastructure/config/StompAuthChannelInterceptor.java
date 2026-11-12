@@ -1,5 +1,6 @@
 package co.edu.escuelaing.nexovital.infrastructure.config;
 
+import co.edu.escuelaing.nexovital.auditoria.infrastructure.adapter.in.AtributosBitacora;
 import co.edu.escuelaing.nexovital.usuarios.domain.exception.CredencialesInvalidasException;
 import co.edu.escuelaing.nexovital.usuarios.domain.exception.UsuarioNoEncontradoException;
 import co.edu.escuelaing.nexovital.usuarios.domain.exception.UsuarioNoRegistradoException;
@@ -97,7 +98,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
     private void autenticar(StompHeaderAccessor accessor) {
         String header = accessor.getFirstNativeHeader(CABECERA_AUTHORIZATION);
         if (header == null || !header.startsWith(PREFIJO_BEARER)) {
-            registroAccesoDenegado.registrarNoAutenticadoStomp("token_ausente");
+            rechazar(accessor, "token_ausente");
             throw new AccessDeniedException("El CONNECT STOMP exige Authorization: Bearer <jwt>.");
         }
         String token = header.substring(PREFIJO_BEARER.length());
@@ -106,10 +107,10 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
             usuario = resolutorSesion.resolver(token);
         } catch (UsuarioNoRegistradoException e) {
             // Token valido de Google sin cuenta (T10): tampoco abre el canal.
-            registroAccesoDenegado.registrarNoAutenticadoStomp("usuario_no_registrado");
+            rechazar(accessor, "usuario_no_registrado");
             throw new AccessDeniedException("La cuenta aún no está registrada.", e);
         } catch (CredencialesInvalidasException | UsuarioNoEncontradoException e) {
-            registroAccesoDenegado.registrarNoAutenticadoStomp("token_invalido");
+            rechazar(accessor, "token_invalido");
             throw new AccessDeniedException("Token inválido para el CONNECT STOMP.", e);
         }
         var authentication = new UsernamePasswordAuthenticationToken(
@@ -126,8 +127,20 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
      */
     private void exigirSesionAutenticada(StompHeaderAccessor accessor) {
         if (accessor.getUser() == null) {
-            registroAccesoDenegado.registrarNoAutenticadoStomp("sesion_no_autenticada");
+            rechazar(accessor, "sesion_no_autenticada");
             throw new AccessDeniedException("El SUBSCRIBE STOMP exige una sesión autenticada.");
+        }
+    }
+
+    /**
+     * Deja el rechazo en el log (T11) y su motivo en la sesión, para que la
+     * bitácora de peticiones (T14) lo guarde en la fila del frame rechazado.
+     */
+    private void rechazar(StompHeaderAccessor accessor, String motivo) {
+        registroAccesoDenegado.registrarNoAutenticadoStomp(motivo);
+        var sesion = accessor.getSessionAttributes();
+        if (sesion != null) {
+            sesion.put(AtributosBitacora.MOTIVO, motivo);
         }
     }
 

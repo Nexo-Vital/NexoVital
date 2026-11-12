@@ -42,7 +42,7 @@ Roles: **CIU** = Ciudadano, **CON** = Conductor, **ACA** = Admin. centro de acop
 | `POST /solicitudes/{id}/accept · reject · llegada · finalizar` | ❌ | 🔒 | ❌ | ❌ | ❌ | La unidad enviada debe ser del conductor → 403 `AMBULANCIA_AJENA` **(corregido en Sprint 2)** |
 | `POST /solicitudes/{id}/confirmar` | 🔒 | ❌ | 🔒 | 🔒 | ❌ | Solo quien creó la solicitud → 403 `SOLICITUD_AJENA` **(corregido en Sprint 2)** |
 | `POST /solicitudes/{id}/cancelar` | 🔒 | ❌ | 🔒 | 🔒 | ❌ | Solo quien creó la solicitud → 403 `SOLICITUD_AJENA` |
-| `GET /auditoria/**` | ❌ | ❌ | ❌ | ❌ | ✅ | — |
+| `GET /auditoria/**` | ❌ | ❌ | ❌ | ❌ | ✅ | Incluye `GET /auditoria/peticiones`, la bitácora de todas las peticiones (S-2, T15). Ver `trazabilidad.md` |
 | Canal en tiempo real (`/ws`, CONNECT y SUBSCRIBE) | ✅ | ✅ | ✅ | ✅ | ✅ | Requiere token válido en el CONNECT. Los clientes no pueden publicar en `/topic` ni en `/queue` |
 | `/actuator/health`, `POST /sesiones` (login local de desarrollo, 404 en docker y prod) | público | | | | | — |
 

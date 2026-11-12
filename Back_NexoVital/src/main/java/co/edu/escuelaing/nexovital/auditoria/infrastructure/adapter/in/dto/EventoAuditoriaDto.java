@@ -19,7 +19,8 @@ public record EventoAuditoriaDto(
         String recursoTipo,
         UUID recursoId,
         String detalle,
-        Instant ocurridoEn) {
+        Instant ocurridoEn,
+        String traceId) {
 
     public static EventoAuditoriaDto fromDomain(EventoAuditoria evento) {
         return new EventoAuditoriaDto(
@@ -30,6 +31,7 @@ public record EventoAuditoriaDto(
                 evento.recursoTipo(),
                 evento.recursoId(),
                 evento.detalle(),
-                evento.ocurridoEn());
+                evento.ocurridoEn(),
+                evento.traceId());
     }
 }

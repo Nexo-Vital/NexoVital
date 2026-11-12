@@ -28,8 +28,11 @@ import java.util.UUID;
 @Entity
 @Immutable
 @Table(name = "auditoria_eventos",
-        indexes = @Index(name = "idx_auditoria_recurso",
-                columnList = "recurso_tipo,recurso_id,ocurrido_en"))
+        indexes = {
+                @Index(name = "idx_auditoria_recurso",
+                        columnList = "recurso_tipo,recurso_id,ocurrido_en"),
+                @Index(name = "idx_auditoria_traza", columnList = "trace_id")
+        })
 public class EventoAuditoriaJpaEntity {
 
     @Id
@@ -57,6 +60,10 @@ public class EventoAuditoriaJpaEntity {
     @Column(name = "ocurrido_en", nullable = false)
     private Instant ocurridoEn;
 
+    /** Petición que originó la acción (T13); enlaza con auditoria_peticiones. */
+    @Column(name = "trace_id", length = 64)
+    private String traceId;
+
     protected EventoAuditoriaJpaEntity() {
         // Requerido por JPA.
     }
@@ -64,6 +71,12 @@ public class EventoAuditoriaJpaEntity {
     public EventoAuditoriaJpaEntity(UUID id, UUID actorId, String actorRol, AccionCritica accion,
                                     String recursoTipo, UUID recursoId, String detalle,
                                     Instant ocurridoEn) {
+        this(id, actorId, actorRol, accion, recursoTipo, recursoId, detalle, ocurridoEn, null);
+    }
+
+    public EventoAuditoriaJpaEntity(UUID id, UUID actorId, String actorRol, AccionCritica accion,
+                                    String recursoTipo, UUID recursoId, String detalle,
+                                    Instant ocurridoEn, String traceId) {
         this.id = id;
         this.actorId = actorId;
         this.actorRol = actorRol;
@@ -72,6 +85,7 @@ public class EventoAuditoriaJpaEntity {
         this.recursoId = recursoId;
         this.detalle = detalle;
         this.ocurridoEn = ocurridoEn;
+        this.traceId = traceId;
     }
 
     public UUID getId() {
@@ -104,5 +118,9 @@ public class EventoAuditoriaJpaEntity {
 
     public Instant getOcurridoEn() {
         return ocurridoEn;
+    }
+
+    public String getTraceId() {
+        return traceId;
     }
 }

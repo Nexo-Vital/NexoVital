@@ -1,5 +1,6 @@
 package co.edu.escuelaing.nexovital.infrastructure.config;
 
+import co.edu.escuelaing.nexovital.auditoria.infrastructure.adapter.in.AtributosBitacora;
 import co.edu.escuelaing.nexovital.usuarios.domain.exception.CredencialesInvalidasException;
 import co.edu.escuelaing.nexovital.usuarios.domain.exception.UsuarioNoEncontradoException;
 import co.edu.escuelaing.nexovital.usuarios.domain.exception.UsuarioNoRegistradoException;
@@ -55,6 +56,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                         null,
                         List.of(new SimpleGrantedAuthority("ROLE_" + usuario.getRol().name())));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
+                // La bitacora de peticiones (T14) escribe al final, cuando el
+                // contexto de seguridad ya se limpio: el usuario se le deja aqui.
+                request.setAttribute(AtributosBitacora.USUARIO, usuario);
             } catch (UsuarioNoRegistradoException e) {
                 // Token valido de Google, pero la cuenta aun no eligio su rol
                 // (T10). Sigue sin autenticar —sale 401 como cualquier token que

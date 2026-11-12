@@ -1,5 +1,6 @@
 package co.edu.escuelaing.nexovital.infrastructure.config;
 
+import co.edu.escuelaing.nexovital.auditoria.infrastructure.adapter.in.AtributosBitacora;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.Usuario;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -72,6 +73,13 @@ public class RegistroAccesoDenegado {
         ServletRequestAttributes atributos =
                 (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
         HttpServletRequest request = atributos == null ? null : atributos.getRequest();
+        if (request != null) {
+            // El motivo tambien queda en la fila de la bitacora de peticiones (T14).
+            request.setAttribute(AtributosBitacora.MOTIVO, motivo);
+            if (actor.startsWith("google:")) {
+                request.setAttribute(AtributosBitacora.ACTOR_EXTERNO, actor);
+            }
+        }
 
         LOG.warn("acceso_denegado actor={} rol={} metodo={} ruta={} ip={} motivo={}",
                 actor,
@@ -89,6 +97,7 @@ public class RegistroAccesoDenegado {
      * @param motivo {@code token_ausente} o {@code token_invalido}
      */
     public void registrarNoAutenticado(HttpServletRequest request, String motivo) {
+        request.setAttribute(AtributosBitacora.MOTIVO, motivo);
         LOG.warn("autenticacion_fallida canal=http metodo={} ruta={} ip={} motivo={}",
                 request.getMethod(), request.getRequestURI(), ipDelCliente(request), motivo);
     }
