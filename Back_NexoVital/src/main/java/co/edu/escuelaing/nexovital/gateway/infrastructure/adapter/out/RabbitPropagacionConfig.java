@@ -27,6 +27,9 @@ import org.springframework.context.annotation.Configuration;
 @ConditionalOnProperty(name = "nexovital.eventos.broker.enabled", havingValue = "true")
 public class RabbitPropagacionConfig {
 
+        /** Tiempo sin consumidor tras el cual RabbitMQ borra la cola de una instancia. */
+    static final int COLA_SIN_CONSUMIDOR_MS = 120_000;
+
     /** Exchange por el que viajan todos los pushes de tiempo real. */
     @Bean
     public FanoutExchange exchangePush(
@@ -42,8 +45,16 @@ public class RabbitPropagacionConfig {
     public Queue colaPush(
             @Value("${nexovital.push.exchange:nexovital.push}") String nombre,
             @Value("${nexovital.instancia-id:local}") String instanciaId) {
-        return QueueBuilder.durable(nombre + "." + instanciaId).build();
-    }
+        // x-expires: si la cola pasa 2 minutos sin consumidor, RabbitMQ la borra.
+        // En Azure cada réplica nueva tiene otro nombre; sin esto las colas de
+        // réplicas muertas seguirían atadas al fanout acumulando mensajes hasta
+        // llenar la memoria del broker. Un reinicio normal (menos de 2 minutos)
+        // conserva la cola.
+        return QueueBuilder.durable(nombre + "." + instanciaId)
+                .expires(COLA_SIN_CONSUMIDOR_MS)
+                .build();
+
+            }
 
     /** Ata la cola de esta instancia al exchange: recibe todo lo que se publique. */
     @Bean
