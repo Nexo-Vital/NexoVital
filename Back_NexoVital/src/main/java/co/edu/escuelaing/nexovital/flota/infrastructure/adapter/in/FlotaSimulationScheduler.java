@@ -5,6 +5,7 @@ import co.edu.escuelaing.nexovital.flota.domain.enums.FuentePosicion;
 import co.edu.escuelaing.nexovital.flota.domain.model.Ambulancia;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.ReportarPosicionUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.out.FlotaQueryPort;
+import co.edu.escuelaing.nexovital.infrastructure.bloqueo.EjecucionUnica;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -12,6 +13,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -57,19 +59,39 @@ public class FlotaSimulationScheduler {
     /** Step radius per cycle, in degrees (~33 m): a small, map-noticeable nudge. */
     private static final double RADIO_PASO_GRADOS = 0.0003d;
 
+    /** Nombre estable del bloqueo entre instancias. */
+    private static final String BLOQUEO_SIMULACION = "flota-simulacion";
+
+    /**
+     * Vigencia del bloqueo. Es mayor que el intervalo (5 s) para que el dueño
+     * pueda renovar, y corta para que otra instancia tome el relevo pronto si
+     * esta muere.
+     */
+    private static final Duration VIGENCIA_BLOQUEO = Duration.ofSeconds(15);
+
     private final FlotaQueryPort flotaQueryPort;
     private final ReportarPosicionUseCase reportarPosicionUseCase;
+    private final EjecucionUnica ejecucionUnica;
 
     public FlotaSimulationScheduler(FlotaQueryPort flotaQueryPort,
-                                    ReportarPosicionUseCase reportarPosicionUseCase) {
+                                    ReportarPosicionUseCase reportarPosicionUseCase,
+                                    EjecucionUnica ejecucionUnica) {
         this.flotaQueryPort = flotaQueryPort;
         this.reportarPosicionUseCase = reportarPosicionUseCase;
+        this.ejecucionUnica = ejecucionUnica;
     }
 
     @Scheduled(
             initialDelayString = "${nexovital.flota.simulacion.delay-inicial-ms:5000}",
             fixedDelayString = "${nexovital.flota.simulacion.intervalo-ms:5000}")
     public void simularMovimiento() {
+        // Con dos instancias, ambas simularian el mismo ciclo y cada ambulancia
+        // se moveria dos veces: posiciones y eventos duplicados. El bloqueo deja
+        // la simulacion en una sola instancia a la vez.
+        if (!ejecucionUnica.intentar(BLOQUEO_SIMULACION, VIGENCIA_BLOQUEO)) {
+            return;
+        }
+
         List<Ambulancia> simulables = flotaQueryPort.consultarFlota().stream()
                 // A unit under maintenance is not active: it does not move.
                 .filter(unidad -> unidad.getEstado() != EstadoAmbulancia.MANTENIMIENTO)

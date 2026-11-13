@@ -117,12 +117,12 @@ abstract class SolicitudHttpTestSupport extends LoginTestBase {
 
     /** Disconnects a unit directly in the database, without going through the command. */
     protected void desconectarEnBase(UUID unidad) {
-        jdbcTemplate.update("UPDATE ambulancias SET conectada = false WHERE id = '" + unidad + "'");
+        jdbcTemplate.update("UPDATE flota.ambulancias SET conectada = false WHERE id = '" + unidad + "'");
     }
 
     /** Leaves a unit without signal directly in the database. */
     protected void dejarSinSenalEnBase(UUID unidad) {
-        jdbcTemplate.update("UPDATE ambulancias SET sin_senal = true WHERE id = '" + unidad + "'");
+        jdbcTemplate.update("UPDATE flota.ambulancias SET sin_senal = true WHERE id = '" + unidad + "'");
     }
 
     protected AmbulanciaJpaEntity unidadEnBase(UUID unidad) {
@@ -132,7 +132,7 @@ abstract class SolicitudHttpTestSupport extends LoginTestBase {
     /** How many times a unit appears among the notified units of a request (0 or 1). */
     protected int vecesNotificada(UUID solicitudId, UUID unidad) {
         Integer veces = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM solicitud_ambulancia_notificadas WHERE solicitud_id = '" + solicitudId
+                "SELECT COUNT(*) FROM flota.solicitud_ambulancia_notificadas WHERE solicitud_id = '" + solicitudId
                         + "' AND ambulancia_id = '" + unidad + "'", Integer.class);
         return veces == null ? 0 : veces;
     }

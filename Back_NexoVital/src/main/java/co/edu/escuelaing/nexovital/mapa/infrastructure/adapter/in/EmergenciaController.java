@@ -13,10 +13,13 @@ import co.edu.escuelaing.nexovital.mapa.infrastructure.adapter.in.dto.Emergencia
 import co.edu.escuelaing.nexovital.mapa.infrastructure.adapter.in.dto.EmergenciaRequest;
 import co.edu.escuelaing.nexovital.shared.infrastructure.dto.ErrorResponse;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.Ubicacion;
+import co.edu.escuelaing.nexovital.usuarios.domain.model.Usuario;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -70,22 +73,26 @@ public class EmergenciaController {
 
     /**
      * Reporta una emergencia sobre un punto. El servidor asigna {@code id},
-     * {@code estado} y {@code createdAt}, y resuelve la {@code zonaId} del punto.
+     * {@code estado} y {@code createdAt}, resuelve la {@code zonaId} del punto y
+     * DESPACHA la ambulancia: la solicitud se crea en el backend, con el
+     * usuario autenticado como solicitante, y su id viaja en {@code solicitudId}.
      *
      * @return 201 con la {@code Emergencia}; 400 {@code DATOS_INVALIDOS} si falta
      *         un campo o la geometría está fuera de rango; 500 si el registro
      *         falla
      */
     @PostMapping
-    @Operation(summary = "Reportar una emergencia")
+    @Operation(summary = "Reportar una emergencia y despachar su ambulancia")
     public ResponseEntity<Object> reportar(@RequestBody EmergenciaRequest request) {
         try {
             TipoEmergencia tipo = parsearTipo(request.tipo());
             NivelEmergencia nivel = parsearNivel(request.nivel());
             Ubicacion ubicacion = construirUbicacion(request.ubicacion());
-            Emergencia emergencia = reportarEmergenciaUseCase.reportar(
-                    ubicacion, tipo, nivel, request.descripcion());
-            return ResponseEntity.status(HttpStatus.CREATED).body(EmergenciaDto.fromDomain(emergencia));
+            ReportarEmergenciaUseCase.EmergenciaReportada reportada = reportarEmergenciaUseCase.reportar(
+                    ubicacion, tipo, nivel, request.descripcion(), request.direccion(),
+                    usuarioAutenticadoId());
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .body(EmergenciaDto.fromDomain(reportada.emergencia(), reportada.solicitudId()));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(ErrorResponse.of("DATOS_INVALIDOS", MENSAJE_DATOS_INVALIDOS));
         } catch (RuntimeException e) {
@@ -213,5 +220,15 @@ public class EmergenciaController {
             throw new IllegalArgumentException("La ubicación es obligatoria.");
         }
         return new Ubicacion(ubicacion.lat(), ubicacion.lng());
+    }
+
+    /**
+     * El principal autenticado es el {@code Usuario} que deja el filtro JWT. Es
+     * el solicitante de la ambulancia que se despacha al reportar.
+     */
+    private UUID usuarioAutenticadoId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        Usuario usuario = (Usuario) authentication.getPrincipal();
+        return usuario.getId();
     }
 }

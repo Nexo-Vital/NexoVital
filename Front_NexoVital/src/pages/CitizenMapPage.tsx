@@ -584,12 +584,22 @@ export default function CitizenMapPage({
           emergency,
         } satisfies EmergencyUpsertPayload);
       } else {
-        const emergency = await reportarEmergencia(input);
+        // El backend DESPACHA al registrar la emergencia: el reporte lleva la
+        // direccion de recogida y la respuesta nombra la solicitud que creo. La
+        // pantalla la adopta en vez de pedir la ambulancia otra vez, asi el riel
+        // de "buscando ambulancia" toma el control solo.
+        const emergency = await reportarEmergencia({
+          ...input,
+          ...(pickupAddress ? { direccion: pickupAddress } : {}),
+        });
         useEmergencyStore.getState().upsert(emergency);
+        if (emergency.solicitudId) {
+          syncCitizenRequest();
+        }
       }
       toast(REPORT_SUCCESS_MESSAGE);
     },
-    [port],
+    [port, pickupAddress],
   );
 
   // --- Donation flow (mockup c7/c8/c9) ---------------------------------------

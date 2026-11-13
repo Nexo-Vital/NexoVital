@@ -55,7 +55,21 @@ public class DataSeeder implements CommandLineRunner {
 
     private static final Logger LOG = LoggerFactory.getLogger(DataSeeder.class);
 
-    private static final String PASSWORD_CONDUCTOR = "conductor123";
+    /** UID de cada cuenta demo en Firebase (proyecto nexovital-c96cf). */
+    private static final java.util.Map<String, String> UIDS_FIREBASE = java.util.Map.ofEntries(
+            java.util.Map.entry("admin@nexovital.co", "nQJOKI1TiOPIDOjI0eg0xjpViJ83"),
+            java.util.Map.entry("centro@nexovital.co", "cOfVR8GfWkOMZot4RqQo3nSIv253"),
+            java.util.Map.entry("acopio@nexovital.co", "mG7kWAUElpW9cdvHaSlXLihiIZz1"),
+            java.util.Map.entry("rangel@nexovital.co", "aPOKY9h2kBhgnWbJgVkayKwwidN2"),
+            java.util.Map.entry("ciudadano@nexovital.co", "hjGD7zwQmlThPldNyXlqXMUyo3U2"),
+            java.util.Map.entry("ciudadano2@nexovital.co", "GpPUymcbb9UGA56NK9Po8iMVKol2"),
+            java.util.Map.entry("conductor1@nexovital.co", "ZeoupRTy9cYANhuaCJDJMiXRaV53"),
+            java.util.Map.entry("conductor2@nexovital.co", "iRSKJngRbiTaGZYxm89FFDilez92"),
+            java.util.Map.entry("conductor3@nexovital.co", "LjaXEKpej4YKaYZKOiReNooVCFk1"),
+            java.util.Map.entry("conductor4@nexovital.co", "PvDjW5wPruRGjwnBnAW7HpMdqHB3"),
+            java.util.Map.entry("conductor5@nexovital.co", "qShnGk8d60SsGGCNheDE2OF4bdl2"));
+
+    private static final String PASSWORD_CONDUCTOR = "conductor123"; // NOSONAR credencial de demo publica, no es un secreto
 
     private record UsuarioSemilla(String nombre, String email, String password, RolUsuario rol) {
     }
@@ -253,10 +267,27 @@ public class DataSeeder implements CommandLineRunner {
     @Override
     public void run(String... args) {
         sembrarUsuarios();
+        enlazarUsuariosConIdp();
         sembrarOrganizaciones();
         sembrarZonas();
         sembrarInventario();
         sembrarAmbulancias();
+    }
+
+    /**
+     * Enlaza cada usuario demo con su cuenta del IdP externo (ADR-0008).
+     *
+     * <p>Se ejecuta en cada arranque y es idempotente: si la base se recrea, los
+     * usuarios nacen sin `firebase_uid` y este paso los deja listos para entrar.
+     * Sin esto, un `down -v` obligaria a correr el UPDATE a mano.
+     *
+     * <p>Los UID son los de las cuentas ya creadas en el proyecto de Firebase.
+     * No son secreto: identifican al usuario, no lo autentican.
+     */
+    private void enlazarUsuariosConIdp() {
+        UIDS_FIREBASE.forEach((email, uid) -> usuarioRepository.buscarPorEmail(email)
+                .ifPresent(usuario -> usuarioRepository.enlazarFirebaseUid(usuario.getId(), uid)));
+        LOG.info("Enlace con el IdP verificado para {} cuentas demo", UIDS_FIREBASE.size());
     }
 
     private void sembrarUsuarios() {

@@ -10,7 +10,7 @@ import java.util.UUID;
 
 /** JPA entity of the {@code retiros_inventario} table (one row per withdrawal). */
 @Entity
-@Table(name = "retiros_inventario")
+@Table(name = "retiros_inventario", schema = "recursos")
 public class RetiroInventarioJpaEntity {
 
     @Id

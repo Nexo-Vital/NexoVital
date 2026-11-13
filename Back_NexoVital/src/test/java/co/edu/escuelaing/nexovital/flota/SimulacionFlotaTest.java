@@ -6,6 +6,7 @@ import co.edu.escuelaing.nexovital.flota.domain.model.Ambulancia;
 import co.edu.escuelaing.nexovital.flota.domain.port.in.ReportarPosicionUseCase;
 import co.edu.escuelaing.nexovital.flota.domain.port.out.FlotaQueryPort;
 import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in.FlotaSimulationScheduler;
+import co.edu.escuelaing.nexovital.infrastructure.bloqueo.EjecucionUnica;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -46,6 +47,7 @@ class SimulacionFlotaTest {
         return new ApplicationContextRunner()
                 .withBean(FlotaQueryPort.class, () -> flotaQueryPort)
                 .withBean(ReportarPosicionUseCase.class, () -> reportarPosicionUseCase)
+                .withBean(EjecucionUnica.class, () -> (nombre, vigencia) -> true)
                 .withUserConfiguration(FlotaSimulationScheduler.class);
     }
 

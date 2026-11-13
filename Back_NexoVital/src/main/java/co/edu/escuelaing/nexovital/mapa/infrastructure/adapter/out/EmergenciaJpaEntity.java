@@ -23,7 +23,7 @@ import java.util.UUID;
  * derivado y NULLABLE: el punto puede caer fuera de todo el catálogo.
  */
 @Entity
-@Table(name = "emergencias")
+@Table(name = "emergencias", schema = "mapa")
 public class EmergenciaJpaEntity {
 
     @Id

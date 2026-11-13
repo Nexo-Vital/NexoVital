@@ -1,9 +1,13 @@
 package co.edu.escuelaing.nexovital.flota.application.usecase;
 
+import co.edu.escuelaing.nexovital.auditoria.domain.model.AccionCritica;
+import co.edu.escuelaing.nexovital.auditoria.domain.model.EventoAuditoria;
+import co.edu.escuelaing.nexovital.auditoria.domain.port.out.RegistroAuditoriaPort;
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoAmbulancia;
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoSolicitud;
 import co.edu.escuelaing.nexovital.flota.domain.event.FlotaActualizadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudAsignadaEvent;
+import co.edu.escuelaing.nexovital.flota.domain.exception.AmbulanciaAjenaException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.AmbulanciaNoDisponibleException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoAsignableException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoEncontradaException;
@@ -19,6 +23,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -57,13 +62,16 @@ public class AceptarSolicitudUseCaseImpl implements AceptarSolicitudUseCase {
     private final SolicitudRepository solicitudRepository;
     private final AmbulanciaRepository ambulanciaRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final RegistroAuditoriaPort registroAuditoriaPort;
 
     public AceptarSolicitudUseCaseImpl(SolicitudRepository solicitudRepository,
                                        AmbulanciaRepository ambulanciaRepository,
-                                       ApplicationEventPublisher eventPublisher) {
+                                       ApplicationEventPublisher eventPublisher,
+                                       RegistroAuditoriaPort registroAuditoriaPort) {
         this.solicitudRepository = solicitudRepository;
         this.ambulanciaRepository = ambulanciaRepository;
         this.eventPublisher = eventPublisher;
+        this.registroAuditoriaPort = registroAuditoriaPort;
     }
 
     @Override
@@ -71,6 +79,18 @@ public class AceptarSolicitudUseCaseImpl implements AceptarSolicitudUseCase {
     public ResultadoAceptarSolicitud aceptar(UUID solicitudId, UUID ambulanciaId, UUID conductorId) {
         SolicitudAmbulancia solicitud = solicitudRepository.buscarPorId(solicitudId)
                 .orElseThrow(() -> new SolicitudNoEncontradaException(solicitudId));
+
+        // Propiedad ANTES que cualquier regla de estado (Sprint 2, S-4 / T10): el
+        // cliente manda `ambulanciaId`, así que un conductor podría nombrar la
+        // unidad de otro. Eso es un 403 (falta el permiso), no un 409: reintentar
+        // nunca lo arregla. Va primero para que el ajeno no aprenda nada del
+        // estado de la solicitud. Una unidad sin conductor no es de nadie
+        // (Objects.equals(null, x) es false).
+        Ambulancia ambulancia = ambulanciaRepository.buscarPorId(ambulanciaId)
+                .orElseThrow(() -> new AmbulanciaNoDisponibleException(ambulanciaId));
+        if (!Objects.equals(ambulancia.getConductorId(), conductorId)) {
+            throw new AmbulanciaAjenaException(ambulanciaId);
+        }
 
         if (solicitud.getEstado() != EstadoSolicitud.PENDIENTE) {
             // Too late: another unit already has it. A unit that WAS notified
@@ -83,7 +103,7 @@ public class AceptarSolicitudUseCaseImpl implements AceptarSolicitudUseCase {
             throw new SolicitudNoAsignableException(solicitudId, solicitud.getEstado());
         }
 
-        Ambulancia ambulancia = validarAmbulancia(ambulanciaId);
+        validarDisponibilidad(ambulancia);
 
         // Mirror the reject path: only a unit the request actually notified may
         // act on it. Without this, any driver could accept a request that was
@@ -92,17 +112,9 @@ public class AceptarSolicitudUseCaseImpl implements AceptarSolicitudUseCase {
             throw new SolicitudNoAsignableException(solicitudId, solicitud.getEstado());
         }
 
-        // The unit must be the one driven by the authenticated user: the client
-        // sends `ambulanciaId`, so it cannot be trusted to pick someone else's
-        // unit. A unit without a driver matches nobody (Objects.equals(null, x)
-        // is false), so it can never be claimed.
-        if (!Objects.equals(ambulancia.getConductorId(), conductorId)) {
-            throw new SolicitudNoAsignableException(solicitudId, solicitud.getEstado());
-        }
-
         // A decline is final for that unit (EP-04.F2.US5): the request is still
         // open for the others, but the unit that said no cannot take it back.
-        // Checked after the ownership, so only the unit's own driver learns it.
+        // Ownership was checked first, so only the unit's own driver learns it.
         if (solicitud.fueRechazadaPor(ambulanciaId)) {
             throw new SolicitudYaRechazadaException(solicitudId, ambulanciaId);
         }
@@ -132,6 +144,14 @@ public class AceptarSolicitudUseCaseImpl implements AceptarSolicitudUseCase {
         // The notified list travels with the event: every OTHER notified unit is
         // told at once that the request is taken (SolicitudTomadaPushListener).
         // It is read from the request as it was broadcast, which never changes.
+        // Bitácora de la asignación en la MISMA transacción del CAS (Sprint 2, T14).
+        registroAuditoriaPort.registrar(EventoAuditoria.nuevo(
+                AccionCritica.AMBULANCIA_ASIGNADA,
+                tipoRecurso(asignada),
+                idRecurso(asignada),
+                conductorId,
+                "solicitud=" + solicitudId + " ambulancia=" + ambulanciaId,
+                Instant.now()));
         eventPublisher.publishEvent(new SolicitudAsignadaEvent(
                 solicitudId, asignada.getEmergenciaId(), asignada.getZonaId(), ambulanciaId,
                 asignada.getSolicitanteId(), solicitud.getAmbulanciasNotificadas()));
@@ -152,16 +172,24 @@ public class AceptarSolicitudUseCaseImpl implements AceptarSolicitudUseCase {
     }
 
     /**
-     * Loads the unit and enforces the availability precondition: available and
-     * connected. It is only the fast path; the guarantee is the conditional
-     * UPDATE of {@code ocuparAtomica}.
+     * Enforces the availability precondition: available and connected. It is
+     * only the fast path; the guarantee is the conditional UPDATE of
+     * {@code ocuparAtomica}.
      */
-    private Ambulancia validarAmbulancia(UUID ambulanciaId) {
-        Ambulancia ambulancia = ambulanciaRepository.buscarPorId(ambulanciaId)
-                .orElseThrow(() -> new AmbulanciaNoDisponibleException(ambulanciaId));
+    private static void validarDisponibilidad(Ambulancia ambulancia) {
         if (ambulancia.getEstado() != EstadoAmbulancia.DISPONIBLE || !ambulancia.isConectada()) {
-            throw new AmbulanciaNoDisponibleException(ambulanciaId);
+            throw new AmbulanciaNoDisponibleException(ambulancia.getId());
         }
-        return ambulancia;
+    }
+
+    /** La traza vive en la emergencia; sin emergencia, en la propia solicitud. */
+    private static String tipoRecurso(SolicitudAmbulancia solicitud) {
+        return solicitud.getEmergenciaId() != null
+                ? EventoAuditoria.TIPO_EMERGENCIA
+                : EventoAuditoria.TIPO_SOLICITUD;
+    }
+
+    private static UUID idRecurso(SolicitudAmbulancia solicitud) {
+        return solicitud.getEmergenciaId() != null ? solicitud.getEmergenciaId() : solicitud.getId();
     }
 }

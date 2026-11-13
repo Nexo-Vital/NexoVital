@@ -70,6 +70,17 @@ vi.mock('@/features/mapa/routing-api', () => ({
 
 mockFetchRuta.mockReturnValue(new Promise(() => {}));
 
+/**
+ * Broadcast used across the page tests.
+ *
+ * <p>`timeoutEn` is refreshed in `beforeEach`: the fixture is built once when
+ * the module loads, and the inbox drops an offer whose deadline is already in
+ * the past. A deadline computed at import time was therefore born expired in
+ * any run that took more than 45 s to reach these tests — the full suite under
+ * coverage does — and the card never appeared. Refreshing it per test keeps the
+ * offer 45 s ahead without making the value change between two reads inside the
+ * same test (some cases compare the whole object).
+ */
 const BROADCAST: SolicitudBroadcastPayload = {
   type: 'solicitud.broadcast',
   requestId: 'REQ-1',
@@ -126,7 +137,7 @@ async function winMission(user: ReturnType<typeof userEvent.setup>, port: FakeRe
   // A mission can only be accepted while connected, so connect first.
   connectDriver();
   act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
-  await user.click(screen.getByRole('button', { name: 'Aceptar solicitud' }));
+  await user.click(await screen.findByRole('button', { name: 'Aceptar solicitud' }));
   act(() =>
     port.emit(DESTINATIONS.solicitudes, {
       type: 'request.taken',
@@ -147,6 +158,9 @@ describe('DriverConsolePage', () => {
     // relay instead of calling the backend (FIX1). The REST path is covered by
     // DriverConsolePage.remote.test.tsx.
     vi.stubEnv('VITE_DEMO_MODE', '1');
+    // The offer must be alive when this test runs, not when the module loaded:
+    // under coverage the file can start more than 45 s after the import.
+    BROADCAST.timeoutEn = new Date(Date.now() + 45_000).toISOString();
   });
 
   afterEach(() => {
@@ -164,12 +178,12 @@ describe('DriverConsolePage', () => {
     vi.unstubAllGlobals();
   });
 
-  it('renders the map and the unit panel controls', () => {
+  it('renders the map and the unit panel controls', async () => {
     render(<DriverConsolePage port={new FakeRealtimePort()} ambulanceId="A-07" />);
 
     expect(screen.getByTestId('map-canvas')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Conectarse' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Simular posición' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Conectarse' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Simular posición' })).toBeInTheDocument();
   });
 
   it('no longer renders the driver bottom sheet', () => {
@@ -188,19 +202,19 @@ describe('DriverConsolePage', () => {
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
 
     // Offline at first: the panel offers the connect action and says so.
-    expect(screen.getByRole('button', { name: 'Conectarse' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Conectarse' })).toBeInTheDocument();
     expect(screen.getByText('Desconectado')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Desconectarse' })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Conectarse' }));
+    await user.click(await screen.findByRole('button', { name: 'Conectarse' }));
 
-    expect(screen.getByRole('button', { name: 'Desconectarse' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Desconectarse' })).toBeInTheDocument();
     expect(screen.getByText('En línea')).toBeInTheDocument();
     // Going online also clears the off-duty state.
     expect(driverStatusChip()).toHaveTextContent('Disponible');
 
     // With a position, the online unit is published on /topic/flota.
-    await user.click(screen.getByRole('button', { name: 'Simular posición' }));
+    await user.click(await screen.findByRole('button', { name: 'Simular posición' }));
     expect(port.published.some((frame) => frame.destination === DESTINATIONS.flota)).toBe(true);
   });
 
@@ -237,7 +251,7 @@ describe('DriverConsolePage', () => {
       within(driverRail()).queryByRole('region', { name: 'Solicitud de ambulancia' }),
     ).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Conectarse' }));
+    await user.click(await screen.findByRole('button', { name: 'Conectarse' }));
 
     // Now the offer surfaces with its real actions.
     const card = within(driverRail()).getByRole('region', { name: 'Solicitud de ambulancia' });
@@ -250,13 +264,13 @@ describe('DriverConsolePage', () => {
     const port = new FakeRealtimePort();
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
 
-    await user.click(screen.getByRole('button', { name: 'Conectarse' }));
+    await user.click(await screen.findByRole('button', { name: 'Conectarse' }));
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
     expect(
       within(driverRail()).getByRole('region', { name: 'Solicitud de ambulancia' }),
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Desconectarse' }));
+    await user.click(await screen.findByRole('button', { name: 'Desconectarse' }));
 
     expect(
       within(driverRail()).queryByRole('region', { name: 'Solicitud de ambulancia' }),
@@ -271,11 +285,11 @@ describe('DriverConsolePage', () => {
     const port = new FakeRealtimePort();
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
 
-    await user.click(screen.getByRole('button', { name: 'Conectarse' }));
+    await user.click(await screen.findByRole('button', { name: 'Conectarse' }));
     await winMission(user, port);
     expect(screen.getByText('Misión actual')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Desconectarse' }));
+    await user.click(await screen.findByRole('button', { name: 'Desconectarse' }));
 
     // An in-progress service is never orphaned by the toggle.
     expect(screen.getByText('Misión actual')).toBeInTheDocument();
@@ -293,8 +307,8 @@ describe('DriverConsolePage', () => {
     const connect = vi.spyOn(port, 'connect');
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
 
-    await user.click(screen.getByRole('button', { name: 'Conectarse' }));
-    await user.click(screen.getByRole('button', { name: 'Desconectarse' }));
+    await user.click(await screen.findByRole('button', { name: 'Conectarse' }));
+    await user.click(await screen.findByRole('button', { name: 'Desconectarse' }));
 
     // The gate only controls the offer surface; the shared transport keeps
     // running so flota/emergencias stay in sync.
@@ -323,7 +337,7 @@ describe('DriverConsolePage', () => {
       'true',
     );
 
-    await user.click(screen.getByRole('button', { name: 'Fuera de servicio' }));
+    await user.click(await screen.findByRole('button', { name: 'Fuera de servicio' }));
     expect(screen.getByRole('button', { name: 'Fuera de servicio' })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -333,7 +347,7 @@ describe('DriverConsolePage', () => {
       'false',
     );
 
-    await user.click(screen.getByRole('button', { name: 'Disponible' }));
+    await user.click(await screen.findByRole('button', { name: 'Disponible' }));
     expect(screen.getByRole('button', { name: 'Disponible' })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -391,15 +405,15 @@ describe('DriverConsolePage', () => {
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
     connectDriver();
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
-    expect(screen.getByRole('button', { name: 'Aceptar solicitud' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Aceptar solicitud' })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Fuera de servicio' }));
+    await user.click(await screen.findByRole('button', { name: 'Fuera de servicio' }));
 
     expect(screen.queryByRole('button', { name: 'Aceptar solicitud' })).toBeNull();
     expect(screen.getByText('Marca «Disponible» para recibir solicitudes')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Disponible' }));
-    expect(screen.getByRole('button', { name: 'Aceptar solicitud' })).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Disponible' }));
+    expect(await screen.findByRole('button', { name: 'Aceptar solicitud' })).toBeInTheDocument();
   });
 
   it('shows the denied-location error message in the panel', () => {
@@ -458,10 +472,10 @@ describe('DriverConsolePage', () => {
     expect(driverStatusChip()).toHaveTextContent('Disponible');
     expect(driverStatusChip()).not.toHaveTextContent('Ocupada');
 
-    await user.click(screen.getByRole('button', { name: 'Fuera de servicio' }));
+    await user.click(await screen.findByRole('button', { name: 'Fuera de servicio' }));
     expect(driverStatusChip()).toHaveTextContent('Fuera de servicio');
 
-    await user.click(screen.getByRole('button', { name: 'Disponible' }));
+    await user.click(await screen.findByRole('button', { name: 'Disponible' }));
     expect(driverStatusChip()).toHaveTextContent('Disponible');
   });
 
@@ -474,7 +488,7 @@ describe('DriverConsolePage', () => {
       String(MOCK_CENTROS_AYUDA.length),
     );
 
-    await user.click(screen.getByRole('button', { name: 'Simular posición' }));
+    await user.click(await screen.findByRole('button', { name: 'Simular posición' }));
     expect(screen.getByTestId('map-canvas')).toHaveAttribute('data-self-label', 'Tú · WNR-418');
   });
 
@@ -820,7 +834,7 @@ describe('DriverConsolePage', () => {
     // connector is drawable straight away (RAD-3).
     expect(map).toHaveAttribute('data-connector', 'yes');
 
-    await user.click(screen.getByRole('button', { name: 'Simular posición' }));
+    await user.click(await screen.findByRole('button', { name: 'Simular posición' }));
     expect(map).toHaveAttribute('data-connector', 'yes');
   });
 
@@ -836,7 +850,7 @@ describe('DriverConsolePage', () => {
     expect(map).toHaveAttribute('data-self-sim', 'yes');
 
     // Reported as simulated on /topic/flota once online, via the existing flag.
-    await user.click(screen.getByRole('button', { name: 'Conectarse' }));
+    await user.click(await screen.findByRole('button', { name: 'Conectarse' }));
     const frame = port.published.find((entry) => entry.destination === DESTINATIONS.flota);
     expect(frame?.payload).toMatchObject({
       ambulanceId: 'A-07',
@@ -925,7 +939,7 @@ describe('DriverConsolePage', () => {
       'Difundida a varias unidades. Gana quien acepte primero.',
     );
 
-    await user.click(screen.getByRole('button', { name: 'Aceptar solicitud' }));
+    await user.click(await screen.findByRole('button', { name: 'Aceptar solicitud' }));
     expect(screen.getByRole('status')).toHaveTextContent('Enviando…');
     expect(screen.queryByText('Misión actual')).not.toBeInTheDocument();
 
@@ -953,7 +967,7 @@ describe('DriverConsolePage', () => {
     connectDriver();
 
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
-    await user.click(screen.getByRole('button', { name: 'Aceptar solicitud' }));
+    await user.click(await screen.findByRole('button', { name: 'Aceptar solicitud' }));
     act(() =>
       port.emit(DESTINATIONS.solicitudes, {
         type: 'request.taken',
@@ -973,7 +987,7 @@ describe('DriverConsolePage', () => {
     connectDriver();
 
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
-    await user.click(screen.getByRole('button', { name: 'Aceptar solicitud' }));
+    await user.click(await screen.findByRole('button', { name: 'Aceptar solicitud' }));
     act(() =>
       port.emit(DESTINATIONS.solicitudes, {
         type: 'request.taken',
@@ -1002,7 +1016,7 @@ describe('DriverConsolePage', () => {
     connectDriver();
 
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
-    await user.click(screen.getByRole('button', { name: 'Aceptar solicitud' }));
+    await user.click(await screen.findByRole('button', { name: 'Aceptar solicitud' }));
     act(() =>
       port.emit(DESTINATIONS.solicitudes, {
         type: 'request.taken',
@@ -1164,7 +1178,7 @@ describe('DriverConsolePage', () => {
     const user = userEvent.setup();
     const port = new FakeRealtimePort();
     render(<DriverConsolePage port={port} ambulanceId="A-07" />);
-    await user.click(screen.getByRole('button', { name: 'Conectarse' }));
+    await user.click(await screen.findByRole('button', { name: 'Conectarse' }));
     await winMission(user, port);
     act(() =>
       port.emit(DESTINATIONS.solicitudes, {
@@ -1209,7 +1223,7 @@ describe('DriverConsolePage', () => {
     // Dashed while the request is still pending (`d3`).
     expect(screen.getByTestId('map-canvas')).toHaveAttribute('data-connector-dashed', 'yes');
 
-    await user.click(screen.getByRole('button', { name: 'Aceptar solicitud' }));
+    await user.click(await screen.findByRole('button', { name: 'Aceptar solicitud' }));
     act(() =>
       port.emit(DESTINATIONS.solicitudes, {
         type: 'request.taken',
@@ -1455,7 +1469,7 @@ describe('DriverConsolePage', () => {
     connectDriver();
 
     act(() => port.emit(DESTINATIONS.solicitudes, BROADCAST));
-    await user.click(screen.getByRole('button', { name: 'Rechazar' }));
+    await user.click(await screen.findByRole('button', { name: 'Rechazar' }));
 
     // Connecting published the flota position first, so read the last frame.
     expect(port.published[port.published.length - 1]?.payload).toEqual({

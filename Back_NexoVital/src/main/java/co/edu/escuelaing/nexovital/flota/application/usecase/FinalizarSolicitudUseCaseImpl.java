@@ -1,9 +1,13 @@
 package co.edu.escuelaing.nexovital.flota.application.usecase;
 
+import co.edu.escuelaing.nexovital.auditoria.domain.model.AccionCritica;
+import co.edu.escuelaing.nexovital.auditoria.domain.model.EventoAuditoria;
+import co.edu.escuelaing.nexovital.auditoria.domain.port.out.RegistroAuditoriaPort;
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoAmbulancia;
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoSolicitud;
 import co.edu.escuelaing.nexovital.flota.domain.event.FlotaActualizadaEvent;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudFinalizadaEvent;
+import co.edu.escuelaing.nexovital.flota.domain.exception.AmbulanciaAjenaException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.AmbulanciaNoDisponibleException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.ConfirmacionPendienteException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.LlegadaNoDeclaradaException;
@@ -18,6 +22,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -45,13 +50,16 @@ public class FinalizarSolicitudUseCaseImpl implements FinalizarSolicitudUseCase 
     private final SolicitudRepository solicitudRepository;
     private final AmbulanciaRepository ambulanciaRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final RegistroAuditoriaPort registroAuditoriaPort;
 
     public FinalizarSolicitudUseCaseImpl(SolicitudRepository solicitudRepository,
                                          AmbulanciaRepository ambulanciaRepository,
-                                         ApplicationEventPublisher eventPublisher) {
+                                         ApplicationEventPublisher eventPublisher,
+                                         RegistroAuditoriaPort registroAuditoriaPort) {
         this.solicitudRepository = solicitudRepository;
         this.ambulanciaRepository = ambulanciaRepository;
         this.eventPublisher = eventPublisher;
+        this.registroAuditoriaPort = registroAuditoriaPort;
     }
 
     @Override
@@ -89,6 +97,15 @@ public class FinalizarSolicitudUseCaseImpl implements FinalizarSolicitudUseCase 
 
         SolicitudAmbulancia finalizada = solicitud.finalizar();
 
+        // Bitácora del cierre en la MISMA transacción (Sprint 2, T14).
+        registroAuditoriaPort.registrar(EventoAuditoria.nuevo(
+                AccionCritica.SERVICIO_FINALIZADO,
+                tipoRecurso(finalizada),
+                idRecurso(finalizada),
+                conductorId,
+                "solicitud=" + solicitudId + " ambulancia=" + ambulanciaId,
+                Instant.now()));
+
         eventPublisher.publishEvent(new SolicitudFinalizadaEvent(
                 solicitudId, finalizada.getEmergenciaId(), finalizada.getZonaId(),
                 ambulanciaId, finalizada.getSolicitanteId()));
@@ -98,19 +115,33 @@ public class FinalizarSolicitudUseCaseImpl implements FinalizarSolicitudUseCase 
     }
 
     /**
-     * The finishing unit must be the one assigned to the request and must belong
-     * to the authenticated driver. A unit without a driver matches nobody
-     * ({@code Objects.equals(null, x)} is false), so it can never finish.
+     * Primero la propiedad, después el estado (Sprint 2, S-4 / T10). La unidad
+     * debe ser del conductor autenticado: si no, es un 403
+     * ({@link AmbulanciaAjenaException}), porque falta el permiso y reintentar
+     * no lo arregla. Una unidad sin conductor no es de nadie
+     * ({@code Objects.equals(null, x)} es false). Recién con la propiedad
+     * resuelta se exige que sea la unidad asignada a la solicitud (409 si no).
      */
     private void validarUnidadAsignadaDelConductor(SolicitudAmbulancia solicitud, UUID ambulanciaId,
                                                    UUID conductorId) {
-        if (!Objects.equals(solicitud.getAmbulanciaAsignadaId(), ambulanciaId)) {
-            throw new SolicitudNoAsignableException(solicitud.getId(), solicitud.getEstado());
-        }
         Ambulancia ambulancia = ambulanciaRepository.buscarPorId(ambulanciaId)
                 .orElseThrow(() -> new AmbulanciaNoDisponibleException(ambulanciaId));
         if (!Objects.equals(ambulancia.getConductorId(), conductorId)) {
+            throw new AmbulanciaAjenaException(ambulanciaId);
+        }
+        if (!Objects.equals(solicitud.getAmbulanciaAsignadaId(), ambulanciaId)) {
             throw new SolicitudNoAsignableException(solicitud.getId(), solicitud.getEstado());
         }
+    }
+
+    /** La traza vive en la emergencia; sin emergencia, en la propia solicitud. */
+    private static String tipoRecurso(SolicitudAmbulancia solicitud) {
+        return solicitud.getEmergenciaId() != null
+                ? EventoAuditoria.TIPO_EMERGENCIA
+                : EventoAuditoria.TIPO_SOLICITUD;
+    }
+
+    private static UUID idRecurso(SolicitudAmbulancia solicitud) {
+        return solicitud.getEmergenciaId() != null ? solicitud.getEmergenciaId() : solicitud.getId();
     }
 }

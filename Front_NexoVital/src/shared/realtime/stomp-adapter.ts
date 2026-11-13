@@ -6,7 +6,11 @@ import type { RealtimeHandler, RealtimePort, RealtimeState } from './port';
 
 /** WebSocket/STOMP endpoint exposed by the backend (`/ws`, SockJS fallback). */
 const STOMP_ENDPOINT = '/ws';
-const RECONNECT_DELAY_MS = 5000;
+// D-1 (Sprint 2, T06): si cae la instancia que atiende al cliente, la
+// reconexion y la recuperacion del estado deben tomar menos de 10 s. Con 5 s de
+// espera mas el handshake y la relectura del mapa quedaba demasiado justo; con
+// 2 s sobra margen y no satura el balanceador (un intento cada 2 s por cliente).
+const RECONNECT_DELAY_MS = 2000;
 
 /**
  * STOMP client configuration. The bearer token travels in the CONNECT frame,
@@ -19,7 +23,14 @@ const RECONNECT_DELAY_MS = 5000;
  * The adapter reads it in `beforeConnect`, once per connect attempt.
  */
 const STOMP_CONFIG = {
-  webSocketFactory: () => new SockJS(STOMP_ENDPOINT),
+  // Solo WebSocket, nunca el fallback XHR de SockJS.
+  //
+  // Con dos instancias detras del balanceador, round-robin manda `/ws/info` a
+  // una y el transporte `xhr_streaming` a la otra. La sesion SockJS vive en la
+  // memoria de UNA instancia, asi que la segunda responde 403 y el navegador
+  // queda en un bucle de reconexion sin conectar nunca. El transporte WebSocket
+  // es una sola conexion de larga duracion: no necesita afinidad de sesion.
+  webSocketFactory: () => new SockJS(STOMP_ENDPOINT, undefined, { transports: ['websocket'] }),
   heartbeatIncoming: 10000,
   heartbeatOutgoing: 10000,
   reconnectDelay: RECONNECT_DELAY_MS,

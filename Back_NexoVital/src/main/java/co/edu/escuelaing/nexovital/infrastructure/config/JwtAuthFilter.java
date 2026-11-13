@@ -1,8 +1,10 @@
 package co.edu.escuelaing.nexovital.infrastructure.config;
 
+import co.edu.escuelaing.nexovital.auditoria.infrastructure.adapter.in.AtributosBitacora;
 import co.edu.escuelaing.nexovital.usuarios.domain.exception.CredencialesInvalidasException;
 import co.edu.escuelaing.nexovital.usuarios.domain.exception.UsuarioNoEncontradoException;
-import co.edu.escuelaing.nexovital.usuarios.domain.port.in.AuthenticationUseCase;
+import co.edu.escuelaing.nexovital.usuarios.domain.exception.UsuarioNoRegistradoException;
+import co.edu.escuelaing.nexovital.usuarios.domain.port.in.ResolutorSesion;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -27,10 +29,16 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     private static final String PREFIJO_BEARER = "Bearer ";
 
-    private final AuthenticationUseCase authenticationUseCase;
+    /**
+     * Atributo de la peticion que marca "token valido sin cuenta registrada".
+     * Lo lee el entry point de {@link SecurityConfig}.
+     */
+    public static final String ATRIBUTO_USUARIO_NO_REGISTRADO = "nexovital.usuarioNoRegistrado";
 
-    public JwtAuthFilter(AuthenticationUseCase authenticationUseCase) {
-        this.authenticationUseCase = authenticationUseCase;
+    private final ResolutorSesion resolutorSesion;
+
+    public JwtAuthFilter(ResolutorSesion resolutorSesion) {
+        this.resolutorSesion = resolutorSesion;
     }
 
     @Override
@@ -42,12 +50,22 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         if (header != null && header.startsWith(PREFIJO_BEARER)) {
             String token = header.substring(PREFIJO_BEARER.length());
             try {
-                var usuario = authenticationUseCase.validarToken(token);
+                var usuario = resolutorSesion.resolver(token);
                 var authentication = new UsernamePasswordAuthenticationToken(
                         usuario,
                         null,
                         List.of(new SimpleGrantedAuthority("ROLE_" + usuario.getRol().name())));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
+                // La bitacora de peticiones (T14) escribe al final, cuando el
+                // contexto de seguridad ya se limpio: el usuario se le deja aqui.
+                request.setAttribute(AtributosBitacora.USUARIO, usuario);
+            } catch (UsuarioNoRegistradoException e) {
+                // Token valido de Google, pero la cuenta aun no eligio su rol
+                // (T10). Sigue sin autenticar —sale 401 como cualquier token que
+                // no sirve— y se marca para que el entry point responda el
+                // codigo USUARIO_NO_REGISTRADO y el front muestre el registro.
+                request.setAttribute(ATRIBUTO_USUARIO_NO_REGISTRADO, Boolean.TRUE);
+                SecurityContextHolder.clearContext();
             } catch (CredencialesInvalidasException | UsuarioNoEncontradoException e) {
                 // Token inválido, o válido pero de un usuario que ya no existe: se
                 // sigue sin autenticar y Spring Security responde 401.

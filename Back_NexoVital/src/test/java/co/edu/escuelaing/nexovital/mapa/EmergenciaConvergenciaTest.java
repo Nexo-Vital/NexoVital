@@ -154,12 +154,16 @@ class EmergenciaConvergenciaTest {
 
     private static final String CIUDADANO = "ciudadano@nexovital.co";
     private static final String CIUDADANO_PASSWORD = "ciudadano123";
-    /** ADMIN_CENTRO_AYUDA (uno de los dos usuarios autorizados a hacer PATCH). */
-    private static final String RANGEL = "rangel@nexovital.co";
-    private static final String RANGEL_PASSWORD = "rangel123";
-    /** El otro ADMIN_CENTRO_AYUDA sembrado: da un token autorizado DISTINTO. */
-    private static final String CENTRO = "centro@nexovital.co";
-    private static final String CENTRO_PASSWORD = "centro123";
+    /**
+     * ADMIN_PLATAFORMA: desde el Sprint 2 (T10) es el unico rol que puede hacer
+     * PATCH. Los nombres RANGEL/CENTRO se conservan para no tocar el resto del
+     * caso: ahora son dos sesiones del mismo administrador.
+     */
+    private static final String RANGEL = "admin@nexovital.co";
+    private static final String RANGEL_PASSWORD = "admin123";
+    /** Segunda sesion del administrador de plataforma (ver RANGEL). */
+    private static final String CENTRO = "admin@nexovital.co";
+    private static final String CENTRO_PASSWORD = "admin123";
 
     /** Destino ya declarado en el contrato para una emergencia (US2/US4). */
     private static final String DESTINO_EMERGENCIAS = "/topic/emergencias";

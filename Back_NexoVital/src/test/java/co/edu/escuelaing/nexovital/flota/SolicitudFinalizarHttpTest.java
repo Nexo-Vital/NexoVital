@@ -181,7 +181,7 @@ class SolicitudFinalizarHttpTest extends SolicitudHttpTestSupport {
         Conductor conductor = sembrarConductor(EstadoAmbulancia.DISPONIBLE);
         String token = tokenDe(conductor);
         UUID solicitudId = servicioListoParaFinalizar(conductor, token);
-        jdbcTemplate.update("UPDATE ambulancias SET estado = 'MANTENIMIENTO' WHERE id = '" + conductor.unidad() + "'");
+        jdbcTemplate.update("UPDATE flota.ambulancias SET estado = 'MANTENIMIENTO' WHERE id = '" + conductor.unidad() + "'");
         pushPortDePrueba.limpiar();
 
         responder("finalizar", solicitudId, conductor, token)
@@ -194,7 +194,7 @@ class SolicitudFinalizarHttpTest extends SolicitudHttpTestSupport {
         assertEquals(0, cierresAlCiudadano(solicitudId));
 
         // Con la unidad de nuevo en misión, el reintento cierra normalmente.
-        jdbcTemplate.update("UPDATE ambulancias SET estado = 'EN_MISION' WHERE id = '" + conductor.unidad() + "'");
+        jdbcTemplate.update("UPDATE flota.ambulancias SET estado = 'EN_MISION' WHERE id = '" + conductor.unidad() + "'");
         responder("finalizar", solicitudId, conductor, token)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.estado").value("TOMADA"));

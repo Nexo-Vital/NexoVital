@@ -41,6 +41,13 @@ import java.util.UUID;
  * query; a unit that disconnects right after it stays in the list, but it can
  * neither see the request nor accept it, because the accept re-checks the
  * connection in its own conditional UPDATE.
+ *
+ * <p><b>The "no available unit" failure never poisons a joined transaction.</b>
+ * {@link AmbulanciaNoDisponibleException} is declared {@code noRollbackFor}
+ * because the emergency report joins this transaction: it throws before writing
+ * anything, and the caller (the dispatch adapter of {@code mapa}) turns it into
+ * "registered without a request". Without the declaration the proxy would mark
+ * the shared transaction rollback-only and the emergency would be lost.
  */
 @Service
 public class SolicitarAmbulanciaUseCaseImpl implements SolicitarAmbulanciaUseCase {
@@ -61,7 +68,7 @@ public class SolicitarAmbulanciaUseCaseImpl implements SolicitarAmbulanciaUseCas
     }
 
     @Override
-    @Transactional
+    @Transactional(noRollbackFor = AmbulanciaNoDisponibleException.class)
     public SolicitudAmbulancia solicitar(double lat, double lng, UUID emergenciaId, UUID centroAyudaId,
                                          String zonaId, UUID solicitanteId, Instant timeoutEn,
                                          String direccion) {

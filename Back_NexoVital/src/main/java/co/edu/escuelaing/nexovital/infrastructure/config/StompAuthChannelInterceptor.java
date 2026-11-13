@@ -1,9 +1,11 @@
 package co.edu.escuelaing.nexovital.infrastructure.config;
 
+import co.edu.escuelaing.nexovital.auditoria.infrastructure.adapter.in.AtributosBitacora;
 import co.edu.escuelaing.nexovital.usuarios.domain.exception.CredencialesInvalidasException;
 import co.edu.escuelaing.nexovital.usuarios.domain.exception.UsuarioNoEncontradoException;
+import co.edu.escuelaing.nexovital.usuarios.domain.exception.UsuarioNoRegistradoException;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.Usuario;
-import co.edu.escuelaing.nexovital.usuarios.domain.port.in.AuthenticationUseCase;
+import co.edu.escuelaing.nexovital.usuarios.domain.port.in.ResolutorSesion;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.messaging.Message;
@@ -26,7 +28,7 @@ import java.util.List;
  *
  * <ul>
  *   <li>{@code CONNECT}: exige {@code Authorization: Bearer <jwt>}; valida con el
- *       {@link AuthenticationUseCase#validarToken(String)} ya existente (la misma
+ *       {@link ResolutorSesion#resolver(String)} ya existente (la misma
  *       lógica que usa {@link JwtAuthFilter}), publica el {@code Principal} y la
  *       autoridad {@code ROLE_<ROL>} en la sesión STOMP y RECHAZA el frame si el
  *       token falta o es inválido.</li>
@@ -59,10 +61,13 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
     /** Único prefijo al que un cliente puede enviar: los destinos de aplicación. */
     private static final String PREFIJO_APLICACION = "/app";
 
-    private final AuthenticationUseCase authenticationUseCase;
+    private final ResolutorSesion resolutorSesion;
+    private final RegistroAccesoDenegado registroAccesoDenegado;
 
-    public StompAuthChannelInterceptor(AuthenticationUseCase authenticationUseCase) {
-        this.authenticationUseCase = authenticationUseCase;
+    public StompAuthChannelInterceptor(ResolutorSesion resolutorSesion,
+                                       RegistroAccesoDenegado registroAccesoDenegado) {
+        this.resolutorSesion = resolutorSesion;
+        this.registroAccesoDenegado = registroAccesoDenegado;
     }
 
     @Override
@@ -93,13 +98,19 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
     private void autenticar(StompHeaderAccessor accessor) {
         String header = accessor.getFirstNativeHeader(CABECERA_AUTHORIZATION);
         if (header == null || !header.startsWith(PREFIJO_BEARER)) {
+            rechazar(accessor, "token_ausente");
             throw new AccessDeniedException("El CONNECT STOMP exige Authorization: Bearer <jwt>.");
         }
         String token = header.substring(PREFIJO_BEARER.length());
         Usuario usuario;
         try {
-            usuario = authenticationUseCase.validarToken(token);
+            usuario = resolutorSesion.resolver(token);
+        } catch (UsuarioNoRegistradoException e) {
+            // Token valido de Google sin cuenta (T10): tampoco abre el canal.
+            rechazar(accessor, "usuario_no_registrado");
+            throw new AccessDeniedException("La cuenta aún no está registrada.", e);
         } catch (CredencialesInvalidasException | UsuarioNoEncontradoException e) {
+            rechazar(accessor, "token_invalido");
             throw new AccessDeniedException("Token inválido para el CONNECT STOMP.", e);
         }
         var authentication = new UsernamePasswordAuthenticationToken(
@@ -116,7 +127,20 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
      */
     private void exigirSesionAutenticada(StompHeaderAccessor accessor) {
         if (accessor.getUser() == null) {
+            rechazar(accessor, "sesion_no_autenticada");
             throw new AccessDeniedException("El SUBSCRIBE STOMP exige una sesión autenticada.");
+        }
+    }
+
+    /**
+     * Deja el rechazo en el log (T11) y su motivo en la sesión, para que la
+     * bitácora de peticiones (T14) lo guarde en la fila del frame rechazado.
+     */
+    private void rechazar(StompHeaderAccessor accessor, String motivo) {
+        registroAccesoDenegado.registrarNoAutenticadoStomp(motivo);
+        var sesion = accessor.getSessionAttributes();
+        if (sesion != null) {
+            sesion.put(AtributosBitacora.MOTIVO, motivo);
         }
     }
 

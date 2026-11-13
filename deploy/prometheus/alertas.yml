@@ -1,0 +1,144 @@
+# ==========================================================================
+# Reglas de alerta de Prometheus (ESC-7, ADR-0010).
+#
+# Cada regla referencia solo metricas que el backend ya expone en
+# /actuator/prometheus o que Prometheus produce por si mismo (`up`). No hay
+# Alertmanager en el compose: las reglas se evaluan y las alertas activas se
+# ven en http://localhost:9090/alerts. Agregarlo es un paso posterior y no
+# cambia estas reglas.
+#
+# Severidades: `critica` (la demo o el servicio se rompen), `alta` (degradacion
+# que incumple un objetivo de calidad), `media` (aviso temprano).
+# ==========================================================================
+
+groups:
+  - name: nexovital-disponibilidad
+    rules:
+      - alert: NexoVitalInstanciaCaida
+        expr: up{job="nexovital-backend"} == 0
+        for: 1m
+        labels:
+          severidad: critica
+        annotations:
+          resumen: "La instancia {{ $labels.instancia }} no responde a Prometheus"
+          descripcion: >-
+            El raspado de /actuator/prometheus de {{ $labels.instancia }} falla
+            desde hace un minuto. Con dos instancias el balanceador debe seguir
+            sirviendo con la sana (ESC-1); si la caida fue planeada, silenciar.
+
+      - alert: NexoVitalTodasLasInstanciasCaidas
+        expr: sum(up{job="nexovital-backend"}) == 0
+        for: 30s
+        labels:
+          severidad: critica
+        annotations:
+          resumen: "Ninguna instancia del backend responde"
+          descripcion: >-
+            Ninguna de las dos instancias se puede raspar. El balanceador no
+            tiene a donde enrutar y la API esta caida de punta a punta.
+
+  - name: nexovital-errores
+    rules:
+      - alert: NexoVitalTasaErrores5xx
+        expr: >-
+          sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(http_server_requests_seconds_count[5m])), 0.0001)
+          > 0.05
+        for: 5m
+        labels:
+          severidad: critica
+        annotations:
+          resumen: "Mas del 5 % de las peticiones responde 5xx"
+          descripcion: >-
+            ESC-1 exige 0 % de 5xx durante una caida de instancia. La tasa
+            agregada supera el 5 % desde hace cinco minutos.
+
+      - alert: NexoVitalErrores5xxSostenidos
+        expr: sum(increase(http_server_requests_seconds_count{status=~"5.."}[10m])) > 50
+        for: 10m
+        labels:
+          severidad: alta
+        annotations:
+          resumen: "Errores 5xx sostenidos aunque el porcentaje sea bajo"
+          descripcion: >-
+            Mas de 50 respuestas 5xx en diez minutos. Con trafico alto el
+            porcentaje puede diluirse; el conteo absoluto no.
+
+  - name: nexovital-latencia
+    rules:
+      - alert: NexoVitalLatenciaP95Alta
+        expr: >-
+          histogram_quantile(0.95,
+            sum by (le) (rate(http_server_requests_seconds_bucket[5m]))) > 1
+        for: 5m
+        labels:
+          severidad: alta
+        annotations:
+          resumen: "p95 por encima de 1000 ms (objetivo O1)"
+          descripcion: >-
+            El p95 global supera el objetivo de 1 s durante cinco minutos.
+
+      - alert: NexoVitalLatenciaP95Critica
+        expr: >-
+          histogram_quantile(0.95,
+            sum by (le) (rate(http_server_requests_seconds_bucket[5m]))) > 2
+        for: 10m
+        labels:
+          severidad: critica
+        annotations:
+          resumen: "p95 por encima de 2000 ms"
+          descripcion: >-
+            El p95 global duplica el objetivo de O1 y se sostiene hace diez
+            minutos: la degradacion ya se nota en la demo.
+
+  - name: nexovital-recursos
+    rules:
+      - alert: NexoVitalMemoriaHeapAlta
+        expr: >-
+          sum(jvm_memory_used_bytes{area="heap"})
+          /
+          clamp_min(sum(jvm_memory_max_bytes{area="heap"} > 0), 1) > 0.85
+        for: 10m
+        labels:
+          severidad: alta
+        annotations:
+          resumen: "El heap supera el 85 % de su maximo"
+          descripcion: >-
+            Uso de heap sostenido por encima del 85 % del maximo configurado.
+            Es el aviso previo a un OutOfMemoryError.
+
+      - alert: NexoVitalCpuAlta
+        expr: max(process_cpu_usage) > 0.9
+        for: 10m
+        labels:
+          severidad: alta
+        annotations:
+          resumen: "Una instancia usa mas del 90 % de CPU"
+          descripcion: >-
+            El proceso de una instancia consume mas del 90 % de un core de
+            forma sostenida; revisar carga antes de que degrade la latencia.
+
+      - alert: NexoVitalPoolConexionesAgotado
+        expr: max(hikaricp_connections_pending) > 5
+        for: 2m
+        labels:
+          severidad: alta
+        annotations:
+          resumen: "Hay peticiones esperando conexion a la base de datos"
+          descripcion: >-
+            Mas de cinco peticiones esperando una conexion del pool durante dos
+            minutos: el cuello de botella esta en la base, no en el hilo web.
+
+  - name: nexovital-tiempo-real
+    rules:
+      - alert: NexoVitalColaSalidaSaturada
+        expr: sum(executor_queued_tasks{name=~".*Channel.*"}) > 100
+        for: 2m
+        labels:
+          severidad: alta
+        annotations:
+          resumen: "La cola de salida STOMP acumula mas de 100 tareas"
+          descripcion: >-
+            El executor de los canales de mensajes acumula trabajo: los
+            eventos de tiempo real se estan entregando con retraso.

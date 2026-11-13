@@ -24,6 +24,15 @@ export default defineConfig({
       reporter: ['text-summary', 'lcov'],
       include: ['src/**/*.{ts,tsx}'],
       exclude: ['src/**/*.{test,spec}.{ts,tsx}', 'src/test/**', 'src/**/*.d.ts'],
+      // Objetivo del Sprint 2 (T24): 40 %. La corrida del 2026-11-08 midió
+      // 94,03 % de líneas, así que el umbral queda como red de seguridad y no
+      // como un número que haya que perseguir.
+      thresholds: {
+        lines: 40,
+        statements: 40,
+        functions: 40,
+        branches: 40,
+      },
     },
   },
 });

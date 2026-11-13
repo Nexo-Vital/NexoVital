@@ -1,0 +1,26 @@
+# ==========================================================================
+# Solo para pruebas locales de carga y balanceo. NO se usa en Azure.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.pruebas.yml up -d --build
+#
+# 1. Enciende el login local (POST /api/v1/sesiones). Los scripts de prueba
+#    (k6, prueba-tiempo-real.mjs, prueba-concurrencia-*.ps1) sacan de ahi su
+#    token. En el perfil docker esta apagado (ADR-0008).
+# 2. Deja configurar el limite de solicitudes (T18) desde la terminal. Sin
+#    variables quedan los valores reales (10/usuario y 60/IP por minuto); para
+#    las pruebas de concurrencia se suben con PRUEBA_LIMITE_USUARIO y
+#    PRUEBA_LIMITE_IP.
+# ==========================================================================
+services:
+  backend-1:
+    environment: &pruebas-env
+      # Los scripts usan el token del login local (HS256). Con el project-id de
+      # Firebase presente, el back solo acepta tokens de Google y rechaza ese
+      # token en el CONNECT de STOMP y en el REST. "false" apaga el resolutor
+      # de Firebase (ConditionalOnProperty trata false como ausente).
+      NEXOVITAL_FIREBASE_PROJECT_ID: "false"
+      NEXOVITAL_AUTH_LOCAL_ENABLED: "true"
+      NEXOVITAL_LIMITES_USUARIO_POR_MINUTO: ${PRUEBA_LIMITE_USUARIO:-10}
+      NEXOVITAL_LIMITES_IP_POR_MINUTO: ${PRUEBA_LIMITE_IP:-60}
+  backend-2:
+    environment: *pruebas-env

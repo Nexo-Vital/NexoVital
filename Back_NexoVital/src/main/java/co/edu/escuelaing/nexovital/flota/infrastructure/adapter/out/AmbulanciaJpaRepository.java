@@ -17,6 +17,8 @@ public interface AmbulanciaJpaRepository extends JpaRepository<AmbulanciaJpaEnti
 
     Optional<AmbulanciaJpaEntity> findByPlaca(String placa);
 
+    boolean existsByPlacaIgnoreCase(String placa);
+
     List<AmbulanciaJpaEntity> findByEstado(EstadoAmbulancia estado);
 
     /**

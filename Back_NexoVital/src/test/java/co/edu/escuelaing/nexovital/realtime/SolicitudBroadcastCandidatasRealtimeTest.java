@@ -417,21 +417,21 @@ class SolicitudBroadcastCandidatasRealtimeTest {
     /** Available, connected and with signal: the unit can receive requests. */
     private void dejarCandidata(String email) {
         jdbcTemplate.update(
-                "UPDATE ambulancias SET estado = ?, conectada = true, sin_senal = false WHERE id = ?",
+                "UPDATE flota.ambulancias SET estado = ?, conectada = true, sin_senal = false WHERE id = ?",
                 EstadoAmbulancia.DISPONIBLE.name(), unidadDe(email));
     }
 
     private void fijarEstado(String email, EstadoAmbulancia estado) {
-        jdbcTemplate.update("UPDATE ambulancias SET estado = ? WHERE id = ?",
+        jdbcTemplate.update("UPDATE flota.ambulancias SET estado = ? WHERE id = ?",
                 estado.name(), unidadDe(email));
     }
 
     private void desconectar(String email) {
-        jdbcTemplate.update("UPDATE ambulancias SET conectada = false WHERE id = ?", unidadDe(email));
+        jdbcTemplate.update("UPDATE flota.ambulancias SET conectada = false WHERE id = ?", unidadDe(email));
     }
 
     private void dejarSinSenal(String email) {
-        jdbcTemplate.update("UPDATE ambulancias SET sin_senal = true WHERE id = ?", unidadDe(email));
+        jdbcTemplate.update("UPDATE flota.ambulancias SET sin_senal = true WHERE id = ?", unidadDe(email));
     }
 
     // -----------------------------------------------------------------------

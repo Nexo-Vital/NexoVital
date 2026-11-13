@@ -203,14 +203,16 @@ describe('CitizenMapPage against /api/v1/mapa', () => {
 
     // Opening a center whose payload DOES carry a `zonaId` still paints no zone:
     // selection never derived one, and now neither does the layer. The pin is
-    // RE-QUERIED INSIDE the retry and clicked there (a stale node click flakes
-    // under full-suite load); the detail panel opening proves the click landed.
-    await waitFor(() => {
-      fireEvent.click(markerByLabel(container, 'Suba Norte'));
+    // The pin is re-queried right before the click (a stale node click flakes
+    // under full-suite load), but the click happens OUTSIDE waitFor: an effect
+    // inside the retry callback fires once per attempt, not once per action.
+    const subaNorteSinZona = await waitFor(() => markerByLabel(container, 'Suba Norte'));
+    fireEvent.click(subaNorteSinZona);
+    await waitFor(() =>
       expect(
         screen.getByRole('heading', { level: 1, name: 'Centro de acopio' }),
-      ).toBeInTheDocument();
-    });
+      ).toBeInTheDocument(),
+    );
     // Still no zone footprint after the selection.
     expect(zoneAreas(container)).toHaveLength(0);
   });
@@ -226,21 +228,23 @@ describe('CitizenMapPage against /api/v1/mapa', () => {
       />,
     );
 
-    await waitFor(() => {
-      fireEvent.click(markerByLabel(container, 'Suba Norte'));
+    const centroSubaNorte = await waitFor(() => markerByLabel(container, 'Suba Norte'));
+    fireEvent.click(centroSubaNorte);
+    await waitFor(() =>
       expect(
         screen.getByRole('heading', { level: 1, name: 'Centro de acopio' }),
-      ).toBeInTheDocument();
-    });
+      ).toBeInTheDocument(),
+    );
 
     // A click on the map BACKGROUND (the Leaflet container itself, not a marker)
     // releases the panel and brings the map title and the rail back.
-    await waitFor(() => {
-      fireEvent.click(container.querySelector('.leaflet-container') as HTMLElement);
+    const mapa = container.querySelector('.leaflet-container') as HTMLElement;
+    fireEvent.click(mapa);
+    await waitFor(() =>
       expect(
         screen.queryByRole('heading', { level: 1, name: 'Centro de acopio' }),
-      ).not.toBeInTheDocument();
-    });
+      ).not.toBeInTheDocument(),
+    );
     expect(
       screen.getByRole('heading', { level: 1, name: 'Mapa de operación' }),
     ).toBeInTheDocument();
@@ -458,10 +462,17 @@ describe('CitizenMapPage donation off demo mode', () => {
   }
 
   async function openDonationDialog(container: HTMLElement) {
-    await waitFor(() => {
+    const botonDonar = () => screen.queryByRole('button', { name: 'Donar a este centro' });
+    await waitFor(() => expect(markerByLabel(container, 'Suba Norte')).toBeInTheDocument());
+    // El primer click puede caer antes de que Leaflet termine de montar el
+    // marcador, así que se reintenta hasta que el panel aparezca. El reintento
+    // es explícito y fuera de `waitFor`: un efecto dentro del callback se
+    // dispararía una vez por reintento, no una vez por acción.
+    for (let intento = 0; intento < 20 && !botonDonar(); intento++) {
       fireEvent.click(markerByLabel(container, 'Suba Norte'));
-      expect(screen.getByRole('button', { name: 'Donar a este centro' })).toBeEnabled();
-    });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    await waitFor(() => expect(botonDonar()).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Donar a este centro' }));
     const dialog = await screen.findByRole('dialog', { name: 'Donar a Acopio Suba Norte' });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Confirmar donación' }));

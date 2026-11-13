@@ -24,50 +24,49 @@ export interface DemoAccount {
 }
 
 /** Shared password for every seeded conductor, as in `DataSeeder`. */
-const CONDUCTOR_PASSWORD = 'conductor123';
-
+const CONDUCTOR_PASSWORD = 'conductor123'; // NOSONAR credencial de demo publica, no es un secreto
 export const DEMO_ACCOUNTS: DemoAccount[] = [
   {
     id: 'usr-demo-rangel',
     nombre: 'Andrés Rangel',
     email: 'rangel@nexovital.co',
     rol: 'ADMIN_CENTRO_AYUDA',
-    password: 'rangel123',
+    password: 'rangel123', // NOSONAR credencial de demo publica, no es un secreto
   },
   {
     id: 'usr-demo-admin-plataforma',
     nombre: 'Diana Torres',
     email: 'admin@nexovital.co',
     rol: 'ADMIN_PLATAFORMA',
-    password: 'admin123',
+    password: 'admin123', // NOSONAR credencial de demo publica, no es un secreto
   },
   {
     id: 'usr-demo-centro-ayuda',
     nombre: 'Camilo Rojas',
     email: 'centro@nexovital.co',
     rol: 'ADMIN_CENTRO_AYUDA',
-    password: 'centro123',
+    password: 'centro123', // NOSONAR credencial de demo publica, no es un secreto
   },
   {
     id: 'usr-demo-acopio',
     nombre: 'Paula Méndez',
     email: 'acopio@nexovital.co',
     rol: 'ADMIN_ACOPIO',
-    password: 'acopio123',
+    password: 'acopio123', // NOSONAR credencial de demo publica, no es un secreto
   },
   {
     id: 'usr-demo-ciudadano',
     nombre: 'Ana Gómez',
     email: 'ciudadano@nexovital.co',
     rol: 'CIUDADANO',
-    password: 'ciudadano123',
+    password: 'ciudadano123', // NOSONAR credencial de demo publica, no es un secreto
   },
   {
     id: 'usr-demo-ciudadano-2',
     nombre: 'Sofía Ramírez',
     email: 'ciudadano2@nexovital.co',
     rol: 'CIUDADANO',
-    password: 'ciudadano123',
+    password: 'ciudadano123', // NOSONAR credencial de demo publica, no es un secreto
   },
   {
     id: 'usr-demo-conductor-1',

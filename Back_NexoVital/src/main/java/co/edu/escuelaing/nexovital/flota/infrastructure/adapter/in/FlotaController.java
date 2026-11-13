@@ -12,6 +12,7 @@ import co.edu.escuelaing.nexovital.flota.domain.model.SolicitudAmbulancia;
 import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in.dto.AmbulanciaDto;
 import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in.dto.ReportarPosicionRequest;
 import co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in.dto.SolicitudAmbulanciaDto;
+import co.edu.escuelaing.nexovital.infrastructure.config.RegistroAccesoDenegado;
 import co.edu.escuelaing.nexovital.shared.infrastructure.dto.ErrorResponse;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.Usuario;
 import io.swagger.v3.oas.annotations.Operation;
@@ -63,15 +64,18 @@ public class FlotaController {
     private final ListarSolicitudesDeMiAmbulanciaUseCase listarSolicitudesDeMiAmbulanciaUseCase;
     private final ReportarPosicionUseCase reportarPosicionUseCase;
     private final NombreUsuarioPort nombreUsuarioPort;
+    private final RegistroAccesoDenegado registroAccesoDenegado;
 
     public FlotaController(ConsultarFlotaUseCase consultarFlotaUseCase,
                            ListarSolicitudesDeMiAmbulanciaUseCase listarSolicitudesDeMiAmbulanciaUseCase,
                            ReportarPosicionUseCase reportarPosicionUseCase,
-                           NombreUsuarioPort nombreUsuarioPort) {
+                           NombreUsuarioPort nombreUsuarioPort,
+                           RegistroAccesoDenegado registroAccesoDenegado) {
         this.consultarFlotaUseCase = consultarFlotaUseCase;
         this.listarSolicitudesDeMiAmbulanciaUseCase = listarSolicitudesDeMiAmbulanciaUseCase;
         this.reportarPosicionUseCase = reportarPosicionUseCase;
         this.nombreUsuarioPort = nombreUsuarioPort;
+        this.registroAccesoDenegado = registroAccesoDenegado;
     }
 
     /** The public projection of a unit, with its driver's name. */
@@ -162,7 +166,7 @@ public class FlotaController {
      * authenticated driver, so a driver cannot move another unit. The position
      * is propagated to {@code /topic/flota} AFTER commit (D-T3).
      *
-     * @return 200 with the updated {@code AmbulanciaDto}; 409
+     * @return 200 with the updated {@code AmbulanciaDto}; 403
      *         {@code AMBULANCIA_AJENA} if the unit is not the caller's; 409
      *         {@code AMBULANCIA_NO_DISPONIBLE} if the unit does not exist; 400
      *         {@code DATOS_INVALIDOS} on a missing location; 500
@@ -184,7 +188,13 @@ public class FlotaController {
                     request.heading(), FuentePosicion.DEVICE);
             return ResponseEntity.ok(aDto(actualizada));
         } catch (AmbulanciaAjenaException e) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
+            // 403, not 409: la unidad existe y el estado lo permite, lo que falla
+            // es que NO es del llamante. Un 409 describe un conflicto de estado y
+            // el cliente lo interpreta como "reintentá más tarde"; acá reintentar
+            // no cambia nada. El 403 dice lo único honesto: no tenés permiso.
+            // De paso alinea este endpoint con SOLICITUD_AJENA, que ya respondía 403.
+            registroAccesoDenegado.registrar("recurso_ajeno");
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(ErrorResponse.of("AMBULANCIA_AJENA", MENSAJE_AMBULANCIA_AJENA));
         } catch (AmbulanciaNoDisponibleException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT)

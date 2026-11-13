@@ -24,8 +24,9 @@ import java.util.List;
 /**
  * Stateless security with the {@code ROLE_<ROL>} authority.
  *
- * <p>The only public endpoint is {@code POST /api/v1/sesiones}: it issues the
- * token. Every protected operation is declared here explicitly; anything not
+ * <p>The public endpoints are {@code POST /api/v1/sesiones} (local login,
+ * development only) and {@code POST /api/v1/registros} (sign-up with Google,
+ * which validates the Google token itself). Every protected operation is declared here explicitly; anything not
  * declared is denied (fail-closed), never left open to every authenticated
  * role.
  *
@@ -93,12 +94,20 @@ public class SecurityConfig {
      */
     private final List<String> origenesPermitidos;
 
+    /**
+     * Bitácora de intentos denegados. Un 403 sin registro deja el ataque
+     * invisible: cien intentos se ven igual que cero.
+     */
+    private final RegistroAccesoDenegado registroAccesoDenegado;
+
     public SecurityConfig(JwtAuthFilter jwtAuthFilter, ObjectMapper objectMapper,
+                          RegistroAccesoDenegado registroAccesoDenegado,
                           @Value("${nexovital.swagger.enabled:true}") boolean swaggerHabilitado,
                           @Value("${nexovital.cors.origenes-permitidos:http://localhost:5173,http://127.0.0.1:5173}")
                           String[] origenesPermitidos) {
         this.jwtAuthFilter = jwtAuthFilter;
         this.objectMapper = objectMapper;
+        this.registroAccesoDenegado = registroAccesoDenegado;
         this.swaggerHabilitado = swaggerHabilitado;
         this.origenesPermitidos = List.of(origenesPermitidos);
     }
@@ -116,6 +125,12 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> {
                     auth
                         .requestMatchers(HttpMethod.POST, "/api/v1/sesiones").permitAll()
+                        // Registro con Google (EP-06.F2.US1, T10). Es publico para
+                        // la cadena porque quien se registra todavia no tiene usuario
+                        // y el filtro no puede autenticarlo; NO queda abierto: el
+                        // controlador exige un token valido de Google y responde 401
+                        // (y lo registra) si falta o no verifica.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/registros").permitAll()
                         // Spring Boot forwards unhandled failures to /error and that
                         // dispatch passes through this chain: without permission here, a
                         // validation 400 would turn into a 401.
@@ -126,6 +141,13 @@ public class SecurityConfig {
                         // without it the probe would get 403 and the app would be
                         // restarted as unhealthy.
                         .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
+                        // Raspado de Prometheus para el tablero tecnico (ADR-0010).
+                        // Es publico porque el recolector no lleva token y en el
+                        // despliegue vive en la red de monitoreo, no en internet.
+                        // Si el backend quedara expuesto directo, esta ruta debe
+                        // restringirse por red: las metricas no son secretas, pero
+                        // tampoco conviene regalarlas.
+                        .requestMatchers(HttpMethod.GET, "/actuator/prometheus").permitAll()
                         // WebSocket/STOMP handshake (US2 D7): the HTTP handshake carries no
                         // Bearer (the token travels in the STOMP CONNECT frame) and SockJS
                         // issues GET /ws/info over HTTP, so the handshake is permitted. This
@@ -159,13 +181,14 @@ public class SecurityConfig {
                         // explicitly because the chain is fail-closed; without it, GET
                         // /emergencias would be denied.
                         .requestMatchers(HttpMethod.GET, "/api/v1/emergencias").authenticated()
-                        // Update an emergency (US4): the help-center administrator, the
-                        // role the story fixes (D3). The matcher names only that
-                        // authority. Declared explicitly because the chain is fail-closed;
-                        // without it, PATCH /emergencias/{id} would be denied. The path
-                        // carries the {id}, so the pattern covers the sub-paths.
+                        // Corregir una emergencia (estado o nivel): solo el
+                        // administrador de plataforma (Sprint 2, T09/T10). La
+                        // emergencia no guarda quien la reporto ni que centro la
+                        // atiende, asi que no hay regla de pertenencia posible: dejarla
+                        // en el administrador de centro permitia que cualquiera de
+                        // ellos editara cualquier emergencia. Ver matriz-permisos.md.
                         .requestMatchers(HttpMethod.PATCH, "/api/v1/emergencias/**")
-                                .hasAuthority("ROLE_ADMIN_CENTRO_AYUDA")
+                                .hasAuthority("ROLE_ADMIN_PLATAFORMA")
                         // Register an organization/center (EP-01.F2.US1): the platform
                         // administrator creates it. Azure fixes the role as the platform
                         // administrator, so the matcher names only that authority. Declared
@@ -227,7 +250,7 @@ public class SecurityConfig {
                         // Report the live position of the caller's OWN unit
                         // (EP-04.F1.US1): only a driver reports telemetry, and
                         // the use case additionally verifies the unit belongs to
-                        // the caller (409 otherwise). Declared explicitly because
+                        // the caller (403 otherwise). Declared explicitly because
                         // the chain is fail-closed; without it, POST
                         // /flota/ambulancias/{id}/posicion would be denied.
                         .requestMatchers(HttpMethod.POST, "/api/v1/flota/ambulancias/*/posicion")
@@ -306,7 +329,14 @@ public class SecurityConfig {
                         // (403 otherwise). Declared explicitly because the chain
                         // is fail-closed; without it, /cancelar would be denied.
                         .requestMatchers(HttpMethod.POST, "/api/v1/solicitudes/*/cancelar")
-                                .hasAnyAuthority(ROLES_SOLICITANTES);
+                                .hasAnyAuthority(ROLES_SOLICITANTES)
+                        // Bitácora de auditoría (Maintain Audit Trail): solo el
+                        // administrador de plataforma consulta la traza. El
+                        // administrador de centro NO entra todavía: vería eventos
+                        // de otros centros, porque el endpoint aún no resuelve el
+                        // centro del llamante. Se restringe antes que exponer de más.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/auditoria/**")
+                                .hasAuthority("ROLE_ADMIN_PLATAFORMA");
 
                     // Swagger UI and the OpenAPI JSON. These routes must be
                     // declared explicitly: the chain is fail-closed, so without
@@ -328,12 +358,35 @@ public class SecurityConfig {
                     auth.anyRequest().denyAll();
                 })
                 .exceptionHandling(ex -> ex
-                        .authenticationEntryPoint((request, response, authException) ->
+                        .authenticationEntryPoint((request, response, authException) -> {
+                            // Todo 401 también queda registrado (S-1 / T11). Se
+                            // distingue "no mandó token" de "mandó uno que no
+                            // sirve"; el token nunca se escribe en el log.
+                            if (Boolean.TRUE.equals(request.getAttribute(
+                                    JwtAuthFilter.ATRIBUTO_USUARIO_NO_REGISTRADO))) {
+                                // Token valido de Google sin cuenta (T10): sigue
+                                // siendo 401, pero con un codigo propio para que el
+                                // front lleve a elegir el rol.
+                                registroAccesoDenegado.registrarNoAutenticado(request, "usuario_no_registrado");
                                 escribirError(response, HttpServletResponse.SC_UNAUTHORIZED,
-                                        "NO_AUTENTICADO", "Token ausente, inválido o expirado"))
-                        .accessDeniedHandler((request, response, deniedException) ->
-                                escribirError(response, HttpServletResponse.SC_FORBIDDEN,
-                                        "ACCESO_DENEGADO", "No tiene permisos para este recurso")))
+                                        "USUARIO_NO_REGISTRADO", "La cuenta aún no está registrada en NexoVital");
+                                return;
+                            }
+                            String authorization = request.getHeader("Authorization");
+                            boolean sinToken = authorization == null || !authorization.startsWith("Bearer ");
+                            registroAccesoDenegado.registrarNoAutenticado(request,
+                                    sinToken ? "token_ausente" : "token_invalido");
+                            escribirError(response, HttpServletResponse.SC_UNAUTHORIZED,
+                                    "NO_AUTENTICADO", "Token ausente, inválido o expirado");
+                        })
+                        .accessDeniedHandler((request, response, deniedException) -> {
+                            // Todo rechazo por rol queda registrado antes de
+                            // responder: es la evidencia que exige el escenario
+                            // de autorización.
+                            registroAccesoDenegado.registrar("rol_insuficiente");
+                            escribirError(response, HttpServletResponse.SC_FORBIDDEN,
+                                    "ACCESO_DENEGADO", "No tiene permisos para este recurso");
+                        }))
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }

@@ -115,7 +115,7 @@ class FlotaPosicionRealtimeTest {
 
     /** Same reset LoginTestBase applies: a blocked account must not fail the login here. */
     private static final String REINICIAR_ESTADO_INTENTOS =
-            "UPDATE usuarios SET intentos_fallidos = 0, bloqueado_hasta = NULL";
+            "UPDATE usuarios.usuarios SET intentos_fallidos = 0, bloqueado_hasta = NULL";
 
     /** Upper bound for connect, subscribe and frames. */
     private static final long TIMEOUT_SEGUNDOS = 10;

@@ -27,14 +27,28 @@ import java.util.UUID;
  * starts connected.
  */
 @Entity
-@Table(name = "ambulancias")
+@Table(name = "ambulancias", schema = "flota")
 public class AmbulanciaJpaEntity {
 
     @Id
     private UUID id;
 
-    @Column(nullable = false, unique = true)
+    /**
+     * Sin restricción UNIQUE: Citus exige que todo índice único incluya la
+     * columna de distribución, y esta tabla se distribuye por {@code id}
+     * (deploy/citus/distribuir.sql). La placa no se crea por API —solo la siembra
+     * el seeder—, así que la unicidad no es una invariante que el producto
+     * necesite a nivel de base para escalar horizontalmente.
+     */
+    @Column(nullable = false)
     private String placa;
+
+    /**
+     * Modelo del vehículo que declara el conductor al registrarse (T10). Es
+     * nulo en las unidades sembradas, que se crearon antes de pedir el dato.
+     */
+    @Column(length = 60)
+    private String modelo;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -98,8 +112,27 @@ public class AmbulanciaJpaEntity {
         this.conductorId = conductorId;
     }
 
+    /**
+     * Unidad de un conductor que se registra con Google (T10). Nace
+     * DESCONECTADA: recibe solicitudes solo cuando el conductor abre su consola
+     * y se conecta, no antes, aunque nunca haya entrado a la aplicación.
+     */
+    public static AmbulanciaJpaEntity deConductorRegistrado(UUID id, String placa, String modelo,
+                                                            double lat, double lng, String zona,
+                                                            UUID conductorId) {
+        AmbulanciaJpaEntity unidad = new AmbulanciaJpaEntity(
+                id, placa, EstadoAmbulancia.DISPONIBLE, lat, lng, zona, conductorId);
+        unidad.modelo = modelo;
+        unidad.conectada = false;
+        return unidad;
+    }
+
     public UUID getId() {
         return id;
+    }
+
+    public String getModelo() {
+        return modelo;
     }
 
     public String getPlaca() {
