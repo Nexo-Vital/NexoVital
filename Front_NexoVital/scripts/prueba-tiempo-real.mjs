@@ -34,20 +34,24 @@ function leerArgs(argv) {
     ventana: 20,
     umbral: 3000,
     ciudadano: 'ciudadano@nexovital.co',
-    ciudadanoPassword: 'ciudadano123',
+    ciudadanoPassword: 'ciudadano123', // NOSONAR credencial de demo publica, no es un secreto
     cierre: 'rangel@nexovital.co',
-    cierrePassword: 'rangel123',
+    cierrePassword: 'rangel123', // NOSONAR credencial de demo publica, no es un secreto
   };
   for (let i = 0; i < argv.length; i += 2) {
     const clave = argv[i]?.replace(/^--/, '');
     const valor = argv[i + 1];
     if (!clave || valor === undefined || !(clave in opciones)) {
-      console.error(`Opcion desconocida o sin valor: ${argv[i]}`);
+      console.error(`Opcion desconocida o sin valor: ${String(argv[i]).replace(/[\r\n]/g, ' ')}`);
       process.exit(2);
     }
     opciones[clave] = typeof opciones[clave] === 'number' ? Number(valor) : valor;
   }
-  opciones.base = opciones.base.replace(/\/+$/, '');
+  // Quita las barras finales sin regex (un patron con `+$` puede retroceder
+  // en tiempo cuadratico con entradas largas).
+  let fin = opciones.base.length;
+  while (fin > 0 && opciones.base[fin - 1] === '/') fin--;
+  opciones.base = opciones.base.slice(0, fin);
   return opciones;
 }
 
@@ -58,9 +62,12 @@ const WS_URL = `${opt.base.replace(/^http/, 'ws')}/ws/websocket`;
 const TIMEOUT_EVENTO_MS = 15000;
 
 let fallos = 0;
+// Los textos que se imprimen pueden traer datos del servidor o de la linea de
+// comandos: se quitan los saltos de linea para que no puedan falsear el log.
+const limpiar = (texto) => String(texto).replace(/[\r\n]/g, ' ');
 function paso(nombre, ok, detalle = '') {
-  console.log(`${ok ? '[ OK ]' : '[FALLA]'} ${nombre}`);
-  if (detalle) console.log(`       ${detalle}`);
+  console.log(`${ok ? '[ OK ]' : '[FALLA]'} ${limpiar(nombre)}`);
+  if (detalle) console.log(`       ${limpiar(detalle)}`);
   if (!ok) fallos++;
 }
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -139,7 +146,7 @@ function crearCliente(indice, token) {
     estado.conectado = false;
   };
   client.onStompError = (frame) => {
-    console.log(`       cliente ${indice}: error STOMP ${frame.headers.message ?? ''}`);
+    console.log(`       cliente ${indice}: error STOMP ${limpiar(frame.headers.message ?? '')}`);
   };
   estado.client = client;
   estado.esperarConexion = (ms) =>
@@ -180,7 +187,7 @@ const BODY_EMERGENCIA = {
 // ---------------------------------------------------------------- prueba
 async function main() {
   console.log('\n=== Prueba de tiempo real (RT1, RT2, reconexion) ===');
-  console.log(`sitio: ${opt.base}`);
+  console.log(`sitio: ${limpiar(opt.base)}`);
   console.log(`clientes simultaneos: ${opt.clientes}, rondas RT1: ${opt.rondas}\n`);
 
   // 1. Sesiones. La primera llamada despierta el back si esta en escala cero.

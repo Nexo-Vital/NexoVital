@@ -18,7 +18,9 @@ WORKDIR /app
 ENV HUSKY=0
 
 COPY package.json package-lock.json ./
-RUN npm ci --no-audit --no-fund
+# --ignore-scripts: ningun paquete corre scripts de instalacion (vector de
+# ataque de la cadena de suministro). esbuild funciona sin su postinstall.
+RUN npm ci --ignore-scripts --no-audit --no-fund
 
 COPY . .
 # Build contra el backend real, nunca en modo demo (el modo demo es solo para el
@@ -39,7 +41,9 @@ ENV VITE_FIREBASE_PROJECT_ID=$VITE_FIREBASE_PROJECT_ID
 RUN npm run build
 
 
-FROM nginx:stable-alpine AS runtime
+# Imagen oficial de Nginx que corre sin root (usuario nginx). Por eso escucha
+# en 8080: un usuario sin privilegios no puede abrir puertos menores a 1024.
+FROM nginxinc/nginx-unprivileged:stable-alpine AS runtime
 
 # La imagen oficial de Nginx reemplaza las variables de entorno de los archivos
 # *.template al arrancar y deja el resultado en /etc/nginx/conf.d/.
@@ -49,4 +53,4 @@ COPY --from=build /app/dist /usr/share/nginx/html
 # Valor para docker-compose; en la nube se sobreescribe. Sin barra al final.
 ENV BACKEND_URL=http://backend:8080
 
-EXPOSE 80
+EXPOSE 8080
