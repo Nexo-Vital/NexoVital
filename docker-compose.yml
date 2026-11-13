@@ -19,6 +19,7 @@
 # El backend NO se publica al host: la única entrada es nginx. Es lo que hace
 # que el balanceo sea real y no decorativo.
 # ==========================================================================
+
 name: nexovital
 
 services:
