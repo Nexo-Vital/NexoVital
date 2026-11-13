@@ -10,8 +10,8 @@ import java.util.UUID;
 /**
  * Puerto de entrada: reportar una emergencia. Una intencion por caso de uso.
  *
- * <p>Reportar una emergencia DISPARA el despacho: el backend crea la solicitud
- * de ambulancia en el mismo acto, sin que el cliente tenga que pedirla aparte.
+ * <p>Reportar una emergencia NO pide ambulancia: eso es otra accion del
+ * ciudadano ({@code POST /solicitudes}).
  */
 public interface ReportarEmergenciaUseCase {
 
@@ -19,30 +19,28 @@ public interface ReportarEmergenciaUseCase {
      * Resultado del reporte.
      *
      * @param emergencia  emergencia persistida, con su zona resuelta
-     * @param solicitudId id de la solicitud de ambulancia creada, o {@code null}
-     *                    si no habia ninguna unidad disponible (o si el
-     *                    solicitante no se identifico)
+     * @param solicitudId siempre {@code null}: reportar ya no crea una solicitud
+     *                    de ambulancia. Se conserva para no romper el contrato
+     *                    ({@code solicitudId} opcional en la respuesta)
      */
     record EmergenciaReportada(Emergencia emergencia, UUID solicitudId) {
     }
 
     /**
-     * Registra una emergencia sobre el punto reportado y despacha una ambulancia
-     * para ella. El servidor asigna {@code id}, {@code estado} y
-     * {@code createdAt}, resuelve la {@code zonaId} del punto con el
-     * punto-en-poligono de {@link
-     * co.edu.escuelaing.nexovital.mapa.domain.model.Zona}, y crea la solicitud
-     * con ese punto como recogida.
+     * Registra una emergencia sobre el punto reportado. El servidor asigna
+     * {@code id}, {@code estado} y {@code createdAt} y resuelve la
+     * {@code zonaId} del punto con el punto-en-poligono de {@link
+     * co.edu.escuelaing.nexovital.mapa.domain.model.Zona}.
      *
      * @param ubicacion     punto afectado
      * @param tipo          que esta pasando (lista cerrada)
      * @param nivel         severidad del contrato
      * @param descripcion   comentario libre del reporte
-     * @param direccion     direccion legible del punto, o {@code null}
-     * @param solicitanteId usuario autenticado que reporta; es el dueno de la
-     *                      solicitud creada. {@code null} registra la emergencia
-     *                      sin despachar (llamadores internos)
-     * @return la emergencia persistida y el id de la solicitud creada, si la hubo
+     * @param direccion     direccion legible del punto, o {@code null}; no se
+     *                      persiste en la emergencia
+     * @param solicitanteId usuario autenticado que reporta (queda en la
+     *                      bitacora), o {@code null} para llamadores internos
+     * @return la emergencia persistida
      * @throws IllegalArgumentException si falta algun campo obligatorio
      */
     EmergenciaReportada reportar(Ubicacion ubicacion, TipoEmergencia tipo, NivelEmergencia nivel,
