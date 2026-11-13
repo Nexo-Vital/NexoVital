@@ -127,19 +127,19 @@ jobs:
             exit 0
           fi
 
-          # POST /api/v1/sesiones sin credenciales: Spring responde 400.
-          # Ese 400 prueba la cadena completa front -> Nginx -> back.
+          # GET /api/v1/sesiones/actual sin token: Spring responde 401.
+          # Ese 401 prueba la cadena completa front -> Nginx -> back. (El login
+          # local esta apagado en la nube, asi que POST /sesiones da 404.)
           for i in $(seq 1 24); do
             CODIGO=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
-              -X POST "https://$FRONT_FQDN/api/v1/sesiones" \
-              -H 'Content-Type: application/json' -d '{}' || true)
+              "https://$FRONT_FQDN/api/v1/sesiones/actual" || true)
             echo "Intento $i: HTTP $CODIGO"
-            if [ "$CODIGO" = "400" ]; then
+            if [ "$CODIGO" = "401" ]; then
               echo "Back OK"
               echo "- Back: OK" >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
             sleep 10
           done
-          echo "::error::El back no respondio a /api/v1/sesiones (ultimo codigo: $CODIGO)"
+          echo "::error::El back no respondio a /api/v1/sesiones/actual (ultimo codigo: $CODIGO)"
           exit 1
