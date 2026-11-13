@@ -1,10 +1,13 @@
 package co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in;
 
 import co.edu.escuelaing.nexovital.flota.domain.port.in.ExpirarSolicitudesVencidasUseCase;
+import co.edu.escuelaing.nexovital.infrastructure.bloqueo.EjecucionUnica;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+
+import java.time.Duration;
 
 /**
  * Scheduled driver of the expiry use case (EP-04.F2.US9): the "temporizador del
@@ -27,16 +30,30 @@ public class SolicitudExpiryScheduler {
 
     private static final Logger LOG = LoggerFactory.getLogger(SolicitudExpiryScheduler.class);
 
-    private final ExpirarSolicitudesVencidasUseCase expirarSolicitudesVencidasUseCase;
+    /** Stable lock name shared by every instance of the service. */
+    private static final String BLOQUEO_EXPIRACION = "expiracion-solicitudes";
 
-    public SolicitudExpiryScheduler(ExpirarSolicitudesVencidasUseCase expirarSolicitudesVencidasUseCase) {
+    /** Validity longer than the 1 s interval so the owner renews in time. */
+    private static final Duration VIGENCIA_BLOQUEO = Duration.ofSeconds(5);
+
+    private final ExpirarSolicitudesVencidasUseCase expirarSolicitudesVencidasUseCase;
+    private final EjecucionUnica ejecucionUnica;
+
+    public SolicitudExpiryScheduler(ExpirarSolicitudesVencidasUseCase expirarSolicitudesVencidasUseCase,
+                                    EjecucionUnica ejecucionUnica) {
         this.expirarSolicitudesVencidasUseCase = expirarSolicitudesVencidasUseCase;
+        this.ejecucionUnica = ejecucionUnica;
     }
 
     @Scheduled(
             initialDelayString = "${nexovital.solicitud.expiracion-delay-inicial-ms:0}",
             fixedDelayString = "${nexovital.solicitud.expiracion-intervalo-ms:1000}")
     public void expirarSolicitudesVencidas() {
+        // One instance at a time across the balancer (Sprint 2, T05).
+        if (!ejecucionUnica.intentar(BLOQUEO_EXPIRACION, VIGENCIA_BLOQUEO)) {
+            return;
+        }
+
         try {
             int expiradas = expirarSolicitudesVencidasUseCase.expirarVencidas();
             if (expiradas > 0) {

@@ -1,10 +1,13 @@
 package co.edu.escuelaing.nexovital.flota.infrastructure.adapter.in;
 
 import co.edu.escuelaing.nexovital.flota.domain.port.in.DetectarSenalPerdidaUseCase;
+import co.edu.escuelaing.nexovital.infrastructure.bloqueo.EjecucionUnica;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+
+import java.time.Duration;
 
 /**
  * Scheduled driver of the signal-loss sweep (EP-04.F1.US1, scenario 4, design
@@ -25,16 +28,35 @@ public class SenalFlotaScheduler {
 
     private static final Logger LOG = LoggerFactory.getLogger(SenalFlotaScheduler.class);
 
-    private final DetectarSenalPerdidaUseCase detectarSenalPerdidaUseCase;
+    /** Stable lock name shared by every instance of the service. */
+    private static final String BLOQUEO_SENAL = "senal-flota";
 
-    public SenalFlotaScheduler(DetectarSenalPerdidaUseCase detectarSenalPerdidaUseCase) {
+    /**
+     * Validity longer than the 1 s interval so the owner renews in time, and
+     * short enough that a healthy instance takes over soon after the owner dies.
+     */
+    private static final Duration VIGENCIA_BLOQUEO = Duration.ofSeconds(5);
+
+    private final DetectarSenalPerdidaUseCase detectarSenalPerdidaUseCase;
+    private final EjecucionUnica ejecucionUnica;
+
+    public SenalFlotaScheduler(DetectarSenalPerdidaUseCase detectarSenalPerdidaUseCase,
+                               EjecucionUnica ejecucionUnica) {
         this.detectarSenalPerdidaUseCase = detectarSenalPerdidaUseCase;
+        this.ejecucionUnica = ejecucionUnica;
     }
 
     @Scheduled(
             initialDelayString = "${nexovital.flota.senal.delay-inicial-ms:5000}",
             fixedDelayString = "${nexovital.flota.senal.intervalo-ms:1000}")
     public void detectarSenalPerdida() {
+        // Sprint 2 asks every scheduled process to run once across instances.
+        // The conditional update would keep the sweep safe anyway, but the lock
+        // makes the "one run at a time" guarantee explicit and observable.
+        if (!ejecucionUnica.intentar(BLOQUEO_SENAL, VIGENCIA_BLOQUEO)) {
+            return;
+        }
+
         try {
             int marcadas = detectarSenalPerdidaUseCase.detectar();
             if (marcadas > 0) {

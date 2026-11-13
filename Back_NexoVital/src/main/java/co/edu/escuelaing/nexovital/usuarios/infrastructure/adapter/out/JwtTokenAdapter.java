@@ -45,6 +45,14 @@ public class JwtTokenAdapter implements TokenPort {
 
     private static final Logger LOG = LoggerFactory.getLogger(JwtTokenAdapter.class);
 
+    /**
+     * Fuente de aleatoriedad reutilizada. Crear un {@code SecureRandom} por
+     * llamada reinicia la siembra y, sobre todo, gasta entropía del sistema cada
+     * vez; uno compartido es lo que la clase está pensada para hacer. Es
+     * thread-safe.
+     */
+    private static final SecureRandom ALEATORIO_SEGURO = new SecureRandom();
+
     private final SecretKey key;
     private final long expirationMillis;
     private final Clock clock;
@@ -102,7 +110,7 @@ public class JwtTokenAdapter implements TokenPort {
         if (secret == null || secret.isBlank()) {
             if (!produccion) {
                 byte[] aleatorio = new byte[BYTES_MINIMOS_HS256];
-                new SecureRandom().nextBytes(aleatorio);
+                ALEATORIO_SEGURO.nextBytes(aleatorio);
                 LOG.warn("NEXOVITAL_JWT_SECRET no está definido: se generó un secreto JWT aleatorio solo "
                         + "para esta ejecución (desarrollo). Los tokens dejan de valer al reiniciar. "
                         + "Con el perfil prod el secreto es obligatorio.");

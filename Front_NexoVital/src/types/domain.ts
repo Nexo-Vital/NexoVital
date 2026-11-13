@@ -59,6 +59,13 @@ export interface Emergencia {
   zonaId: string;
   createdAt: string;
   /**
+   * Id of the ambulance request the backend created when this emergency was
+   * reported. Optional: read models and realtime frames may not carry it, and it
+   * is absent when no unit was available. The citizen screen adopts it instead of
+   * asking for an ambulance a second time.
+   */
+  solicitudId?: string;
+  /**
    * Monotonic version assigned by the server on every write, so a reader can
    * discard stale realtime frames and converge regardless of delivery order.
    * Optional: demo fixtures and the dev relay do not carry it, so an absent

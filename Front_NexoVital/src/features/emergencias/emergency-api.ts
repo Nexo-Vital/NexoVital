@@ -6,13 +6,19 @@ import {
   fromWireEmergency,
 } from './emergency-wire';
 
-/** The four fields `POST /emergencias` accepts; the server assigns the rest. */
+/** The fields `POST /emergencias` accepts; the server assigns the rest. */
 export interface ReportarEmergenciaInput {
   ubicacion: Ubicacion;
   /** Emergency type from the closed list (EP-02.F1.US3); required by the server. */
   tipo: EmergencyType;
   nivel: EmergencyLevel;
   descripcion: string;
+  /**
+   * Readable pickup address, optional. It travels to the ambulance request the
+   * backend creates when the emergency is reported, so the driver sees where to
+   * go instead of bare coordinates.
+   */
+  direccion?: string;
 }
 
 /**
@@ -49,6 +55,7 @@ export async function reportarEmergencia(input: ReportarEmergenciaInput): Promis
       tipo: EMERGENCY_TYPE_TO_WIRE[input.tipo],
       nivel: EMERGENCY_LEVEL_TO_WIRE[input.nivel],
       descripcion: input.descripcion,
+      ...(input.direccion ? { direccion: input.direccion } : {}),
     }),
   });
 

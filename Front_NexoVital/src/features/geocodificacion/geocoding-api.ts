@@ -1,3 +1,4 @@
+﻿import { stripTrailingSlashes } from '@/shared/http/strip-trailing-slashes';
 import type { Ubicacion } from '@/types/domain';
 
 /**
@@ -8,7 +9,7 @@ import type { Ubicacion } from '@/types/domain';
  *
  * Both go to Photon (komoot), an OpenStreetMap geocoder with CORS and no API
  * key. The result is APPROXIMATE by nature: OSM rarely carries exact house
- * numbers in Bogotá, so the answer is usually the street or the neighbourhood.
+ * numbers in BogotÃ¡, so the answer is usually the street or the neighbourhood.
  * The coordinates stay the source of truth; the address is only how a person
  * reads them. That is why every failure here is non-blocking for the caller.
  */
@@ -39,7 +40,7 @@ const COLOMBIA_BBOX = '-79.1,-4.3,-66.8,13.5';
 
 /** One place the citizen can pick. */
 export type DireccionSugerida = {
-  /** Readable address, e.g. "Carrera 7 # 45-10, Chapinero, Bogotá". */
+  /** Readable address, e.g. "Carrera 7 # 45-10, Chapinero, BogotÃ¡". */
   etiqueta: string;
   ubicacion: Ubicacion;
 };
@@ -47,7 +48,7 @@ export type DireccionSugerida = {
 function geocodingBase(): string {
   const configured = import.meta.env.VITE_GEOCODING_BASE as string | undefined;
   const base = configured && configured.length > 0 ? configured : DEFAULT_GEOCODING_BASE;
-  return base.replace(/\/+$/, '');
+  return stripTrailingSlashes(base);
 }
 
 function text(value: unknown): string {
@@ -60,7 +61,7 @@ function text(value: unknown): string {
  * The first part is the most specific thing known (street + number, else the
  * place name, else the street alone); the rest is the neighbourhood and the
  * city. Repeated parts are dropped, so a feature whose name equals its city does
- * not read "Bogotá, Bogotá". Returns `''` when nothing usable is present.
+ * not read "BogotÃ¡, BogotÃ¡". Returns `''` when nothing usable is present.
  */
 export function formatDireccion(properties: Record<string, unknown>): string {
   const street = text(properties.street);

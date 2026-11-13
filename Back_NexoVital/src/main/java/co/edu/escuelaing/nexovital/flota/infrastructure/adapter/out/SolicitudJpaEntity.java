@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.UUID;
 
 @Entity
-@Table(name = "solicitudes_ambulancia")
+@Table(name = "solicitudes_ambulancia", schema = "flota")
 public class SolicitudJpaEntity {
 
     @Id
@@ -58,7 +58,7 @@ public class SolicitudJpaEntity {
     private UUID solicitanteId;
 
     @ElementCollection
-    @CollectionTable(name = "solicitud_ambulancia_notificadas", joinColumns = @JoinColumn(name = "solicitud_id"))
+    @CollectionTable(name = "solicitud_ambulancia_notificadas", schema = "flota", joinColumns = @JoinColumn(name = "solicitud_id"))
     @Column(name = "ambulancia_id", nullable = false)
     private List<UUID> ambulanciasNotificadas = new ArrayList<>();
 

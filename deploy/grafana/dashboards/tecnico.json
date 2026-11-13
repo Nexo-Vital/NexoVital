@@ -1,0 +1,637 @@
+{
+  "uid": "nexovital-tecnico",
+  "title": "NexoVital — Métricas técnicas",
+  "tags": [
+    "nexovital",
+    "tecnico"
+  ],
+  "description": "Escenario O-1 (EP-06.F5.US2). La degradación debe verse en 30 s o menos: Prometheus raspa cada 5 s y el tablero se refresca cada 5 s.",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 2,
+  "refresh": "5s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Estado de componentes",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "nexovital-prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "CAÍDO",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "OPERATIVO",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "nan",
+                "result": {
+                  "text": "SIN DATOS",
+                  "color": "orange",
+                  "index": 2
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "SIN DATOS",
+                  "color": "orange",
+                  "index": 3
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value_and_name",
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "nexovital-prometheus"
+          },
+          "expr": "up{job=\"nexovital-backend\"}",
+          "legendFormat": "Backend {{instancia}}",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "nexovital-prometheus"
+          },
+          "expr": "min by (componente) (nexovital_componente_disponible)",
+          "legendFormat": "{{componente}}",
+          "refId": "B",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "description": "Backend: Prometheus logra raspar la instancia (up). base_datos y rabbitmq: el peor estado que reporta cualquier backend vivo (1 = responde, 0 = no). Si todos los backends caen, base_datos y rabbitmq quedan sin datos porque no hay quién los mida."
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Tiempo de respuesta promedio",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "nexovital-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "nexovital-prometheus"
+          },
+          "expr": "sum by (instancia) (rate(http_server_requests_seconds_sum{uri!~\"/actuator.*|/ws.*\"}[1m])) / clamp_min(sum by (instancia) (rate(http_server_requests_seconds_count{uri!~\"/actuator.*|/ws.*\"}[1m])), 0.0001)",
+          "legendFormat": "promedio {{instancia}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "nexovital-prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, instancia) (rate(http_server_requests_seconds_bucket{uri!~\"/actuator.*|/ws.*\"}[1m])))",
+          "legendFormat": "p95 {{instancia}}",
+          "refId": "B"
+        }
+      ],
+      "description": "Promedio y p95 de las peticiones HTTP del API en el último minuto, por instancia. Se excluyen /actuator (el raspado de Prometheus) y /ws (el canal en tiempo real, que no es una respuesta del API)."
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Latencia de eventos en tiempo real (objetivo p95 ≤ 500 ms)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "nexovital-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "nexovital-prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, instancia) (rate(nexovital_push_propagacion_seconds_bucket[1m])))",
+          "legendFormat": "p95 entrega {{instancia}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "nexovital-prometheus"
+          },
+          "expr": "sum by (instancia) (rate(nexovital_push_propagacion_seconds_sum[1m])) / clamp_min(sum by (instancia) (rate(nexovital_push_propagacion_seconds_count[1m])), 0.0001)",
+          "legendFormat": "promedio entrega {{instancia}}",
+          "refId": "B"
+        }
+      ],
+      "description": "Tiempo desde que una instancia publica un evento hasta que la instancia que lo entrega lo pone en el canal de sus clientes (incluye el salto por RabbitMQ). Métrica nexovital.push.propagacion (H6)."
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Usuarios concurrentes (sesiones en tiempo real)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "nexovital-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 13
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "nexovital-prometheus"
+          },
+          "expr": "sum(nexovital_usuarios_stomp)",
+          "legendFormat": "total",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "nexovital-prometheus"
+          },
+          "expr": "sum by (instancia) (nexovital_usuarios_stomp)",
+          "legendFormat": "{{instancia}}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "CPU del proceso",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "nexovital-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 13
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "nexovital-prometheus"
+          },
+          "expr": "process_cpu_usage{job=\"nexovital-backend\"}",
+          "legendFormat": "{{instancia}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Memoria del heap JVM",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "nexovital-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 13
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "nexovital-prometheus"
+          },
+          "expr": "sum by (instancia) (jvm_memory_used_bytes{area=\"heap\"})",
+          "legendFormat": "usada {{instancia}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "nexovital-prometheus"
+          },
+          "expr": "sum by (instancia) (jvm_memory_max_bytes{area=\"heap\"})",
+          "legendFormat": "máximo {{instancia}}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Errores 5xx (últimos 5 min)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "nexovital-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 0,
+        "y": 20
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "nexovital-prometheus"
+          },
+          "expr": "sum(increase(http_server_requests_seconds_count{status=~\"5..\"}[5m])) or vector(0)",
+          "legendFormat": "errores",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Errores 5xx por minuto",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "nexovital-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 18,
+        "x": 6,
+        "y": 20
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "nexovital-prometheus"
+          },
+          "expr": "sum by (instancia) (increase(http_server_requests_seconds_count{status=~\"5..\"}[1m]))",
+          "legendFormat": "{{instancia}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Pool de conexiones a base de datos",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "nexovital-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 27
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "nexovital-prometheus"
+          },
+          "expr": "hikaricp_connections_active",
+          "legendFormat": "activas {{instancia}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "nexovital-prometheus"
+          },
+          "expr": "hikaricp_connections_pending",
+          "legendFormat": "en espera {{instancia}}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Cola de los canales STOMP (si crece, la instancia está saturada)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "nexovital-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 27
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "nexovital-prometheus"
+          },
+          "expr": "sum by (instancia, name) (executor_queued_tasks{name=~\".*Channel.*\"})",
+          "legendFormat": "{{instancia}} {{name}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

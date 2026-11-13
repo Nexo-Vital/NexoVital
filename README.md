@@ -57,8 +57,9 @@ El launcher **avisa** si un puerto está ocupado, pero nunca mata procesos ajeno
 ## Arranque manual (si preferís control)
 
 ```powershell
-# Back
+# Back (el login local del back arranca apagado: se enciende para desarrollo)
 cd Back_NexoVital
+$env:NEXOVITAL_AUTH_LOCAL_ENABLED = "true"
 mvn spring-boot:run
 
 # Front (en otra terminal)
@@ -66,6 +67,23 @@ cd Front_NexoVital
 npm install
 npm run dev
 ```
+
+## Autenticación: IdP externo y login local de desarrollo
+
+El producto se autentica con un **proveedor de identidad externo** (Firebase Auth,
+ADR-0008). El login por email y contraseña del backend es un recurso de desarrollo y de la
+suite, no una función del producto:
+
+- `nexovital.auth.local.enabled` arranca en **`false`** en `application.properties`, y
+  `docker` y `prod` lo fijan en `false` otra vez. Con el login apagado,
+  `POST /api/v1/sesiones` responde **404**.
+- Solo `application-test.properties` lo enciende, porque la suite necesita emitir tokens sin
+  Firebase.
+- Para levantar el backend en local hay que exportar `NEXOVITAL_AUTH_LOCAL_ENABLED=true`
+  (el launcher `run.cmd` ya lo hace). El front usa ese camino **solo en `npm run dev`**: un
+  build de producción con Firebase sin configurar falla en voz alta, nunca cae al login local.
+- En docker, el front se construye con las variables `VITE_FIREBASE_*` y el backend valida
+  ID tokens de Firebase con el JWKS del proyecto.
 
 ## Datos y credenciales de desarrollo
 
@@ -96,6 +114,39 @@ Mientras tanto, con el perfil `prod` el secreto ya es obligatorio: sin él el ar
 
 Con el perfil de desarrollo, Swagger UI queda disponible en
 `http://localhost:8080/swagger-ui.html` (y el JSON en `/v3/api-docs`). En `prod` está apagado.
+
+## Topología escalada (2 backends + nginx + observabilidad)
+
+`docker-compose.yml` levanta dos instancias del backend (sin estado) detrás de nginx, con
+RabbitMQ para propagar los eventos entre instancias, Prometheus y Grafana:
+
+```powershell
+docker compose up -d --build
+```
+
+| Servicio | URL |
+|---|---|
+| App (nginx: front + `/api` + `/ws`) | `http://localhost:8080` |
+| Prometheus | `http://localhost:9090` |
+| Grafana | `http://localhost:3000` |
+
+El balanceo se comprueba con las métricas por instancia (`up{job="nexovital-backend"}`) y con
+`docker compose logs backend-1 backend-2`. Las reglas de alerta se prueban con
+`.\deploy\prometheus\probar-alertas.ps1`.
+
+## Base de datos distribuida (Citus, opcional)
+
+La topología por defecto sigue siendo **un PostgreSQL**. Para levantar la variante con
+**escalabilidad horizontal de la base de datos** (coordinador + 2 workers, tablas grandes
+distribuidas):
+
+```powershell
+.\deploy\citus\levantar.ps1    # levanta el cluster y distribuye las tablas
+.\deploy\citus\verificar.ps1   # muestra nodos, shards y planes router/multi-shard
+```
+
+La app no cambia: sigue conectándose a `db:5432` (el coordinador). El diseño, el porqué de la
+llave de sharding y el paralelo con Uber están en `docs/base-datos-distribuida.md`.
 
 ## Origen de este repositorio
 

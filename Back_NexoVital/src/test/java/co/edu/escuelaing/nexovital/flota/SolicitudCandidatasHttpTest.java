@@ -138,7 +138,7 @@ class SolicitudCandidatasHttpTest extends SolicitudHttpTestSupport {
                 .filter(AmbulanciaJpaEntity::isConectada)
                 .map(AmbulanciaJpaEntity::getId)
                 .toList();
-        jdbcTemplate.update("UPDATE ambulancias SET conectada = false");
+        jdbcTemplate.update("UPDATE flota.ambulancias SET conectada = false");
         try {
             long solicitudesAntes = solicitudJpaRepository.count();
 
@@ -150,7 +150,7 @@ class SolicitudCandidatasHttpTest extends SolicitudHttpTestSupport {
                     "sin candidatas no se guarda ninguna solicitud");
         } finally {
             for (UUID unidad : conectadas) {
-                jdbcTemplate.update("UPDATE ambulancias SET conectada = true WHERE id = '" + unidad + "'");
+                jdbcTemplate.update("UPDATE flota.ambulancias SET conectada = true WHERE id = '" + unidad + "'");
             }
         }
     }

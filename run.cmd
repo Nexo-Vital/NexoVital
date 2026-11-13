@@ -73,7 +73,7 @@ REM ------------------------------------------------------------------
 REM 5) Back
 REM ------------------------------------------------------------------
 echo [..] levantando el BACK en http://localhost:8080 ...
-start "NexoVital back" /d "%ROOT%\Back_NexoVital" cmd /k "set NEXOVITAL_JWT_SECRET=%NEXOVITAL_JWT_SECRET% && mvn spring-boot:run"
+start "NexoVital back" /d "%ROOT%\Back_NexoVital" cmd /k "set NEXOVITAL_JWT_SECRET=%NEXOVITAL_JWT_SECRET% && set NEXOVITAL_AUTH_LOCAL_ENABLED=true && mvn spring-boot:run"
 
 echo [..] esperando al back. La PRIMERA vez Maven compila y descarga dependencias: puede tardar varios minutos.
 powershell -NoProfile -Command "$end=(Get-Date).AddMinutes(10); while((Get-Date) -lt $end){ try { $c=New-Object Net.Sockets.TcpClient; $c.Connect('127.0.0.1',8080); $c.Close(); exit 0 } catch { Start-Sleep -Milliseconds 800 } }; exit 1"

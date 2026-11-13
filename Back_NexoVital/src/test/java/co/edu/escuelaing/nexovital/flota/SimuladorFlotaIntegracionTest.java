@@ -99,7 +99,8 @@ class SimuladorFlotaIntegracionTest {
     void preparar() {
         clock.fijar(TestClockConfig.INSTANTE_BASE);
         pushPortDePrueba.limpiar();
-        simulador = new FlotaSimulationScheduler(soloLasSembradas(), reportarPosicionUseCase);
+        simulador = new FlotaSimulationScheduler(
+                soloLasSembradas(), reportarPosicionUseCase, (nombre, vigencia) -> true);
     }
 
     @AfterEach

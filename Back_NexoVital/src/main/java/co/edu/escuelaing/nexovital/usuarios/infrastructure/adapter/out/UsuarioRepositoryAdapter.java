@@ -22,8 +22,21 @@ public class UsuarioRepositoryAdapter implements UsuarioRepository {
     }
 
     @Override
+    public Optional<Usuario> buscarPorFirebaseUid(String firebaseUid) {
+        return jpaRepository.findByFirebaseUid(firebaseUid).map(UsuarioRepositoryAdapter::toDomain);
+    }
+
+    @Override
     public Optional<Usuario> buscarPorId(UUID id) {
         return jpaRepository.findById(id).map(UsuarioRepositoryAdapter::toDomain);
+    }
+
+    @Override
+    public void enlazarFirebaseUid(UUID id, String firebaseUid) {
+        jpaRepository.findById(id).ifPresent(entity -> {
+            entity.enlazarFirebaseUid(firebaseUid);
+            jpaRepository.save(entity);
+        });
     }
 
     @Override
@@ -40,6 +53,24 @@ public class UsuarioRepositoryAdapter implements UsuarioRepository {
                 usuario.getPasswordHash(),
                 usuario.getRol());
         return toDomain(jpaRepository.save(entity));
+    }
+
+    @Override
+    public Usuario guardarEnlazado(Usuario usuario, String firebaseUid) {
+        UsuarioJpaEntity entity = new UsuarioJpaEntity(
+                usuario.getId(),
+                usuario.getNombre(),
+                usuario.getEmail(),
+                usuario.getPasswordHash(),
+                usuario.getRol());
+        entity.enlazarFirebaseUid(firebaseUid);
+        return toDomain(jpaRepository.saveAndFlush(entity));
+    }
+
+    @Override
+    public Optional<Usuario> buscarPorEmailSinEnlazar(String email) {
+        return jpaRepository.findByEmailIgnoreCaseAndFirebaseUidIsNull(email)
+                .map(UsuarioRepositoryAdapter::toDomain);
     }
 
     private static Usuario toDomain(UsuarioJpaEntity entity) {

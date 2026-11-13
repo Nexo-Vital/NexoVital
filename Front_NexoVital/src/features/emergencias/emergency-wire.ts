@@ -175,6 +175,12 @@ export function fromWireEmergency(value: unknown): Emergencia | null {
   // (absent version), which makes the reader degrade to today's behaviour.
   const version =
     typeof value.version === 'number' && Number.isFinite(value.version) ? value.version : undefined;
+  // Optional: the backend sends the request it created when the emergency was
+  // reported. An absent or empty value is simply not carried.
+  const solicitudId =
+    typeof value.solicitudId === 'string' && value.solicitudId.length > 0
+      ? value.solicitudId
+      : undefined;
 
   return {
     id: value.id,
@@ -186,5 +192,6 @@ export function fromWireEmergency(value: unknown): Emergencia | null {
     zonaId,
     createdAt: value.createdAt,
     ...(version === undefined ? {} : { version }),
+    ...(solicitudId === undefined ? {} : { solicitudId }),
   };
 }

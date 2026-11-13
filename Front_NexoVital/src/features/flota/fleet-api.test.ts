@@ -213,11 +213,11 @@ describe('reportarPosicion', () => {
 
   it('rejects when the server refuses the report (the unit belongs to another driver)', async () => {
     fetchMock.mockResolvedValue(
-      mockResponse(409, { codigo: 'AMBULANCIA_AJENA', mensaje: 'La unidad no es tuya.' }),
+      mockResponse(403, { codigo: 'AMBULANCIA_AJENA', mensaje: 'La unidad no es tuya.' }),
     );
 
     await expect(
       reportarPosicion(WIRE_UNIT.id, { lat: 4.75, lng: -74.09 }, null),
-    ).rejects.toMatchObject({ status: 409, codigo: 'AMBULANCIA_AJENA' });
+    ).rejects.toMatchObject({ status: 403, codigo: 'AMBULANCIA_AJENA' });
   });
 });

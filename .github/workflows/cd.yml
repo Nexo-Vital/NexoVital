@@ -75,7 +75,7 @@ jobs:
           echo "Commit a desplegar: $SHA"
 
       - name: Iniciar sesion en Azure (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -93,6 +93,9 @@ jobs:
       - name: Desplegar el front
         run: |
           az containerapp update -g "$RG" -n "$FRONT" --image "$IMG_FRONT" -o none --only-show-errors
+          # La imagen del front corre Nginx sin root (nginx-unprivileged), que
+          # escucha en 8080: un usuario sin privilegios no puede abrir el 80.
+          az containerapp ingress update -g "$RG" -n "$FRONT" --target-port 8080 -o none --only-show-errors
           echo "Front: revision $(az containerapp show -g "$RG" -n "$FRONT" --query properties.latestRevisionName -o tsv)"
 
       # Las apps pueden estar en escala cero: la primera respuesta tarda.
@@ -127,19 +130,19 @@ jobs:
             exit 0
           fi
 
-          # POST /api/v1/sesiones sin credenciales: Spring responde 400.
-          # Ese 400 prueba la cadena completa front -> Nginx -> back.
+          # GET /api/v1/sesiones/actual sin token: Spring responde 401.
+          # Ese 401 prueba la cadena completa front -> Nginx -> back. (El login
+          # local esta apagado en la nube, asi que POST /sesiones da 404.)
           for i in $(seq 1 24); do
             CODIGO=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
-              -X POST "https://$FRONT_FQDN/api/v1/sesiones" \
-              -H 'Content-Type: application/json' -d '{}' || true)
+              "https://$FRONT_FQDN/api/v1/sesiones/actual" || true)
             echo "Intento $i: HTTP $CODIGO"
-            if [ "$CODIGO" = "400" ]; then
+            if [ "$CODIGO" = "401" ]; then
               echo "Back OK"
               echo "- Back: OK" >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
             sleep 10
           done
-          echo "::error::El back no respondio a /api/v1/sesiones (ultimo codigo: $CODIGO)"
+          echo "::error::El back no respondio a /api/v1/sesiones/actual (ultimo codigo: $CODIGO)"
           exit 1

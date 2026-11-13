@@ -1,5 +1,8 @@
 package co.edu.escuelaing.nexovital.recursos;
 
+import co.edu.escuelaing.nexovital.auditoria.domain.model.AccionCritica;
+import co.edu.escuelaing.nexovital.auditoria.domain.model.EventoAuditoria;
+import co.edu.escuelaing.nexovital.auditoria.domain.port.out.RegistroAuditoriaPort;
 import co.edu.escuelaing.nexovital.recursos.application.usecase.InventarioPushListener;
 import co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.in.dto.ItemInventarioDto;
 import co.edu.escuelaing.nexovital.recursos.infrastructure.adapter.out.ItemInventarioJpaEntity;
@@ -32,6 +35,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -77,6 +81,9 @@ class DonacionHttpTest extends LoginTestBase {
 
     @Autowired
     private PushPortDePrueba pushPortDePrueba;
+
+    @Autowired
+    private RegistroAuditoriaPort registroAuditoriaPort;
 
     private UUID centroId;
     private UUID itemId;
@@ -131,6 +138,13 @@ class DonacionHttpTest extends LoginTestBase {
         assertEquals(DISPONIBLE_INICIAL + CANTIDAD,
                 itemInventarioJpaRepository.findById(itemId).orElseThrow().getDisponible(),
                 "el crédito debe quedar persistido de forma atómica");
+
+        // La bitácora registra la acción crítica (Sprint 2, T14/T16).
+        assertTrue(registroAuditoriaPort.porRecurso(EventoAuditoria.TIPO_CENTRO, centroId).stream()
+                        .anyMatch(evento -> evento.accion() == AccionCritica.INSUMO_DONADO
+                                && evento.detalle() != null
+                                && evento.detalle().contains(itemId.toString())),
+                "la donación debe quedar en la traza del centro");
 
         // La lectura pública ve el stock nuevo (read-after-write).
         MvcResult inventario = mockMvc.perform(get("/api/v1/centros-acopio/{id}/inventario", centroId)

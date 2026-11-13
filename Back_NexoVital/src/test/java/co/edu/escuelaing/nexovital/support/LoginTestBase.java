@@ -30,7 +30,7 @@ public abstract class LoginTestBase {
 
     /** Zeroed attempt state for the whole table, before each test. */
     private static final String REINICIAR_ESTADO_INTENTOS =
-            "UPDATE usuarios SET intentos_fallidos = 0, bloqueado_hasta = NULL";
+            "UPDATE usuarios.usuarios SET intentos_fallidos = 0, bloqueado_hasta = NULL";
 
     @Autowired
     protected MockMvc mockMvc;

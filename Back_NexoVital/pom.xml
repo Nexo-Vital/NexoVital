@@ -58,6 +58,13 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-actuator</artifactId>
     </dependency>
+    <!-- Registro Prometheus para el tablero tecnico (ADR-0010). Micrometer es
+    la fachada de metricas; este registro es el que las expone en el formato
+    que Prometheus sabe raspar. Sin el, /actuator/prometheus no existe. -->
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-registry-prometheus</artifactId>
+    </dependency>
     <dependency>
       <groupId>io.jsonwebtoken</groupId>
       <artifactId>jjwt-api</artifactId>

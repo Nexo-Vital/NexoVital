@@ -9,4 +9,12 @@ public class CredencialesInvalidasException extends RuntimeException {
     public CredencialesInvalidasException() {
         super("Credenciales inválidas.");
     }
+
+    /**
+     * Variante con detalle, para el validador de tokens del IdP: el mensaje
+     * explica qué falló (firma, audiencia, expiración) sin filtrar el token.
+     */
+    public CredencialesInvalidasException(String detalle) {
+        super(detalle);
+    }
 }

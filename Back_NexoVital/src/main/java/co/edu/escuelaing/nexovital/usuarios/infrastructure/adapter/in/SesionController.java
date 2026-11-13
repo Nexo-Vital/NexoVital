@@ -23,7 +23,10 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Adaptador de entrada de sesiones. El recurso es {@code sesiones} (sustantivo
@@ -35,6 +38,12 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/sesiones")
+// El login propio es un recurso de DESARROLLO y de la suite, no del producto.
+// Arranca APAGADO en cualquier perfil: solo lo enciende, de forma explicita,
+// `nexovital.auth.local.enabled=true` (application-test.properties, o
+// NEXOVITAL_AUTH_LOCAL_ENABLED=true para levantar el back en local). Docker y
+// prod lo fijan en false como segunda barrera. Con el apagado, POST /sesiones
+// responde 404: el unico proveedor de identidad del producto es Firebase.
 @Tag(name = "usuarios")
 public class SesionController {
 
@@ -45,9 +54,12 @@ public class SesionController {
     private static final String MENSAJE_CREDENCIALES_INVALIDAS = "Credenciales inválidas.";
 
     private final AuthenticationUseCase authenticationUseCase;
+    private final boolean loginLocalHabilitado;
 
-    public SesionController(AuthenticationUseCase authenticationUseCase) {
+    public SesionController(AuthenticationUseCase authenticationUseCase,
+                          @Value("${nexovital.auth.local.enabled:false}") boolean loginLocalHabilitado) {
         this.authenticationUseCase = authenticationUseCase;
+        this.loginLocalHabilitado = loginLocalHabilitado;
     }
 
     /**
@@ -60,6 +72,11 @@ public class SesionController {
     @Operation(summary = "Crear una sesion (autenticacion por email y contrasena)")
     @SecurityRequirements
     public ResponseEntity<Object> crearSesion(@Valid @RequestBody SesionRequest request) {
+        if (!loginLocalHabilitado) {
+            // Con IdP externo activo el login propio no existe: 404, no 401.
+            // Un 401 haria pensar que las credenciales son validas en algun lado.
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "El login local esta deshabilitado");
+        }
         try {
             SesionAuth sesion = authenticationUseCase.login(
                     new CredencialesLogin(request.email(), request.password()));

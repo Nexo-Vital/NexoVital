@@ -2,6 +2,7 @@ package co.edu.escuelaing.nexovital.flota.application.usecase;
 
 import co.edu.escuelaing.nexovital.flota.domain.enums.EstadoSolicitud;
 import co.edu.escuelaing.nexovital.flota.domain.event.SolicitudRechazadaEvent;
+import co.edu.escuelaing.nexovital.flota.domain.exception.AmbulanciaAjenaException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoAsignableException;
 import co.edu.escuelaing.nexovital.flota.domain.exception.SolicitudNoEncontradaException;
 import co.edu.escuelaing.nexovital.flota.domain.model.Ambulancia;
@@ -69,19 +70,20 @@ public class RechazarSolicitudUseCaseImpl implements RechazarSolicitudUseCase {
         SolicitudAmbulancia solicitud = solicitudRepository.buscarPorId(solicitudId)
                 .orElseThrow(() -> new SolicitudNoEncontradaException(solicitudId));
 
+        // Propiedad ANTES que el estado (Sprint 2, S-4 / T10): el cliente manda
+        // `ambulanciaId`, así que no se confía en él. Unidad ajena = 403
+        // (AmbulanciaAjenaException), no 409. Una unidad sin conductor no es de
+        // nadie (Objects.equals(null, x) es false), así que nunca puede rechazar.
+        Ambulancia ambulancia = ambulanciaRepository.buscarPorId(ambulanciaId)
+                .orElseThrow(() -> new SolicitudNoAsignableException(solicitudId, solicitud.getEstado()));
+        if (!Objects.equals(ambulancia.getConductorId(), conductorId)) {
+            throw new AmbulanciaAjenaException(ambulanciaId);
+        }
+
         if (solicitud.getEstado() != EstadoSolicitud.PENDIENTE) {
             throw new SolicitudNoAsignableException(solicitudId, solicitud.getEstado());
         }
         if (!solicitud.fueNotificada(ambulanciaId)) {
-            throw new SolicitudNoAsignableException(solicitudId, solicitud.getEstado());
-        }
-        // The unit must be the one driven by the authenticated user: the client
-        // sends `ambulanciaId`, so it cannot be trusted to pick someone else's
-        // unit. A unit without a driver matches nobody (Objects.equals(null, x)
-        // is false), so it can never decline.
-        Ambulancia ambulancia = ambulanciaRepository.buscarPorId(ambulanciaId)
-                .orElseThrow(() -> new SolicitudNoAsignableException(solicitudId, solicitud.getEstado()));
-        if (!Objects.equals(ambulancia.getConductorId(), conductorId)) {
             throw new SolicitudNoAsignableException(solicitudId, solicitud.getEstado());
         }
 

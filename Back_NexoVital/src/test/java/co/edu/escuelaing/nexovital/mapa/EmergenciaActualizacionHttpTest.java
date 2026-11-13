@@ -57,7 +57,10 @@ class EmergenciaActualizacionHttpTest extends LoginTestBase {
     private static final String CIUDADANO = "ciudadano@nexovital.co";
     private static final String CIUDADANO_PASSWORD = "ciudadano123";
 
-    /** ADMIN_CENTRO_AYUDA: the role the story fixes for the PATCH (D3). */
+    /** ADMIN_PLATAFORMA: the only role allowed to PATCH an emergency (Sprint 2, T09/T10). */
+    private static final String ADMIN = "admin@nexovital.co";
+    private static final String ADMIN_PASSWORD = "admin123";
+    /** ADMIN_CENTRO_AYUDA: allowed before Sprint 2, now rejected with 403. */
     private static final String RANGEL = "rangel@nexovital.co";
     private static final String RANGEL_PASSWORD = "rangel123";
 
@@ -84,7 +87,7 @@ class EmergenciaActualizacionHttpTest extends LoginTestBase {
     void actualizarSoloEstado() throws Exception {
         JsonNode original = crearEmergencia("Corregir solo el estado");
         String id = original.get("id").asText();
-        String token = tokenDe(RANGEL, RANGEL_PASSWORD);
+        String token = tokenDe(ADMIN, ADMIN_PASSWORD);
 
         MvcResult resultado = parchear(token, id, "{\"estado\":\"EN_ATENCION\"}")
                 .andExpect(status().isOk())
@@ -107,7 +110,7 @@ class EmergenciaActualizacionHttpTest extends LoginTestBase {
     void actualizarSoloNivel() throws Exception {
         JsonNode original = crearEmergencia("Corregir solo el nivel");
         String id = original.get("id").asText();
-        String token = tokenDe(RANGEL, RANGEL_PASSWORD);
+        String token = tokenDe(ADMIN, ADMIN_PASSWORD);
 
         MvcResult resultado = parchear(token, id, "{\"nivel\":\"CRITICO\"}")
                 .andExpect(status().isOk())
@@ -130,7 +133,7 @@ class EmergenciaActualizacionHttpTest extends LoginTestBase {
     void actualizarEstadoYNivel() throws Exception {
         JsonNode original = crearEmergencia("Corregir estado y nivel");
         String id = original.get("id").asText();
-        String token = tokenDe(RANGEL, RANGEL_PASSWORD);
+        String token = tokenDe(ADMIN, ADMIN_PASSWORD);
 
         MvcResult resultado = parchear(token, id, "{\"estado\":\"RESUELTA\",\"nivel\":\"BAJO\"}")
                 .andExpect(status().isOk())
@@ -149,7 +152,7 @@ class EmergenciaActualizacionHttpTest extends LoginTestBase {
     @Test
     @DisplayName("PATCH con id inexistente: 404 EMERGENCIA_NO_ENCONTRADA con envelope")
     void idInexistenteDevuelve404() throws Exception {
-        String token = tokenDe(RANGEL, RANGEL_PASSWORD);
+        String token = tokenDe(ADMIN, ADMIN_PASSWORD);
 
         parchear(token, UUID.randomUUID().toString(), "{\"estado\":\"RESUELTA\"}")
                 .andExpect(status().isNotFound())
@@ -165,7 +168,7 @@ class EmergenciaActualizacionHttpTest extends LoginTestBase {
     @DisplayName("PATCH con cuerpo vacío {}: 400 DATOS_INVALIDOS")
     void cuerpoVacioDevuelve400() throws Exception {
         String id = crearEmergencia("Cuerpo vacío").get("id").asText();
-        String token = tokenDe(RANGEL, RANGEL_PASSWORD);
+        String token = tokenDe(ADMIN, ADMIN_PASSWORD);
 
         parchear(token, id, "{}")
                 .andExpect(status().isBadRequest())
@@ -180,7 +183,7 @@ class EmergenciaActualizacionHttpTest extends LoginTestBase {
     @DisplayName("PATCH con estado o nivel fuera del contrato: 400 DATOS_INVALIDOS")
     void valorFueraDelContratoDevuelve400() throws Exception {
         String id = crearEmergencia("Valor fuera del contrato").get("id").asText();
-        String token = tokenDe(RANGEL, RANGEL_PASSWORD);
+        String token = tokenDe(ADMIN, ADMIN_PASSWORD);
 
         parchear(token, id, "{\"estado\":\"INVENTADO\"}")
                 .andExpect(status().isBadRequest())
@@ -208,8 +211,19 @@ class EmergenciaActualizacionHttpTest extends LoginTestBase {
     }
 
     // -----------------------------------------------------------------------
-    // 403 with a non-authorized role: only ROLE_ADMIN_CENTRO_AYUDA may patch
+    // 403 with a non-authorized role: only ROLE_ADMIN_PLATAFORMA may patch
     // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("PATCH con administrador de centro de ayuda: 403 ACCESO_DENEGADO (Sprint 2, T10)")
+    void administradorDeCentroYaNoPuedeParchear() throws Exception {
+        String id = crearEmergencia("Administrador de centro").get("id").asText();
+        String token = tokenDe(RANGEL, RANGEL_PASSWORD);
+
+        parchear(token, id, "{\"estado\":\"RESUELTA\"}")
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo").value("ACCESO_DENEGADO"));
+    }
 
     @Test
     @DisplayName("PATCH con rol no autorizado (CIUDADANO): 403 ACCESO_DENEGADO")
@@ -231,7 +245,7 @@ class EmergenciaActualizacionHttpTest extends LoginTestBase {
     @Test
     @DisplayName("PATCH con id que no es UUID: 400 de Spring, sin el envelope del módulo (deuda declarada)")
     void idNoUuidDevuelve400DeSpring() throws Exception {
-        String token = tokenDe(RANGEL, RANGEL_PASSWORD);
+        String token = tokenDe(ADMIN, ADMIN_PASSWORD);
 
         MvcResult resultado = mockMvc.perform(patch("/api/v1/emergencias/no-es-un-uuid")
                         .header("Authorization", "Bearer " + token)
@@ -254,7 +268,7 @@ class EmergenciaActualizacionHttpTest extends LoginTestBase {
     void patchPublicaElEventoActualizado() throws Exception {
         JsonNode original = crearEmergencia("Emitir la actualización");
         String id = original.get("id").asText();
-        String token = tokenDe(RANGEL, RANGEL_PASSWORD);
+        String token = tokenDe(ADMIN, ADMIN_PASSWORD);
 
         // El POST ya publicó su propio evento; se descarta para aislar el del PATCH.
         pushPortDePrueba.limpiar();

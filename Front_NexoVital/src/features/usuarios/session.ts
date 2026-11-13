@@ -5,15 +5,18 @@ import {
   clearToken,
   getSession,
   getToken,
+  loginConGoogle,
   setSession,
   setToken,
 } from '@/services/apiClient';
+import { logoutFirebase, observarRefrescoDeToken } from '@/services/firebase';
 import type { RolUsuario, Usuario } from '@/types/domain';
 import { hasRoleHome } from './role-home';
 
 /**
  * Seeded accounts advertised on the login screen. This is only a shortcut that
- * fills the form: the credentials still travel through POST /api/v1/sesiones, so the
+ * fills the form: the credentials still go to the configured identity provider
+ * (Firebase in production, the local fallback only under `npm run dev`), so the
  * server remains the single source of truth for authentication.
  */
 export interface DemoUser {
@@ -33,7 +36,7 @@ export const DEMO_USERS: DemoUser[] = [
     label: 'Administrador de plataforma',
     descripcion: 'Administra la plataforma y los usuarios',
     email: 'admin@nexovital.co',
-    password: 'admin123',
+    password: 'admin123', // NOSONAR credencial de demo publica, no es un secreto
   },
   {
     rol: 'ADMIN_CENTRO_AYUDA',
@@ -41,7 +44,7 @@ export const DEMO_USERS: DemoUser[] = [
     groupLabel: 'Administradores de centro de ayuda',
     descripcion: 'Pide ambulancias y administra los insumos de su centro',
     email: 'rangel@nexovital.co',
-    password: 'rangel123',
+    password: 'rangel123', // NOSONAR credencial de demo publica, no es un secreto
   },
   {
     rol: 'ADMIN_CENTRO_AYUDA',
@@ -49,14 +52,14 @@ export const DEMO_USERS: DemoUser[] = [
     groupLabel: 'Administradores de centro de ayuda',
     descripcion: 'Pide ambulancias y administra los insumos de su centro',
     email: 'centro@nexovital.co',
-    password: 'centro123',
+    password: 'centro123', // NOSONAR credencial de demo publica, no es un secreto
   },
   {
     rol: 'ADMIN_ACOPIO',
     label: 'Administrador de centro de acopio',
     descripcion: 'Crea y gestiona su centro, igual que el administrador de centro de ayuda',
     email: 'acopio@nexovital.co',
-    password: 'acopio123',
+    password: 'acopio123', // NOSONAR credencial de demo publica, no es un secreto
   },
   {
     rol: 'CONDUCTOR',
@@ -64,7 +67,7 @@ export const DEMO_USERS: DemoUser[] = [
     groupLabel: 'Conductores de ambulancia',
     descripcion: 'Recibe y responde solicitudes de ambulancia',
     email: 'conductor1@nexovital.co',
-    password: 'conductor123',
+    password: 'conductor123', // NOSONAR credencial de demo publica, no es un secreto
   },
   {
     rol: 'CONDUCTOR',
@@ -72,7 +75,7 @@ export const DEMO_USERS: DemoUser[] = [
     groupLabel: 'Conductores de ambulancia',
     descripcion: 'Recibe y responde solicitudes de ambulancia',
     email: 'conductor2@nexovital.co',
-    password: 'conductor123',
+    password: 'conductor123', // NOSONAR credencial de demo publica, no es un secreto
   },
   {
     rol: 'CONDUCTOR',
@@ -80,7 +83,7 @@ export const DEMO_USERS: DemoUser[] = [
     groupLabel: 'Conductores de ambulancia',
     descripcion: 'Recibe y responde solicitudes de ambulancia',
     email: 'conductor3@nexovital.co',
-    password: 'conductor123',
+    password: 'conductor123', // NOSONAR credencial de demo publica, no es un secreto
   },
   {
     rol: 'CONDUCTOR',
@@ -88,7 +91,7 @@ export const DEMO_USERS: DemoUser[] = [
     groupLabel: 'Conductores de ambulancia',
     descripcion: 'Recibe y responde solicitudes de ambulancia',
     email: 'conductor4@nexovital.co',
-    password: 'conductor123',
+    password: 'conductor123', // NOSONAR credencial de demo publica, no es un secreto
   },
   {
     rol: 'CONDUCTOR',
@@ -96,7 +99,7 @@ export const DEMO_USERS: DemoUser[] = [
     groupLabel: 'Conductores de ambulancia',
     descripcion: 'Recibe y responde solicitudes de ambulancia',
     email: 'conductor5@nexovital.co',
-    password: 'conductor123',
+    password: 'conductor123', // NOSONAR credencial de demo publica, no es un secreto
   },
   {
     rol: 'CIUDADANO',
@@ -104,7 +107,7 @@ export const DEMO_USERS: DemoUser[] = [
     groupLabel: 'Ciudadanos',
     descripcion: 'Solicita una ambulancia y reporta emergencias',
     email: 'ciudadano@nexovital.co',
-    password: 'ciudadano123',
+    password: 'ciudadano123', // NOSONAR credencial de demo publica, no es un secreto
   },
   {
     rol: 'CIUDADANO',
@@ -112,7 +115,7 @@ export const DEMO_USERS: DemoUser[] = [
     groupLabel: 'Ciudadanos',
     descripcion: 'Solicita una ambulancia y reporta emergencias',
     email: 'ciudadano2@nexovital.co',
-    password: 'ciudadano123',
+    password: 'ciudadano123', // NOSONAR credencial de demo publica, no es un secreto
   },
 ];
 
@@ -121,6 +124,11 @@ interface SessionState {
   role: RolUsuario | null;
   token: string | null;
   login: (email: string, password: string) => Promise<Usuario>;
+  /**
+   * Inicio de sesion con Google (T10). Rechaza con `ApiError` de codigo
+   * `USUARIO_NO_REGISTRADO` si la cuenta aun no eligio su rol.
+   */
+  loginWithGoogle: () => Promise<Usuario>;
   /**
    * Replaces the session with the server-authoritative user returned by
    * GET /api/v1/sesiones/actual. The server wins over any stale localStorage
@@ -157,14 +165,32 @@ export const useSessionStore = create<SessionState>((set) => ({
     set({ user: usuario, role: usuario.rol, token });
     return usuario;
   },
+  loginWithGoogle: async () => {
+    const { token, usuario } = await loginConGoogle();
+    set({ user: usuario, role: usuario.rol, token });
+    return usuario;
+  },
   applyServerSession: (token, usuario) => {
     setToken(token);
     setSession(usuario);
     set({ user: usuario, role: usuario.rol, token });
   },
   logout: () => {
+    // Cierra tambien la sesion del IdP: si no, Firebase la conserva y al
+    // recargar la pestana el usuario vuelve a entrar solo.
+    void logoutFirebase();
     clearToken();
     clearSession();
     set({ user: null, role: null, token: null });
   },
 }));
+/**
+ * Mantiene el token al dia. Un ID token de Firebase dura una hora; sin esto una
+ * demo larga empieza a recibir 401 sin que nadie haya cerrado sesion. Sin
+ * Firebase configurado la suscripcion es inerte.
+ */
+observarRefrescoDeToken((token) => {
+  if (token) {
+    setToken(token);
+  }
+});

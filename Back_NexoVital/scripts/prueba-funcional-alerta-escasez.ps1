@@ -48,9 +48,9 @@ function Paso {
 
 function Invoke-Api {
     param([string]$Metodo, [string]$Ruta, [hashtable]$Headers, $Cuerpo)
-    $args = @{ Method = $Metodo; Uri = "$Base$Ruta"; Headers = $Headers; UseBasicParsing = $true; TimeoutSec = 20 }
-    if ($null -ne $Cuerpo) { $args.ContentType = 'application/json'; $args.Body = ($Cuerpo | ConvertTo-Json -Compress) }
-    return Invoke-RestMethod @args
+    $parametros = @{ Method = $Metodo; Uri = "$Base$Ruta"; Headers = $Headers; UseBasicParsing = $true; TimeoutSec = 20 }
+    if ($null -ne $Cuerpo) { $parametros.ContentType = 'application/json'; $parametros.Body = ($Cuerpo | ConvertTo-Json -Compress) }
+    return Invoke-RestMethod @parametros
 }
 
 # Lee el cuerpo de una respuesta de error. `ErrorDetails.Message` NO lo expone en

@@ -12,6 +12,7 @@ import DriverConsolePage from '@/pages/DriverConsolePage';
 import DriverHistoryPage from '@/pages/DriverHistoryPage';
 import DriverUnitPage from '@/pages/DriverUnitPage';
 import LoginPage from '@/pages/LoginPage';
+import RegistroPage from '@/pages/RegistroPage';
 import type { EmergencyLevel } from '@/types/domain';
 import { AppFrame, type AppFrameNavItem, type AppFrameNotification } from './AppFrame';
 
@@ -151,6 +152,8 @@ export function AppRouter() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      {/* Registro con Google (T10): publico, la pagina exige sesion de Firebase. */}
+      <Route path="/registro" element={<RegistroPage />} />
       <Route element={<RequireAuth />}>
         <Route element={<RoleChrome />}>
           <Route path="/" element={<RoleHome />} />

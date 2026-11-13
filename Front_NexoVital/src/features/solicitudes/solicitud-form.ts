@@ -48,7 +48,12 @@ export function availableUnits(units: Ambulancia[]): Ambulancia[] {
 }
 
 export function zonesOf(units: Ambulancia[]): string[] {
-  return [...new Set(units.map((item) => item.zona).filter((zone) => zone.trim() !== ''))].sort();
+  // localeCompare y no el orden por defecto: `sort()` sin comparador ordena por
+  // unidad de código UTF-16, así que "Ávila" cae después de "Zona" y la lista
+  // que ve el operador no está alfabética.
+  return [...new Set(units.map((item) => item.zona).filter((zone) => zone.trim() !== ''))].sort(
+    (a, b) => a.localeCompare(b, 'es'),
+  );
 }
 
 export function unitsForScope(
