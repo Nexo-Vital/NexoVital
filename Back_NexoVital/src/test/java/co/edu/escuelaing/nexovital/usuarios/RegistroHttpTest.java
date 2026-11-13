@@ -1,5 +1,6 @@
 package co.edu.escuelaing.nexovital.usuarios;
 
+import com.jayway.jsonpath.JsonPath;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
@@ -263,7 +264,7 @@ class RegistroHttpTest {
                 .andExpect(jsonPath("$.rol").value("CONDUCTOR"))
                 .andReturn().getResponse().getContentAsString();
 
-        UUID conductorId = UUID.fromString(cuerpo.replaceAll(".*\"id\":\"([^\"]+)\".*", "$1"));
+        UUID conductorId = UUID.fromString(JsonPath.<String>read(cuerpo, "$.id"));
         AmbulanciaJpaEntity unidad = ambulanciaJpaRepository.findFirstByConductorId(conductorId).orElseThrow();
         assertEquals("RTX101", unidad.getPlaca());
         assertEquals("Renault Master", unidad.getModelo());

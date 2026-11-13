@@ -20,9 +20,12 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.server.HandshakeInterceptor;
 
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.security.Principal;
 import java.time.Clock;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -148,10 +151,13 @@ public class BitacoraStompInterceptor implements ChannelInterceptor {
                 if (request instanceof ServletServerHttpRequest servlet) {
                     ip = IpCliente.de(servlet.getServletRequest());
                 } else {
-                    ip = IpCliente.de(request.getHeaders().getFirst(IpCliente.CABECERA),
-                            request.getRemoteAddress() == null
-                                    ? null
-                                    : request.getRemoteAddress().getAddress().getHostAddress());
+                    // Optional y no "== null": el contrato no promete una direccion
+                    // remota (ni una IP resuelta) en todos los transportes.
+                    String remota = Optional.ofNullable(request.getRemoteAddress())
+                            .map(InetSocketAddress::getAddress)
+                            .map(InetAddress::getHostAddress)
+                            .orElse(null);
+                    ip = IpCliente.de(request.getHeaders().getFirst(IpCliente.CABECERA), remota);
                 }
                 if (ip != null) {
                     attributes.put(AtributosBitacora.IP_SESION, ip);
