@@ -10,6 +10,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 public class NexovitalApplication {
 
     public static void main(String[] args) {
+        // Antes de Spring: el id de instancia debe ser uno solo para todo el proceso.
+        IdentificadorInstancia.fijarSiFalta(System.getenv());
         SpringApplication.run(NexovitalApplication.class, args);
     }
 }
