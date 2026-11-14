@@ -252,6 +252,20 @@ class PushFanOutAdapterTest {
                 "sin emitidoEn no hay contra que medir");
     }
 
+    @Test
+    void unInstanteDeOrigenIlegibleNoSeMideNiRompeLaEntrega() {
+        SimpleMeterRegistry registro = new SimpleMeterRegistry();
+        PushFanOutAdapter adapter = new PushFanOutAdapter(
+                messagingTemplate, null, false, "nexovital.push", "backend-2", registro);
+
+        adapter.entregarLocal(new PushMessage(
+                "/topic/flota", "payload", null, "no-es-un-numero", "1", "backend-1", null));
+
+        verify(messagingTemplate).convertAndSend(eq("/topic/flota"), any(Object.class), anyMap());
+        assertTrue(registro.find(PushFanOutAdapter.METRICA_PROPAGACION).timers().isEmpty(),
+                "un emitidoEn ilegible no se mide, pero tampoco impide entregar");
+    }
+
     // ---- T35: seguimiento de un evento entre instancias por su traceId ----
 
     private ListAppender<ILoggingEvent> capturarLog() {
