@@ -4,7 +4,8 @@ rule_files:
 # T39: la degradación total tiene que verse en 30 s o menos.
 # T45: la alerta de 5xx tiene que dispararse de verdad.
 #
-# Se corre con `promtool test rules alertas.test.yml` (ver probar-alertas.ps1).
+# Se corre con `promtool test rules alertas.test.yml` (ver probar-alertas.ps1
+# en Windows o probar-reglas.sh en Mac/Linux).
 evaluation_interval: 10s
 
 tests:
@@ -38,21 +39,84 @@ tests:
               resumen: "Ninguna instancia del backend responde"
               descripcion: "Ninguna de las dos instancias se puede raspar. El balanceador no tiene a donde enrutar y la API esta caida de punta a punta."
 
-  - interval: 30s
+  # T45: con el 100 % de las peticiones en 5xx, la alerta pasa por `pending`
+  # y dispara al cumplir el `for: 1m`.
+  - interval: 10s
     input_series:
       - series: 'http_server_requests_seconds_count{status="500", instancia="backend-1"}'
-        values: '0+600x20'
+        values: '0+200x40'
     alert_rule_test:
-      # Antes del `for: 5m` la alerta de tasa de 5xx no dispara.
-      - eval_time: 4m
+      - eval_time: 50s
         alertname: NexoVitalTasaErrores5xx
         exp_alerts: []
-      # Con el 100 % de las peticiones en 5xx sostenido, dispara.
-      - eval_time: 6m
+      - eval_time: 2m
         alertname: NexoVitalTasaErrores5xx
         exp_alerts:
           - exp_labels:
               severidad: critica
             exp_annotations:
               resumen: "Mas del 5 % de las peticiones responde 5xx"
-              descripcion: "ESC-1 exige 0 % de 5xx durante una caida de instancia. La tasa agregada supera el 5 % desde hace cinco minutos."
+              descripcion: "ESC-1 exige 0 % de 5xx durante una caida de instancia. La tasa agregada supera el 5 % (con al menos 5 respuestas 5xx por minuto) desde hace un minuto."
+
+  # T45: cuando los 5xx paran (a los 2 min), en cuanto salen de la ventana de
+  # 1 minuto la alerta se resuelve.
+  - interval: 10s
+    input_series:
+      - series: 'http_server_requests_seconds_count{status="500", instancia="backend-1"}'
+        values: '0+200x12 2400x30'
+      - series: 'http_server_requests_seconds_count{status="200", instancia="backend-1"}'
+        values: '0+50x42'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: NexoVitalTasaErrores5xx
+        exp_alerts:
+          - exp_labels:
+              severidad: critica
+            exp_annotations:
+              resumen: "Mas del 5 % de las peticiones responde 5xx"
+              descripcion: "ESC-1 exige 0 % de 5xx durante una caida de instancia. La tasa agregada supera el 5 % (con al menos 5 respuestas 5xx por minuto) desde hace un minuto."
+      - eval_time: 3m30s
+        alertname: NexoVitalTasaErrores5xx
+        exp_alerts: []
+
+  # Minimo de 5 errores: un 500 aislado entre poco trafico supera el 5 %, pero
+  # no es una falla y no debe disparar.
+  - interval: 10s
+    input_series:
+      - series: 'http_server_requests_seconds_count{status="500", instancia="backend-1"}'
+        values: '0 1x40'
+      - series: 'http_server_requests_seconds_count{status="200", instancia="backend-1"}'
+        values: '0+2x40'
+    alert_rule_test:
+      - eval_time: 1m10s
+        alertname: NexoVitalTasaErrores5xx
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: NexoVitalTasaErrores5xx
+        exp_alerts: []
+
+  # T45: una instancia detenida dispara NexoVitalInstanciaCaida al minuto.
+  - interval: 10s
+    input_series:
+      - series: 'up{job="nexovital-backend", instancia="backend-1"}'
+        values: '1x20'
+      - series: 'up{job="nexovital-backend", instancia="backend-2"}'
+        values: '1 0x12 1x8'
+    alert_rule_test:
+      - eval_time: 50s
+        alertname: NexoVitalInstanciaCaida
+        exp_alerts: []
+      - eval_time: 1m20s
+        alertname: NexoVitalInstanciaCaida
+        exp_alerts:
+          - exp_labels:
+              severidad: critica
+              job: nexovital-backend
+              instancia: backend-2
+            exp_annotations:
+              resumen: "La instancia backend-2 no responde a Prometheus"
+              descripcion: "El raspado de /actuator/prometheus de backend-2 falla desde hace un minuto. Con dos instancias el balanceador debe seguir sirviendo con la sana (ESC-1); si la caida fue planeada, silenciar."
+      # Vuelve a responder a los 2:20: la alerta se resuelve.
+      - eval_time: 2m40s
+        alertname: NexoVitalInstanciaCaida
+        exp_alerts: []

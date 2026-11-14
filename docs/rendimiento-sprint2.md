@@ -1,6 +1,6 @@
 # Rendimiento del Sprint 2 — perfil, resultados y reproducción
 
-Este documento cubre las tareas T26, T28, T29, T30 y T31 del Sprint 2
+Este documento cubre las tareas T07, T26, T28, T29, T30 y T31 del Sprint 2
 (EP-06.F4.US1 "Recibir eventos en tiempo real en 500 ms o menos"): el perfil de
 carga, el script, la corrida registrada, la decisión sobre la contingencia y el
 procedimiento para repetirla.
@@ -189,6 +189,70 @@ En ese caso el ajuste previsto es, en orden: revisar el tamaño de la cola de
 salida STOMP y del pool del canal de salida (la alerta
 `NexoVitalColaSalidaSaturada` lo detecta), reducir la frecuencia de difusión de
 la flota y, por último, revisar la capacidad del backend.
+
+## Caída de una instancia con 100 usuarios (T07, escenario D-1)
+
+| | Escenario D-1 |
+|---|---|
+| Fuente | 100 usuarios conectados, todos con su WebSocket abierto |
+| Estímulo | 1 petición por segundo por usuario durante 5 minutos; en el minuto 2 una instancia falla de golpe |
+| Respuesta esperada | nginx sigue enrutando a la instancia sana y los clientes de la caída se reconectan solos |
+| Medidas | ≥ 95 % de peticiones exitosas, reconexión < 10 s, ninguna emergencia ni donación confirmada se pierde |
+
+**Cómo se provoca la falla.** `loadtest/probar-caida.sh` lanza `loadtest/escenario-caida.js` y, en el segundo 120 de la meseta, detiene `backend-2` con `docker compose stop -t 0` (un SIGKILL, sin apagado ordenado, como una caída real). La instancia queda caída hasta el final de la prueba y el script la vuelve a levantar al terminar.
+
+**Reparto de los 100 usuarios.**
+
+| Usuarios | Rol | Qué hacen |
+|---|---|---|
+| VU 1 y 2 | Ciudadanos | Reportan una emergencia cada 5 s (con el id de la corrida en la descripción) y leen el resto del tiempo |
+| VU 3 y 4 | Administrador de plataforma | Donan 1 unidad cada 5 s al insumo con más necesidad pendiente y leen el resto del tiempo |
+| VU 5 a 100 | Lectores | Consultan mapa, flota y emergencias 1/s |
+
+Todos mantienen su conexión STOMP. Si se cae, esperan 2 s (como el front, T06) y se vuelven a conectar por nginx. La reconexión se mide desde el cierre hasta el nuevo `CONNECTED`.
+
+**Cómo se verifica que no hay pérdidas.** Al terminar, ya con una sola instancia, el `teardown` del script:
+
+- cuenta en `GET /api/v1/emergencias` las emergencias de la corrida y las compara con las respuestas 201 recibidas;
+- lee el disponible final del insumo y lo compara con el inicial más las donaciones confirmadas (en esta prueba no hay despachos).
+
+Una petición en vuelo cuando cae la instancia puede fallar (nginx no reintenta los POST, para no duplicarlos). Eso cuenta como petición fallida, no como pérdida: el cliente recibió un error. **Pérdida** es una emergencia o donación confirmada con 2xx que no está en la base.
+
+**Ajuste en nginx.** `/ws` no tenía `proxy_connect_timeout`, así que tomaba el valor por defecto de 60 s. Un intento de reconexión que nginx mandara a la instancia caída podía tardar hasta un minuto en pasar a la sana. Ahora tiene 2 s, como `/api/`, y la reconexión queda muy por debajo de los 10 s.
+
+**Ejecución** (compose de pruebas con límites altos, el mismo `NEXOVITAL_JWT_SECRET` en las dos instancias y las dos `healthy`):
+
+```zsh
+PRUEBA_LIMITE_USUARIO=100000 PRUEBA_LIMITE_IP=100000 \
+  docker compose -f docker-compose.yml -f docker-compose.pruebas.yml up -d
+docker compose ps
+loadtest/probar-caida.sh
+```
+
+Para un ensayo corto: `loadtest/probar-caida.sh -e USUARIOS=20 -e DURACION=2m -e CAIDA_S=40`. El script detiene la instancia en el instante que anuncia k6, así que basta con cambiar `CAIDA_S` ahí. La salida queda en `evidencias-nube/resultado-d1.{txt,json}`.
+
+**Corrida registrada (2026-11-13, docker compose en local, `loadtest/probar-caida.sh`):**
+
+| Indicador | Umbral | Resultado |
+|---|---|---|
+| Usuarios conectados al inicio | 100 | 100 de 100 |
+| Peticiones HTTP | — | 30.071 (95,9 req/s) |
+| Éxito HTTP total | ≥ 95 % | 100,00 % |
+| Éxito antes / después de la caída | ≥ 95 % | 100,00 % / 100,00 % |
+| Respuestas 5xx o sin respuesta | — | 0 |
+| Clientes desconectados por la caída | — | 53 |
+| Clientes reconectados | todos | 53 de 53 |
+| Reconexión p95 / máxima | < 10 s | 4,01 s / 4,01 s |
+| Eventos de tiempo real recibidos | — | 60.156 |
+| Emergencias confirmadas / en la base | todas | 122 / 122 |
+| Donaciones confirmadas / en la base | todas | 60 / 60 |
+| **Veredicto** | | **CUMPLE** |
+
+**Lectura de los resultados**
+
+- Ninguna petición falló, ni siquiera en el instante de la caída: nginx pasó todo el tráfico a `backend-1`.
+- Los 53 clientes conectados a `backend-2` se reconectaron en 4 s. Son 2 s de espera, un intento que todavía cae en la instancia muerta y falla rápido gracias al `proxy_connect_timeout` de 2 s, y otros 2 s de espera antes del intento que entra a `backend-1`.
+- No se perdió ninguna emergencia ni donación confirmada.
 
 ## Limitaciones
 

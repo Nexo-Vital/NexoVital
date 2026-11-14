@@ -1,0 +1,26 @@
+# ==========================================================================
+# Alertmanager (T44, T45): canal de notificacion de las alertas de Prometheus.
+#
+# Todas las alertas van al receptor webhook del compose (receptor.py), que las
+# imprime en su log y las muestra en http://localhost:9095. Se notifica tanto
+# cuando la alerta se dispara (`firing`) como cuando se resuelve (`resolved`).
+#
+# Tiempos cortos a proposito: con los valores por defecto (group_wait 30s,
+# group_interval 5m) la notificacion se retrasaria varios minutos despues de
+# que la regla ya disparo. Aqui la notificacion sale a los ~10 s.
+# ==========================================================================
+
+route:
+  receiver: receptor-nexovital
+  # Una notificacion por alerta e instancia: la caida de backend-2 y la tasa
+  # de 5xx llegan como avisos separados.
+  group_by: ["alertname", "instancia"]
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 1h
+
+receivers:
+  - name: receptor-nexovital
+    webhook_configs:
+      - url: http://receptor-alertas:8080/alertas
+        send_resolved: true

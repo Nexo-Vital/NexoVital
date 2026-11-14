@@ -1,7 +1,7 @@
 # Trazabilidad de peticiones y acciones críticas
 
 **Historia:** EP-06.F2.US2 — Consultar la trazabilidad de peticiones y acciones críticas (escenario S-2).
-**Tareas:** T13 (diseño), T14 (registro), T15 (consulta), T16 (pruebas).
+**Tareas:** T13 (diseño), T14 (registro), T15 (consulta), T16 (pruebas) y T35 (seguimiento de un evento entre instancias, sección 7).
 
 El profesor aprobó S-2 con una condición: **garantizar la trazabilidad en todas las peticiones, guardando como mínimo hora, IP, usuario, navegador y país**. NexoVital lo cumple con dos registros que se enlazan entre sí.
 
@@ -92,3 +92,40 @@ Las consultas de acciones críticas siguen en `GET /auditoria/emergencias/{id}` 
 | `BitacoraStompInterceptorTest` | Qué frames STOMP se registran y cuáles no. |
 | `LectorMmdbTest` | País en los tres formatos del árbol (24, 28 y 32 bits), en IPv4 e IPv6, IP locales, sin base y entradas raras. |
 | `ConsultarBitacoraUseCaseImplTest` | Límite entre 1 y 1000. |
+
+## 7. Seguimiento de un evento entre las dos instancias (T35)
+
+Un evento de tiempo real (por ejemplo, una emergencia reportada) nace en la instancia que atendió la petición y llega a los clientes de las dos instancias por RabbitMQ. Su recorrido se reconstruye filtrando los logs de las dos instancias por el mismo `traceId`:
+
+| Paso | Dónde | Línea de log |
+|---|---|---|
+| 1. Petición | Instancia que atendió (origen) | Fila en la bitácora de peticiones con `traceId` e `instancia` |
+| 2. Publicación en RabbitMQ | Origen | `push_publicado instancia=<origen> destino=... consecutivo=... traceId=...` |
+| 3. Entrega a sus clientes | Origen | `push_entregado instancia=<origen> origen=<origen> ... propagacionMs=...` |
+| 4. Entrega a sus clientes | La otra instancia | `push_entregado instancia=<otra> origen=<origen> ... propagacionMs=...` |
+
+El `traceId` viaja dentro del mensaje por RabbitMQ y la instancia que entrega lo pone en su MDC (T34), así que la línea del paso 4 lleva el mismo id aunque se escriba en otro nodo y en otro hilo. La posición de la flota (`/topic/flota`, una por segundo por conductor) se registra en DEBUG para no inundar el log; el resto de eventos (emergencias, solicitudes, inventario, mapa) va en INFO.
+
+**Prueba automática:** `PushFanOutAdapterTest` publica en una instancia, entrega la copia en la otra y comprueba las dos líneas con el mismo `traceId` (y que la flota no sale en INFO).
+
+**Prueba con el sistema real** (compose de pruebas arriba):
+
+```zsh
+deploy/probar-seguimiento.sh
+```
+
+El script reporta una emergencia con un `X-Request-Id` elegido, filtra `docker compose logs backend-1 backend-2` por ese id, consulta la bitácora con `GET /api/v1/auditoria/peticiones?traceId=...` y verifica que el origen publicó y que las dos instancias entregaron. A mano es lo mismo:
+
+```zsh
+docker compose logs --since 5m backend-1 backend-2 | grep <traceId>
+```
+
+**Corrida registrada (2026-11-13, docker compose en local, `deploy/probar-seguimiento.sh`):** la petición `POST /api/v1/emergencias` (201) con `traceId` `t35-20261113203631-4734` la atendió `backend-2`.
+
+| Hora (UTC) | Instancia | Línea |
+|---|---|---|
+| 01:36:31.637 | `backend-2` | `push_publicado destino=/topic/emergencias consecutivo=1` |
+| 01:36:31.638 | `backend-2` | `push_entregado origen=backend-2 propagacionMs=2` (sus propios clientes) |
+| 01:36:31.638 | `backend-1` | `push_entregado origen=backend-2 propagacionMs=3` (recibido por RabbitMQ) |
+
+La bitácora (`GET /api/v1/auditoria/peticiones?traceId=...`) devuelve la misma petición, `POST /api/v1/emergencias`, estado 201, atendida por `backend-2`. Veredicto del script: **CUMPLE**. Filtrando los logs de las dos instancias por un solo `traceId` se reconstruye el recorrido completo, desde la petición hasta la entrega en ambos nodos, en 3 ms.
