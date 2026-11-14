@@ -1,5 +1,9 @@
 package co.edu.escuelaing.nexovital.gateway.infrastructure.adapter.out;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import co.edu.escuelaing.nexovital.observabilidad.infrastructure.TraceId;
 import co.edu.escuelaing.nexovital.shared.domain.model.PushMessage;
 import io.micrometer.core.instrument.Timer;
@@ -14,6 +18,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 import org.springframework.amqp.AmqpConnectException;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.ObjectProvider;
@@ -245,5 +250,81 @@ class PushFanOutAdapterTest {
 
         assertTrue(registro.find(PushFanOutAdapter.METRICA_PROPAGACION).timers().isEmpty(),
                 "sin emitidoEn no hay contra que medir");
+    }
+
+    // ---- T35: seguimiento de un evento entre instancias por su traceId ----
+
+    private ListAppender<ILoggingEvent> capturarLog() {
+        Logger logger = (Logger) LoggerFactory.getLogger(PushFanOutAdapter.class);
+        logger.setLevel(Level.DEBUG);
+        // Se copia el MDC al escribir: si se leyera después, ya estaría restaurado.
+        ListAppender<ILoggingEvent> appender = new ListAppender<>() {
+            @Override
+            protected void append(ILoggingEvent evento) {
+                evento.prepareForDeferredProcessing();
+                super.append(evento);
+            }
+        };
+        appender.start();
+        logger.addAppender(appender);
+        return appender;
+    }
+
+    private static void soltarLog(ListAppender<ILoggingEvent> appender) {
+        Logger logger = (Logger) LoggerFactory.getLogger(PushFanOutAdapter.class);
+        logger.detachAppender(appender);
+        logger.setLevel(null);
+    }
+
+    @Test
+    void publicarYEntregarDejanUnaLineaConElTraceIdParaSeguirElEvento() {
+        @SuppressWarnings("unchecked")
+        ObjectProvider<RabbitTemplate> provider = mock(ObjectProvider.class);
+        RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
+        when(provider.getIfAvailable()).thenReturn(rabbitTemplate);
+        PushFanOutAdapter origen = new PushFanOutAdapter(
+                messagingTemplate, provider, true, "nexovital.push", "backend-1");
+        PushFanOutAdapter remota = new PushFanOutAdapter(
+                messagingTemplate, provider, true, "nexovital.push", "backend-2");
+        ListAppender<ILoggingEvent> log = capturarLog();
+        try {
+            TraceId.poner("traza-t35-0001");
+            origen.alSolicitarPush(new PushMessage("/topic/emergencias", "payload"));
+            ArgumentCaptor<PushMessage> enviado = ArgumentCaptor.forClass(PushMessage.class);
+            verify(rabbitTemplate).convertAndSend(eq("nexovital.push"), eq(""), enviado.capture());
+
+            // La otra instancia recibe la copia por RabbitMQ, en otro hilo sin traza.
+            TraceId.limpiar();
+            remota.entregarLocal(enviado.getValue());
+
+            List<String> lineas = log.list.stream()
+                    .filter(evento -> evento.getLevel() == Level.INFO)
+                    .map(ILoggingEvent::getFormattedMessage)
+                    .toList();
+            assertTrue(lineas.stream().anyMatch(l -> l.startsWith("push_publicado instancia=backend-1")
+                    && l.contains("destino=/topic/emergencias") && l.contains("traceId=traza-t35-0001")), lineas::toString);
+            assertTrue(lineas.stream().anyMatch(l -> l.startsWith("push_entregado instancia=backend-2 origen=backend-1")
+                    && l.contains("traceId=traza-t35-0001")), lineas::toString);
+            // Mientras entrega, la instancia remota pone el traceId del origen en su MDC.
+            assertTrue(log.list.stream().anyMatch(evento -> evento.getFormattedMessage().startsWith("push_entregado")
+                    && "traza-t35-0001".equals(evento.getMDCPropertyMap().get(TraceId.CLAVE_MDC))));
+        } finally {
+            soltarLog(log);
+        }
+    }
+
+    @Test
+    void laPosicionDeLaFlotaSeSigueEnDebugParaNoInundarElLog() {
+        PushFanOutAdapter adapter = new PushFanOutAdapter(messagingTemplate, "backend-1");
+        ListAppender<ILoggingEvent> log = capturarLog();
+        try {
+            adapter.alSolicitarPush(new PushMessage("/topic/flota", "payload"));
+
+            assertTrue(log.list.stream().noneMatch(evento -> evento.getLevel() == Level.INFO));
+            assertTrue(log.list.stream().anyMatch(evento -> evento.getLevel() == Level.DEBUG
+                    && evento.getFormattedMessage().startsWith("push_entregado")));
+        } finally {
+            soltarLog(log);
+        }
     }
 }
