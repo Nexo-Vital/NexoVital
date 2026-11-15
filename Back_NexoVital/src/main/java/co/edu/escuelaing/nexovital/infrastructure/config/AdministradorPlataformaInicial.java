@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
 import java.util.Locale;
@@ -20,7 +21,7 @@ import java.util.UUID;
  * <p>Ese rol no se puede elegir al registrarse, así que alguien tiene que
  * existir con él desde el arranque. Corre en todos los perfiles (también en
  * Azure, donde el seeder demo no corre) y es idempotente: si el correo ya
- * existe no hace nada.
+ * existe no hace nada, tampoco si otra réplica lo inserta al mismo tiempo.
  *
  * <p>Se crea sin cuenta de Google enlazada. La primera vez que esa persona entra
  * con Google, y Google confirma que el correo es suyo, {@code
@@ -57,12 +58,21 @@ public class AdministradorPlataformaInicial implements ApplicationRunner {
             LOG.info("Administrador de plataforma ya existe: {}", email);
             return;
         }
-        usuarioRepository.guardar(new Usuario(
-                UUID.randomUUID(),
-                "Administrador de plataforma",
-                email,
-                passwordEncoderPort.encriptar(UUID.randomUUID().toString()),
-                RolUsuario.ADMIN_PLATAFORMA));
+        try {
+            usuarioRepository.guardar(new Usuario(
+                    UUID.randomUUID(),
+                    "Administrador de plataforma",
+                    email,
+                    passwordEncoderPort.encriptar(UUID.randomUUID().toString()),
+                    RolUsuario.ADMIN_PLATAFORMA));
+        } catch (DataIntegrityViolationException e) {
+            // Dos réplicas arrancando a la vez sobre una base vacía: las dos ven
+            // que el correo no existe y las dos insertan. La que pierde choca con
+            // la clave única del email; el administrador ya quedó creado por la
+            // otra, así que no es un error de arranque.
+            LOG.info("Administrador de plataforma creado por otra instancia: {}", email);
+            return;
+        }
         LOG.info("Administrador de plataforma precargado: {} (se enlaza al entrar con Google)", email);
     }
 }

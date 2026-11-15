@@ -2,10 +2,11 @@
 # Reglas de alerta de Prometheus (ESC-7, ADR-0010).
 #
 # Cada regla referencia solo metricas que el backend ya expone en
-# /actuator/prometheus o que Prometheus produce por si mismo (`up`). No hay
-# Alertmanager en el compose: las reglas se evaluan y las alertas activas se
-# ven en http://localhost:9090/alerts. Agregarlo es un paso posterior y no
-# cambia estas reglas.
+# /actuator/prometheus o que Prometheus produce por si mismo (`up`). Las
+# alertas activas se ven en http://localhost:9090/alerts y Prometheus las envia
+# a Alertmanager (deploy/alertmanager), que las notifica al receptor webhook
+# del compose (http://localhost:9095) tanto al dispararse como al resolverse
+# (T44, T45).
 #
 # Severidades: `critica` (la demo o el servicio se rompen), `alta` (degradacion
 # que incumple un objetivo de calidad), `media` (aviso temprano).
@@ -39,20 +40,30 @@ groups:
 
   - name: nexovital-errores
     rules:
+      # Ventana y `for` de 1 minuto (T45): la alerta llega en ~1:10-1:30 y se
+      # resuelve igual de rapido, lo que permite probarla y mostrarla en la
+      # presentacion. Con una ventana tan corta, un solo 500 entre pocas
+      # peticiones ya pasa el 5 %; por eso exige ademas al menos 5 respuestas
+      # 5xx en ese minuto, para no disparar por una falla aislada.
       - alert: NexoVitalTasaErrores5xx
         expr: >-
-          sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
-          /
-          clamp_min(sum(rate(http_server_requests_seconds_count[5m])), 0.0001)
-          > 0.05
-        for: 5m
+          (
+            sum(rate(http_server_requests_seconds_count{status=~"5.."}[1m]))
+            /
+            clamp_min(sum(rate(http_server_requests_seconds_count[1m])), 0.0001)
+            > 0.05
+          )
+          and
+          sum(increase(http_server_requests_seconds_count{status=~"5.."}[1m])) >= 5
+        for: 1m
         labels:
           severidad: critica
         annotations:
           resumen: "Mas del 5 % de las peticiones responde 5xx"
           descripcion: >-
             ESC-1 exige 0 % de 5xx durante una caida de instancia. La tasa
-            agregada supera el 5 % desde hace cinco minutos.
+            agregada supera el 5 % (con al menos 5 respuestas 5xx por minuto)
+            desde hace un minuto.
 
       - alert: NexoVitalErrores5xxSostenidos
         expr: sum(increase(http_server_requests_seconds_count{status=~"5.."}[10m])) > 50

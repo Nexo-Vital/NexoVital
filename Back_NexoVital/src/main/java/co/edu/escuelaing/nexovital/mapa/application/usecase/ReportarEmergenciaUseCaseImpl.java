@@ -9,7 +9,6 @@ import co.edu.escuelaing.nexovital.mapa.domain.model.NivelEmergencia;
 import co.edu.escuelaing.nexovital.mapa.domain.model.TipoEmergencia;
 import co.edu.escuelaing.nexovital.mapa.domain.model.Zona;
 import co.edu.escuelaing.nexovital.mapa.domain.port.in.ReportarEmergenciaUseCase;
-import co.edu.escuelaing.nexovital.mapa.domain.port.out.DespachoAmbulanciaPort;
 import co.edu.escuelaing.nexovital.mapa.domain.port.out.EmergenciaRepository;
 import co.edu.escuelaing.nexovital.mapa.domain.port.out.ZonaRepository;
 import co.edu.escuelaing.nexovital.usuarios.domain.model.Ubicacion;
@@ -22,43 +21,36 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Registra una emergencia y DISPARA el despacho de su ambulancia: valida los
- * campos, resuelve su zona a partir del punto con el punto-en-poligono ya
- * implementado (decision D4), la persiste, publica el evento que el listener
- * post-commit entrega al {@code PushPort} y pide la ambulancia.
+ * Registra una emergencia: valida los campos, resuelve su zona a partir del
+ * punto con el punto-en-poligono ya implementado (decision D4), la persiste y
+ * publica el evento que el listener post-commit entrega al {@code PushPort}.
  *
- * <p><b>El disparador vive en el backend.</b> Antes el front reportaba la
- * emergencia y despues llamaba {@code POST /solicitudes}: la decision era del
- * cliente. Ahora el mismo acto de reportar crea la solicitud, y el cliente solo
- * refleja lo que el servidor decidio.
+ * <p><b>Reportar NO pide ambulancia.</b> El reporte de una zona afectada alerta
+ * a los centros de ayuda cercanos (EP-02.F1.US3); pedir una ambulancia es otra
+ * accion del ciudadano ({@code POST /solicitudes}, EP-04.F2.US1). Antes este
+ * caso de uso creaba ademas la solicitud y el ciudadano quedaba "pidiendo
+ * ambulancia" sin haberlo pedido.
  *
- * <p><b>La transaccion envuelve todo.</b> La emergencia y la solicitud
- * commitean juntas, para que no exista una emergencia sin despacho por una
- * escritura parcial. La excepcion es "no hay unidades": no escribe nada y el
- * adaptador la convierte en "sin solicitud", de modo que el reporte se conserva.
- * Los push van DESPUES del commit (regla de oro del contrato): el evento se
+ * <p>Los push van DESPUES del commit (regla de oro del contrato): el evento se
  * consume con {@code @TransactionalEventListener(AFTER_COMMIT)} en {@link
- * EmergenciaPushListener} y el de la solicitud en {@code FlotaPushListener}.
+ * EmergenciaPushListener}.
  */
 @Service
 public class ReportarEmergenciaUseCaseImpl implements ReportarEmergenciaUseCase {
 
     private final EmergenciaRepository emergenciaRepository;
     private final ZonaRepository zonaRepository;
-    private final DespachoAmbulanciaPort despachoAmbulanciaPort;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
     private final RegistroAuditoriaPort registroAuditoriaPort;
 
     public ReportarEmergenciaUseCaseImpl(EmergenciaRepository emergenciaRepository,
                                          ZonaRepository zonaRepository,
-                                         DespachoAmbulanciaPort despachoAmbulanciaPort,
                                          ApplicationEventPublisher eventPublisher,
                                          Clock clock,
                                          RegistroAuditoriaPort registroAuditoriaPort) {
         this.emergenciaRepository = emergenciaRepository;
         this.zonaRepository = zonaRepository;
-        this.despachoAmbulanciaPort = despachoAmbulanciaPort;
         this.eventPublisher = eventPublisher;
         this.clock = clock;
         this.registroAuditoriaPort = registroAuditoriaPort;
@@ -103,13 +95,8 @@ public class ReportarEmergenciaUseCaseImpl implements ReportarEmergenciaUseCase 
                 Instant.now(clock)));
         eventPublisher.publishEvent(new EmergenciaRegistradaEvento(guardada));
 
-        // Sin solicitante no hay a quien entregarle el ciclo de la solicitud:
-        // el reporte se registra y el despacho queda para un llamador con identidad.
-        UUID solicitudId = solicitanteId == null
-                ? null
-                : despachoAmbulanciaPort.despachar(guardada, solicitanteId, direccion).orElse(null);
-
-        return new EmergenciaReportada(guardada, solicitudId);
+        // Reportar no despacha: la ambulancia se pide aparte (POST /solicitudes).
+        return new EmergenciaReportada(guardada, null);
     }
 
     /**

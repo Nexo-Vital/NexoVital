@@ -73,16 +73,16 @@ public class EmergenciaController {
 
     /**
      * Reporta una emergencia sobre un punto. El servidor asigna {@code id},
-     * {@code estado} y {@code createdAt}, resuelve la {@code zonaId} del punto y
-     * DESPACHA la ambulancia: la solicitud se crea en el backend, con el
-     * usuario autenticado como solicitante, y su id viaja en {@code solicitudId}.
+     * {@code estado} y {@code createdAt} y resuelve la {@code zonaId} del punto.
+     * No pide ambulancia: eso es {@code POST /solicitudes}, otra accion del
+     * ciudadano. {@code solicitudId} viaja siempre en {@code null}.
      *
      * @return 201 con la {@code Emergencia}; 400 {@code DATOS_INVALIDOS} si falta
      *         un campo o la geometría está fuera de rango; 500 si el registro
      *         falla
      */
     @PostMapping
-    @Operation(summary = "Reportar una emergencia y despachar su ambulancia")
+    @Operation(summary = "Reportar una emergencia")
     public ResponseEntity<Object> reportar(@RequestBody EmergenciaRequest request) {
         try {
             TipoEmergencia tipo = parsearTipo(request.tipo());
@@ -224,7 +224,7 @@ public class EmergenciaController {
 
     /**
      * El principal autenticado es el {@code Usuario} que deja el filtro JWT. Es
-     * el solicitante de la ambulancia que se despacha al reportar.
+     * quien reporta y queda registrado en la bitacora.
      */
     private UUID usuarioAutenticadoId() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
