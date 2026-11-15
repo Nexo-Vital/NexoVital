@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.event.Level;
 import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.ObjectProvider;
@@ -68,6 +69,16 @@ import org.springframework.stereotype.Component;
  * el mapa en tiempo real y los de la otra instancia lo recuperan al releer el
  * estado. Sin esto, el evento se perdía en silencio para todos. No hay entrega
  * doble: si la publicación falló, el broker nunca devuelve la copia.
+ *
+ * <p><b>Seguimiento entre instancias (Sprint 2, T35).</b> Cada evento deja dos
+ * líneas de log con su {@code traceId}: {@code push_publicado} en la instancia
+ * que lo publica y {@code push_entregado} en CADA instancia que lo entrega a sus
+ * sesiones (con la instancia de {@code origen} y la latencia). Filtrar los logs
+ * de las dos instancias por el {@code traceId} reconstruye el recorrido completo:
+ * petición → publicación → RabbitMQ → entrega en ambos nodos. La posición de la
+ * flota ({@value #DESTINO_ALTA_FRECUENCIA}) llega una vez por segundo por
+ * conductor, así que su seguimiento va en DEBUG para no inundar el log; el resto
+ * (emergencias, solicitudes, inventario, mapa) va en INFO.
  */
 @Component
 public class PushFanOutAdapter {
@@ -82,6 +93,9 @@ public class PushFanOutAdapter {
     static final String CABECERA_INSTANCIA = "instancia";
     /** Identificador de correlación de la petición que originó el evento. */
     static final String CABECERA_TRACE_ID = "traceId";
+
+    /** Destino de alta frecuencia: su seguimiento se registra en DEBUG (T35). */
+    static final String DESTINO_ALTA_FRECUENCIA = "/topic/flota";
 
     /** Timer de la latencia de eventos en tiempo real (tablero técnico, H6). */
     static final String METRICA_PROPAGACION = "nexovital.push.propagacion";
@@ -135,6 +149,10 @@ public class PushFanOutAdapter {
             try {
                 // Fanout: el routing key no se usa, todas las colas atadas reciben.
                 template.convertAndSend(exchangePush, "", instrumentado);
+                LOG.atLevel(nivelDe(instrumentado))
+                        .log("push_publicado instancia={} destino={} consecutivo={} traceId={}",
+                                instancia, instrumentado.destino(), instrumentado.consecutivo(),
+                                instrumentado.traceId());
                 return;
             } catch (AmqpException e) {
                 // Degradación controlada: el broker no está, se entrega local.
@@ -172,7 +190,12 @@ public class PushFanOutAdapter {
             } else {
                 messagingTemplate.convertAndSend(mensaje.destino(), mensaje.payload(), cabeceras);
             }
-            medirPropagacion(mensaje);
+            Long milisegundos = milisegundosDesdeEmision(mensaje);
+            medirPropagacion(mensaje, milisegundos);
+            LOG.atLevel(nivelDe(mensaje))
+                    .log("push_entregado instancia={} origen={} destino={} consecutivo={} propagacionMs={} traceId={}",
+                            instancia, mensaje.instancia(), mensaje.destino(), mensaje.consecutivo(),
+                            milisegundos, mensaje.traceId());
         } finally {
             if (traceAnterior != null) {
                 TraceId.poner(traceAnterior);
@@ -187,19 +210,10 @@ public class PushFanOutAdapter {
      * instancia lo entregó. Un mensaje sin {@code emitidoEn} (no instrumentado)
      * no se mide: no hay un instante de origen contra el cual comparar.
      */
-    private void medirPropagacion(PushMessage mensaje) {
-        if (registro == null || mensaje.emitidoEn() == null) {
+    private void medirPropagacion(PushMessage mensaje, Long milisegundos) {
+        if (registro == null || milisegundos == null) {
             return;
         }
-        long emitidoEn;
-        try {
-            emitidoEn = Long.parseLong(mensaje.emitidoEn());
-        } catch (NumberFormatException e) {
-            return;
-        }
-        // Los relojes de dos contenedores pueden diferir unos milisegundos: un
-        // valor negativo se cuenta como 0 en vez de descartarse.
-        long milisegundos = Math.max(0L, System.currentTimeMillis() - emitidoEn);
         Timer.builder(METRICA_PROPAGACION)
                 .description("Tiempo desde que se publica un evento hasta que se entrega a los clientes")
                 .tag("origen", mensaje.instancia() != null ? mensaje.instancia() : "desconocido")
@@ -208,6 +222,27 @@ public class PushFanOutAdapter {
                 .maximumExpectedValue(Duration.ofSeconds(10))
                 .register(registro)
                 .record(milisegundos, TimeUnit.MILLISECONDS);
+    }
+
+    /**
+     * Milisegundos desde la publicación, o {@code null} si el mensaje no trae un
+     * {@code emitidoEn} válido. Los relojes de dos contenedores pueden diferir
+     * unos milisegundos: un valor negativo se cuenta como 0 en vez de descartarse.
+     */
+    private static Long milisegundosDesdeEmision(PushMessage mensaje) {
+        if (mensaje.emitidoEn() == null) {
+            return null;
+        }
+        try {
+            return Math.max(0L, System.currentTimeMillis() - Long.parseLong(mensaje.emitidoEn()));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /** INFO para los eventos de negocio, DEBUG para la posición de la flota (T35). */
+    private static Level nivelDe(PushMessage mensaje) {
+        return DESTINO_ALTA_FRECUENCIA.equals(mensaje.destino()) ? Level.DEBUG : Level.INFO;
     }
 
     private PushMessage instrumentar(PushMessage mensaje) {

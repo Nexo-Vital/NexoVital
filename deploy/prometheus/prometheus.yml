@@ -12,10 +12,15 @@ global:
   evaluation_interval: 10s
 
 # Reglas de alerta (ESC-7). Se evaluan cada `evaluation_interval`; las alertas
-# activas se consultan en /alerts. No hay Alertmanager: el compose no envia
-# notificaciones, solo deja visible el estado.
+# activas se consultan en /alerts y se envian a Alertmanager, que las notifica
+# al receptor webhook del compose (T44, T45).
 rule_files:
   - /etc/prometheus/alertas.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
 
 scrape_configs:
   - job_name: nexovital-backend

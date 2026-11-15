@@ -1,5 +1,6 @@
 package co.edu.escuelaing.nexovital.gateway.infrastructure.adapter.out;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.FanoutExchange;
@@ -27,7 +28,7 @@ import org.springframework.context.annotation.Configuration;
 @ConditionalOnProperty(name = "nexovital.eventos.broker.enabled", havingValue = "true")
 public class RabbitPropagacionConfig {
 
-        /** Tiempo sin consumidor tras el cual RabbitMQ borra la cola de una instancia. */
+    /** Tiempo sin consumidor tras el cual RabbitMQ borra la cola de una instancia. */
     static final int COLA_SIN_CONSUMIDOR_MS = 120_000;
 
     /** Exchange por el que viajan todos los pushes de tiempo real. */
@@ -53,8 +54,7 @@ public class RabbitPropagacionConfig {
         return QueueBuilder.durable(nombre + "." + instanciaId)
                 .expires(COLA_SIN_CONSUMIDOR_MS)
                 .build();
-
-            }
+    }
 
     /** Ata la cola de esta instancia al exchange: recibe todo lo que se publique. */
     @Bean
@@ -66,9 +66,16 @@ public class RabbitPropagacionConfig {
      * El payload es un objeto ya proyectado por el módulo dueño, sin tipo
      * conocido por el broker. JSON es el formato que no obliga a compartir clases
      * entre instancias y el mismo que el front ya consume.
+     *
+     * <p>Usa el {@link ObjectMapper} de Spring Boot, el mismo de la API REST. Un
+     * {@code Jackson2JsonMessageConverter} sin argumentos crea su propio mapper,
+     * que escribe un {@code Instant} como número ({@code 1.79E9}) y no como texto
+     * ISO: el front descartaba el push de {@code /topic/emergencias} (su
+     * {@code createdAt} dejaba de ser texto) y la emergencia solo aparecía al
+     * refrescar. Con el mapper de Spring, el push y el REST serializan igual.
      */
     @Bean
-    public Jackson2JsonMessageConverter convertidorJsonPush() {
-        return new Jackson2JsonMessageConverter();
+    public Jackson2JsonMessageConverter convertidorJsonPush(ObjectMapper objectMapper) {
+        return new Jackson2JsonMessageConverter(objectMapper);
     }
 }

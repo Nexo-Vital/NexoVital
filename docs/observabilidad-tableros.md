@@ -85,3 +85,59 @@ docker compose exec db psql -U nexovital -d nexovital -c "SELECT COUNT(*) AS asi
 | Donaciones completadas | 1 | 1 | Sí |
 | Tiempo promedio de asignación | 3,5 s (1 asignación) | 3,5 s | Sí |
 | Centros por semáforo | 1 crítico, 1 en alerta, 0 estable, 1 completo | Coincide con el mapa (Tibabuyes: Completo) | Sí |
+
+## 4. Alertas y su notificación (T44, T45)
+
+### Cómo llegan (T44)
+
+```
+Prometheus (reglas en deploy/prometheus/alertas.yml)
+   └─> Alertmanager :9093 (deploy/alertmanager/alertmanager.yml)
+          └─> receptor webhook :9095 (deploy/alertmanager/receptor.py)
+```
+
+- **Prometheus** evalúa las reglas cada 10 s y envía las alertas activas a Alertmanager.
+- **Alertmanager** agrupa por alerta e instancia y notifica a los ~10 s (`group_wait` y `group_interval` de 10 s), tanto al dispararse (`firing`) como al resolverse (`resolved`, con `send_resolved: true`).
+- **Receptor webhook**: contenedor propio, solo con la librería estándar de Python. Escribe una línea por notificación en su log (`docker compose logs -f receptor-alertas`) y las muestra en `http://localhost:9095`, que se refresca cada 5 s (también en JSON en `/alertas`). No necesita cuentas ni claves.
+
+### Alertas que se prueban (T45)
+
+| Alerta | Condición | Tiempo hasta la notificación |
+|---|---|---|
+| `NexoVitalTasaErrores5xx` | Más del 5 % de las peticiones en 5xx **y** al menos 5 respuestas 5xx, en una ventana de 1 minuto, sostenido 1 minuto | ~1:10–1:30 desde que empiezan los errores |
+| `NexoVitalInstanciaCaida` | `up == 0` de una instancia durante 1 minuto | ~1:10–1:30 desde que la instancia se detiene |
+
+La regla de 5xx usa ventana y `for` de 1 minuto para poder probarla y mostrarla en la presentación. El mínimo de 5 errores evita que un 500 aislado entre poco tráfico la dispare. `NexoVitalErrores5xxSostenidos` (más de 50 en 10 minutos) se mantiene como aviso lento de errores bajos pero persistentes.
+
+### Cómo se prueba
+
+**Reglas, sin levantar nada** (series simuladas con `promtool`: dispara, se resuelve, no dispara con un error aislado, instancia caída y recuperada):
+
+```zsh
+deploy/prometheus/probar-reglas.sh
+```
+
+**Con el sistema real** (compose de pruebas arriba, porque usa el login local y una espera de conexión a la base de 3 s):
+
+```zsh
+docker compose -f docker-compose.yml -f docker-compose.pruebas.yml up -d
+deploy/prometheus/probar-alertas.sh
+```
+
+1. Detiene la base de datos y 10 clientes consultan `/api/v1/mapa`: el backend responde 5xx de verdad. Espera la notificación `firing` de `NexoVitalTasaErrores5xx`, levanta la base y espera la `resolved`.
+2. Detiene `backend-2`, espera `firing` de `NexoVitalInstanciaCaida`, la vuelve a levantar y espera la `resolved`.
+
+Al salir, por cualquier motivo, vuelve a levantar la base y `backend-2`. Se puede correr una sola fase con `probar-alertas.sh 5xx` o `probar-alertas.sh instancia`.
+
+**Corrida registrada (2026-11-13, docker compose en local, `probar-alertas.sh`):**
+
+| Alerta | Evento provocado | Notificación | Tiempo |
+|---|---|---|---|
+| `NexoVitalTasaErrores5xx` | Base de datos detenida, 10 clientes consultando `/api/v1/mapa` (253 respuestas 5xx reales) | `firing` | 92 s |
+| `NexoVitalTasaErrores5xx` | Base levantada y API respondiendo 200 | `resolved` | 59 s |
+| `NexoVitalInstanciaCaida` | `backend-2` detenido | `firing` | 79 s |
+| `NexoVitalInstanciaCaida` | `backend-2` levantado | `resolved` | 8 s |
+
+Veredicto del script: **CUMPLE**. Ambas alertas llegaron al receptor webhook al dispararse y al resolverse; la corrida completa duró unos 4 minutos.
+
+**Alcance:** Alertmanager y el receptor existen solo en el docker compose. En Azure las reglas y la notificación no están desplegadas.

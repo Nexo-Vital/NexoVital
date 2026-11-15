@@ -153,6 +153,32 @@ services:
     depends_on:
       - backend-1
       - backend-2
+      - alertmanager
+
+  # Alertmanager (T44, T45): recibe las alertas de Prometheus y las notifica
+  # al receptor webhook al dispararse y al resolverse.
+  # Estado en http://localhost:9093.
+  alertmanager:
+    restart: unless-stopped
+    image: prom/alertmanager:latest
+    volumes:
+      - ./deploy/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "9093:9093"
+    depends_on:
+      - receptor-alertas
+
+  # Receptor webhook de las alertas: imprime cada notificacion en su log y las
+  # muestra en http://localhost:9095 (GET /alertas en JSON). Solo libreria
+  # estandar de Python, sin cuentas ni claves.
+  receptor-alertas:
+    restart: unless-stopped
+    image: python:3.12-alpine
+    command: ["python", "-u", "/app/receptor.py"]
+    volumes:
+      - ./deploy/alertmanager/receptor.py:/app/receptor.py:ro
+    ports:
+      - "9095:8080"
 
   # Grafana arranca con la fuente de datos y los dos tableros ya provisionados.
   grafana:
