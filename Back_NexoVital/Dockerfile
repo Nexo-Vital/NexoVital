@@ -26,6 +26,28 @@ COPY src/ src/
 RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -DskipTests package \
     && cp target/nexovital-*.jar /workspace/app.jar
 
+# Base de paises GeoLite2-Country (S-2: pais de cada peticion en la bitacora).
+# Se descarga con las credenciales de MaxMind como secretos de BuildKit: no
+# quedan en ninguna capa de la imagen. Sin credenciales (builds locales) la
+# imagen sale sin base y el pais queda DESCONOCIDO; con GEOIP_OBLIGATORIO=true
+# (el CI) la falta de credenciales rompe el build en vez de pasar en silencio.
+FROM alpine:3.20 AS geoip
+ARG GEOIP_OBLIGATORIO=false
+RUN apk add --no-cache curl
+RUN --mount=type=secret,id=maxmind_account --mount=type=secret,id=maxmind_key \
+    set -e; mkdir -p /geo; \
+    if [ -s /run/secrets/maxmind_account ] && [ -s /run/secrets/maxmind_key ]; then \
+      curl -fsSL -u "$(cat /run/secrets/maxmind_account):$(cat /run/secrets/maxmind_key)" \
+        "https://download.maxmind.com/geoip/databases/GeoLite2-Country/download?suffix=tar.gz" \
+        -o /tmp/geo.tar.gz; \
+      tar -xzf /tmp/geo.tar.gz -C /tmp; \
+      cp /tmp/GeoLite2-Country_*/GeoLite2-Country.mmdb /geo/; \
+      echo "GeoLite2-Country incluida"; \
+    elif [ "$GEOIP_OBLIGATORIO" = "true" ]; then \
+      echo "Faltan los secretos maxmind_account / maxmind_key" >&2; exit 1; \
+    else \
+      echo "Sin credenciales de MaxMind: la imagen va sin base de paises"; \
+    fi
 
 FROM eclipse-temurin:21-jre AS runtime
 WORKDIR /app
@@ -33,6 +55,8 @@ WORKDIR /app
 # La aplicacion no corre como root.
 RUN groupadd --system nexovital && useradd --system --gid nexovital --no-create-home nexovital
 COPY --from=build /workspace/app.jar /app/app.jar
+COPY --from=geoip /geo/ /opt/geoip/
+ENV NEXOVITAL_GEOIP_RUTA=/opt/geoip/GeoLite2-Country.mmdb
 USER nexovital
 
 # Perfil `docker`: PostgreSQL + usuarios demo + simulador de flota.

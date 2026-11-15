@@ -223,10 +223,13 @@ export default function LoginPage() {
         opening or collapsing it never shifts the sign-in form. It is opaque and
         limited to 62dvh, which keeps it scrollable rather than covering the form.
       */}
-      <div className="absolute inset-x-0 top-0 z-20 flex justify-end p-3">
-        <DemoProfilesPanel disabled={disabled} busy={filling} onSelect={handleProfileSelect} />
-      </div>
-
+      {/* Solo sin Firebase (npm run dev contra el login local): en docker y en
+          Azure se entra con correo y contrasena o con Google. */}
+      {!conGoogle && (
+        <div className="absolute inset-x-0 top-0 z-20 flex justify-end p-3">
+          <DemoProfilesPanel disabled={disabled} busy={filling} onSelect={handleProfileSelect} />
+        </div>
+      )}
       {/*
         Brand panel: navy on the left from `lg`, a compact banner on mobile.
         The long copy and the perks hide below `lg` so the card never gets
