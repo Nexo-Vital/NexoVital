@@ -7,8 +7,10 @@
 #   * a mano, desde la pestana Actions ("Run workflow") sobre main, para
 #     volver a desplegar el ultimo commit de main.
 #
-# Que hace: actualiza el back y el front con las imagenes que el CI publico
-# en GHCR para ESE commit (etiqueta = SHA) y comprueba que respondan.
+# Que hace: actualiza las DOS instancias del back (nexovital-back y
+# nexovital-back-2, detras del balanceador agw-nexovital) y el front con las
+# imagenes que el CI publico en GHCR para ESE commit (etiqueta = SHA) y
+# comprueba que respondan. No cambia replicas, variables ni el balanceador.
 # ==========================================================================
 name: CD
 
@@ -51,6 +53,9 @@ jobs:
       BACK: ${{ vars.AZURE_BACK }}
       FRONT: ${{ vars.AZURE_FRONT }}
       PG: ${{ vars.AZURE_PG }}
+      # Instancia 2 del back y balanceador (nombres fijos, sin variable del repo).
+      BACK2: nexovital-back-2
+      AGW: agw-nexovital
       # El commit que probo el CI (automatico) o la punta de main (manual).
       SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
@@ -90,6 +95,18 @@ jobs:
           az containerapp update -g "$RG" -n "$BACK" --image "$IMG_BACK" -o none --only-show-errors
           echo "Back: revision $(az containerapp show -g "$RG" -n "$BACK" --query properties.latestRevisionName -o tsv)"
 
+      # Instancia 2 del balanceador: la misma imagen que la 1, para que las dos
+      # corran siempre la misma version. Solo cambia la imagen: las replicas
+      # (1 y 1), las variables y los secretos quedan como estan.
+      - name: Desplegar el back (instancia 2)
+        run: |
+          if ! az containerapp show -g "$RG" -n "$BACK2" -o none 2>/dev/null; then
+            echo "::warning::No existe $BACK2: solo se actualizo la instancia 1."
+            exit 0
+          fi
+          az containerapp update -g "$RG" -n "$BACK2" --image "$IMG_BACK" -o none --only-show-errors
+          echo "Back 2: revision $(az containerapp show -g "$RG" -n "$BACK2" --query properties.latestRevisionName -o tsv)"
+
       - name: Desplegar el front
         run: |
           az containerapp update -g "$RG" -n "$FRONT" --image "$IMG_FRONT" -o none --only-show-errors
@@ -127,6 +144,16 @@ jobs:
           if [ "$ESTADO_PG" != "Ready" ]; then
             echo "::warning::La base de datos esta en estado '$ESTADO_PG'. El back quedo actualizado, pero se probara cuando la enciendas."
             echo "- Back: sin probar (base de datos en estado $ESTADO_PG)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # El front llega al back a traves del balanceador. Si el balanceador
+          # existe pero esta detenido (modo ahorro), el back no se puede probar
+          # por el sitio: el despliegue igual queda hecho.
+          ESTADO_AGW=$(az network application-gateway show -g "$RG" -n "$AGW" --query operationalState -o tsv 2>/dev/null || echo "NoExiste")
+          if [ "$ESTADO_AGW" != "Running" ] && [ "$ESTADO_AGW" != "NoExiste" ]; then
+            echo "::warning::El balanceador esta en estado '$ESTADO_AGW'. Los back quedaron actualizados, pero se probaran cuando lo enciendas."
+            echo "- Back: sin probar (balanceador en estado $ESTADO_AGW)" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
