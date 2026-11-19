@@ -1,22 +1,25 @@
 # ==========================================================================
-# Modo ahorro de NexoVital en Azure.
+# Modo ahorro de NexoVital en Azure (topologia con balanceador).
 #
-# Cuando corre: SOLO a mano, desde la pestana Actions ("Run workflow"),
-# eligiendo la accion. No hay horario fijo: tu decides cuando encender y
-# cuando apagar.
+#   Navegador -> nexovital-front -> agw-nexovital (Application Gateway)
+#                                     -> nexovital-back   (1 replica)
+#                                     -> nexovital-back-2 (1 replica)
+#                                          -> PostgreSQL y RabbitMQ
 #
-# Acciones:
-#   apagar              back a escala cero y PostgreSQL detenido
-#   encender            PostgreSQL encendido; el back despierta solo al
-#                       primer uso (tarda ~1 minuto)
-#   encender-para-demo  PostgreSQL encendido y el back fijo en 1 replica:
-#                       tiempo real activo todo el tiempo (simulador de flota,
-#                       perdida de senal). Al terminar, correr "apagar".
+# Cuando corre: SOLO a mano, desde la pestana Actions ("Run workflow") sobre
+# la rama main (el acceso OIDC a Azure solo funciona desde main).
+#
+# Acciones (hacen lo mismo que apagar_todo y encender_todo de Cloud Shell):
+#   apagar              apaga todo lo que cobra: balanceador, Prometheus,
+#                       back 1, back 2, front, RabbitMQ y PostgreSQL.
+#                       Grafana queda encendido (si se apaga pierde los
+#                       tableros).
+#   encender-para-demo  enciende todo en orden: PostgreSQL, RabbitMQ, back 1
+#                       y back 2 (1 replica CADA UNO, nunca 2), front,
+#                       Prometheus y el balanceador. Tarda ~15-20 minutos.
 #
 # OJO: Azure vuelve a encender sola la base de datos a los 7 dias de
 # detenida. Si llevas una semana sin usarla, corre "apagar" otra vez.
-#
-# El boton "Run workflow" solo aparece cuando este archivo ya esta en main.
 # ==========================================================================
 name: Azure - modo ahorro
 
@@ -28,9 +31,8 @@ on:
         type: choice
         options:
           - apagar
-          - encender
           - encender-para-demo
-        default: encender
+        default: apagar
 
 # Nunca dos corridas a la vez (por ejemplo, encender mientras apaga).
 concurrency:
@@ -45,13 +47,32 @@ jobs:
   ahorro:
     name: ${{ inputs.accion }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Encender espera a PostgreSQL (~5 min) y al balanceador (~5-10 min).
+    timeout-minutes: 45
     env:
       ACCION: ${{ inputs.accion }}
       RG: ${{ vars.AZURE_RG }}
       BACK: ${{ vars.AZURE_BACK }}
+      FRONT: ${{ vars.AZURE_FRONT }}
       PG: ${{ vars.AZURE_PG }}
+      # Nombres fijos de los recursos (sin variable del repositorio).
+      BACK2: nexovital-back-2
+      PROM: nexovital-prometheus
+      RMQ: nexovital-rabbitmq
+      AGW: agw-nexovital
+      PIP: pip-nexovital-agw
     steps:
+      - name: Revisar la configuracion
+        run: |
+          faltan=""
+          for nombre in RG BACK FRONT PG; do
+            [ -z "${!nombre}" ] && faltan="$faltan $nombre"
+          done
+          if [ -n "$faltan" ]; then
+            echo "::error::Faltan variables del repositorio:$faltan"
+            exit 1
+          fi
+
       - name: Iniciar sesion en Azure (OIDC)
         uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
         with:
@@ -65,14 +86,30 @@ jobs:
       - name: Aplicar "${{ env.ACCION }}"
         run: |
           estado_pg() { az postgres flexible-server show -g "$RG" -n "$PG" --query state -o tsv; }
+          existe_agw() { az network application-gateway show -g "$RG" -n "$AGW" -o none 2>/dev/null; }
 
-          RMQ=nexovital-rabbitmq
           case "$ACCION" in
             apagar)
-              az containerapp update -g "$RG" -n "$BACK" --min-replicas 0 --max-replicas 2 -o none --only-show-errors
-              echo "Back: escala a cero"
+              # El balanceador primero: sus sondas despiertan a los back.
+              echo "1/5 Balanceador"
+              if existe_agw; then
+                az network application-gateway stop -g "$RG" -n "$AGW" \
+                  || echo "::warning::No se pudo detener el balanceador"
+              else
+                echo "El balanceador $AGW no existe: se omite"
+              fi
+              # Prometheus tambien: raspa los back y los despertaria.
+              echo "2/5 Prometheus"
+              az containerapp update -g "$RG" -n "$PROM" --min-replicas 0 -o none --only-show-errors
+              # Solo el minimo baja a 0; el maximo se queda en 1 (cada back
+              # es UNA instancia del balanceador, nunca 2 replicas).
+              echo "3/5 Back 1, back 2 y front a cero"
+              for A in "$BACK" "$BACK2" "$FRONT"; do
+                az containerapp update -g "$RG" -n "$A" --min-replicas 0 --max-replicas 1 -o none --only-show-errors
+              done
+              echo "4/5 RabbitMQ"
               az container stop -g "$RG" -n "$RMQ" -o none
-              echo "RabbitMQ: detenido"
+              echo "5/5 PostgreSQL"
               E=$(estado_pg)
               if [ "$E" = "Ready" ]; then
                 az postgres flexible-server stop -g "$RG" -n "$PG" -o none
@@ -81,25 +118,59 @@ jobs:
                 echo "PostgreSQL: no se detiene porque esta en estado '$E'"
               fi
               ;;
-            encender|encender-para-demo)
+
+            encender-para-demo)
+              echo "1/5 PostgreSQL (~5 min)"
               E=$(estado_pg)
               if [ "$E" = "Stopped" ]; then
                 az postgres flexible-server start -g "$RG" -n "$PG" -o none
-                echo "PostgreSQL: encendido"
               else
                 echo "PostgreSQL: ya estaba en estado '$E'"
               fi
-              # RabbitMQ antes que el back: el back se conecta al arrancar.
+              for i in $(seq 1 40); do
+                E=$(estado_pg)
+                [ "$E" = "Ready" ] && break
+                echo "Esperando a PostgreSQL ($E)... ($i)"; sleep 15
+              done
+              if [ "$E" != "Ready" ]; then
+                echo "::error::PostgreSQL no quedo Ready (estado '$E')"
+                exit 1
+              fi
+
+              # RabbitMQ antes que los back: se conectan al arrancar.
+              echo "2/5 RabbitMQ"
               az container start -g "$RG" -n "$RMQ" -o none
-              echo "RabbitMQ: encendido"
-              if [ "$ACCION" = "encender-para-demo" ]; then
-                az containerapp update -g "$RG" -n "$BACK" --min-replicas 2 --max-replicas 2 -o none --only-show-errors
-                echo "Back: fijo en 2 replicas balanceadas (recuerda correr 'apagar' al terminar)"
+              sleep 30
+              # Si RabbitMQ volvio con otra direccion, se la pasa a los dos back
+              # en el mismo paso (igual que encender_todo de Cloud Shell).
+              ACTUAL=$(az containerapp show -g "$RG" -n "$BACK" --query "properties.template.containers[0].env[?name=='SPRING_RABBITMQ_HOST'].value | [0]" -o tsv)
+              FQDN=$(az container show -g "$RG" -n "$RMQ" --query ipAddress.fqdn -o tsv)
+              IP=$(az container show -g "$RG" -n "$RMQ" --query ipAddress.ip -o tsv)
+              EXTRA=()
+              if [ -n "$ACTUAL" ] && [ "$ACTUAL" != "$FQDN" ] && [ "$ACTUAL" != "$IP" ]; then
+                echo "RabbitMQ cambio de direccion: $ACTUAL -> $IP"
+                EXTRA=(--set-env-vars "SPRING_RABBITMQ_HOST=$IP")
+              fi
+
+              # 1 replica por instancia (minimo 1 y maximo 1): PostgreSQL admite
+              # ~35 conexiones y cada instancia usa hasta 15.
+              echo "3/5 Back 1 y back 2 (1 replica cada uno)"
+              for A in "$BACK" "$BACK2"; do
+                az containerapp update -g "$RG" -n "$A" --min-replicas 1 --max-replicas 1 "${EXTRA[@]}" -o none --only-show-errors
+              done
+
+              echo "4/5 Front y Prometheus"
+              az containerapp update -g "$RG" -n "$FRONT" --min-replicas 1 --max-replicas 1 -o none --only-show-errors
+              az containerapp update -g "$RG" -n "$PROM" --min-replicas 1 -o none --only-show-errors
+
+              echo "5/5 Balanceador (5-10 min)"
+              if existe_agw; then
+                az network application-gateway start -g "$RG" -n "$AGW"
               else
-                az containerapp update -g "$RG" -n "$BACK" --min-replicas 0 --max-replicas 2 -o none --only-show-errors
-                echo "Back: de 0 a 2 replicas segun el trafico"
+                echo "::warning::El balanceador $AGW no existe: el front debe apuntar directo al back"
               fi
               ;;
+
             *)
               echo "::error::Accion desconocida: $ACCION"
               exit 1
@@ -107,15 +178,27 @@ jobs:
           esac
 
       - name: Estado final
+        if: ${{ !cancelled() }}
         run: |
-          PG_ESTADO=$(az postgres flexible-server show -g "$RG" -n "$PG" --query state -o tsv)
-          MIN=$(az containerapp show -g "$RG" -n "$BACK" --query properties.template.scale.minReplicas -o tsv)
-          MAX=$(az containerapp show -g "$RG" -n "$BACK" --query properties.template.scale.maxReplicas -o tsv)
-          RMQ_ESTADO=$(az container show -g "$RG" -n nexovital-rabbitmq --query instanceView.state -o tsv)
           {
             echo "### NexoVital en Azure: $ACCION"
-            echo "- PostgreSQL: $PG_ESTADO"
-            echo "- Back, replicas minimas: $MIN"
-            echo "- Back, replicas maximas: $MAX"
-            echo "- RabbitMQ: $RMQ_ESTADO"
+            echo "- PostgreSQL: $(az postgres flexible-server show -g "$RG" -n "$PG" --query state -o tsv)"
+            echo "- RabbitMQ: $(az container show -g "$RG" -n "$RMQ" --query instanceView.state -o tsv)"
+            echo "- Balanceador: $(az network application-gateway show -g "$RG" -n "$AGW" --query operationalState -o tsv 2>/dev/null || echo 'no existe')"
+            for A in "$BACK" "$BACK2" "$FRONT" "$PROM"; do
+              MIN=$(az containerapp show -g "$RG" -n "$A" --query properties.template.scale.minReplicas -o tsv 2>/dev/null)
+              MAX=$(az containerapp show -g "$RG" -n "$A" --query properties.template.scale.maxReplicas -o tsv 2>/dev/null)
+              echo "- $A: replicas min=$MIN max=$MAX"
+            done
           } | tee -a "$GITHUB_STEP_SUMMARY"
+
+          if [ "$ACCION" = "encender-para-demo" ]; then
+            echo "Esperando 90 s a que los back arranquen..."
+            sleep 90
+            echo "Salud de las instancias segun el balanceador (esperado: 2 x Healthy):"
+            az network application-gateway show-backend-health -g "$RG" -n "$AGW" \
+              --query "backendAddressPools[].backendHttpSettingsCollection[].servers[].{instancia:address, salud:health}" -o table || true
+            FRONT_FQDN=$(az containerapp show -g "$RG" -n "$FRONT" --query properties.configuration.ingress.fqdn -o tsv)
+            CODIGO=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "https://$FRONT_FQDN/api/v1/sesiones/actual" || true)
+            echo "- Sitio /api/v1/sesiones/actual: HTTP $CODIGO (esperado 401)" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
