@@ -9,7 +9,8 @@
 # Que hace:
 #   backend   compila el back y corre sus tests (con cobertura JaCoCo)
 #   frontend  lint, tipos, tests (con cobertura) y build del front
-#   sonar     analisis de calidad en SonarCloud (pull requests y main)
+#   sonar     analisis de calidad en SonarCloud (pull requests y main):
+#             dos proyectos, NexoVital Back y NexoVital Front
 #   imagenes  construye las imagenes Docker; solo las PUBLICA en GHCR cuando
 #             el cambio ya esta en main
 # ==========================================================================
@@ -166,14 +167,27 @@ jobs:
         working-directory: Back_NexoVital
         run: ./mvnw -B -ntp dependency:copy-dependencies -DoutputDirectory=target/dependency
 
-      # El reporte del front nombra los archivos desde Front_NexoVital
-      # ("src/..."), pero el analisis corre desde la raiz del repo.
-      - name: Ajustar rutas de la cobertura del front
-        run: sed -i -E 's|^SF:([^/])|SF:Front_NexoVital/\1|' Front_NexoVital/coverage/lcov.info
-
-      # La configuracion esta en sonar-project.properties (raiz del repo).
-      - name: Analizar con SonarCloud
+      # Un analisis por proyecto de SonarCloud (monorepo). Cada uno lee el
+      # sonar-project.properties de su carpeta: Back_NexoVital/ y
+      # Front_NexoVital/. Como cada analisis corre dentro de su carpeta, el
+      # lcov.info del front ya trae las rutas bien ("src/...").
+      # Los dos usan sonar.qualitygate.wait=true: si CUALQUIERA de los dos
+      # quality gates falla, este job (el check obligatorio "SonarCloud")
+      # falla y el PR no se puede mergear.
+      - name: Analizar el back con SonarCloud
         uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6.0.0
+        with:
+          projectBaseDir: Back_NexoVital
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      # `!cancelled()`: aunque el gate del back salga en rojo, el front se
+      # analiza igual (asi se ven los dos resultados en el PR).
+      - name: Analizar el front con SonarCloud
+        if: ${{ !cancelled() }}
+        uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6.0.0
+        with:
+          projectBaseDir: Front_NexoVital
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
